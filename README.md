@@ -1,6 +1,8 @@
-# SalonStore
+# Urban Blade - Luxury Salon & Grooming Platform
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 20.3.34.
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FGauravYadav-G%2FUrban-Blade)
+
+High-performance e-commerce and salon appointment booking web application built with Angular and powered by Neon Serverless PostgreSQL.
 
 ## Development server
 
