@@ -27,7 +27,8 @@ export async function seedRealisticData(): Promise<boolean> {
     // ─── 2. SEED REALISTIC USERS ──────────────────────────────────────────────
     const demoPasswordHash = await bcrypt.hash('Blade@123', 10);
     const usersToSeed = [
-      { name: 'Demo Guest', email: 'demo@urbanblade.in', role: 'admin', phone: '9015618265' },
+      { name: 'Master Admin', email: 'admin@urbanblade.in', role: 'admin', phone: '9015618265' },
+      { name: 'Demo Guest', email: 'demo@urbanblade.in', role: 'customer', phone: '9015618265' },
       { name: 'Vikram Sharma', email: 'vikram@urbanblade.in', role: 'stylist', phone: '9811002233' },
       { name: 'Rohan Verma', email: 'rohan@urbanblade.in', role: 'stylist', phone: '9822114455' },
       { name: 'Ayesha Khan', email: 'ayesha@urbanblade.in', role: 'stylist', phone: '9833225566' },

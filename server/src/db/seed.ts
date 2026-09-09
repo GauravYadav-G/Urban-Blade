@@ -19,19 +19,32 @@ export async function seedDatabase(): Promise<boolean> {
   try {
     console.log('🌱 Starting database seeding...');
 
-    // 1. Seed Demo User
+    // 1. Seed Demo & Master Admin Users
     const demoPasswordHash = await bcrypt.hash('Blade@123', 10);
     await client.query(
       `
       INSERT INTO users (email, password_hash, name, role)
       VALUES ($1, $2, $3, $4)
       ON CONFLICT (email) 
-      DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name
+      DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role = EXCLUDED.role
       RETURNING id, email, name;
       `,
       ['demo@urbanblade.in', demoPasswordHash, 'Demo Guest', 'customer']
     );
     console.log('✅ Demo user seeded: demo@urbanblade.in / Blade@123');
+
+    const adminPasswordHash = await bcrypt.hash('Admin@2026', 10);
+    await client.query(
+      `
+      INSERT INTO users (email, password_hash, name, role)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (email) 
+      DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role = EXCLUDED.role
+      RETURNING id, email, name;
+      `,
+      ['admin@urbanblade.in', adminPasswordHash, 'Master Admin', 'admin']
+    );
+    console.log('✅ Admin user seeded: admin@urbanblade.in / Admin@2026');
 
     // 2. Seed Stylists
     const stylists = [
