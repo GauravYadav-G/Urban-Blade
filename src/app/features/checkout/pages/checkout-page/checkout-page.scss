@@ -102,23 +102,69 @@ label {
 
     .radio-content {
       display: flex;
-      align-items: center;
-      gap: 0.85rem;
+      flex-direction: column;
+      gap: 0.35rem;
+      width: 100%;
 
-      .icon {
-        font-size: 1.5rem;
+      .channel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.2rem;
+      }
+
+      .channel-badge {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 3px 8px;
+        border-radius: 4px;
+        background: rgba(212, 175, 55, 0.15);
+        color: #d4af37;
+        border: 1px solid rgba(212, 175, 55, 0.3);
+
+        &.cod-badge {
+          background: rgba(16, 185, 129, 0.12);
+          color: #10b981;
+          border-color: rgba(16, 185, 129, 0.25);
+        }
+      }
+
+      .rzp-brand {
+        font-weight: 800;
+        font-size: 0.95rem;
+        color: #0c83ff;
+        letter-spacing: -0.02em;
       }
 
       strong {
         display: block;
-        font-size: 0.95rem;
+        font-size: 1rem;
         color: var(--ink);
       }
 
       p {
         margin: 0;
-        font-size: 0.75rem;
+        font-size: 0.8rem;
         color: var(--muted);
+        line-height: 1.35;
+      }
+
+      .gateway-trust-icons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-top: 0.4rem;
+
+        .trust-tag {
+          font-size: 0.68rem;
+          padding: 3px 7px;
+          border-radius: 4px;
+          background: rgba(255, 255, 255, 0.05);
+          color: var(--ink-secondary, #94a3b8);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+        }
       }
     }
 
@@ -130,6 +176,7 @@ label {
     &.selected {
       background: rgba(212, 175, 55, 0.08);
       border-color: #d4af37;
+      box-shadow: 0 0 12px rgba(212, 175, 55, 0.12);
     }
   }
 }

@@ -42,7 +42,7 @@ export class PaymentModal implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     if (this.session.paymentMethod) {
-      this.activeTab.set(this.session.paymentMethod === 'cash_on_delivery' ? 'cod' : this.session.paymentMethod);
+      this.activeTab.set(this.session.paymentMethod === 'cash_on_delivery' ? 'cod' : (this.session.paymentMethod as any));
     }
     this.startTimer();
     this.cardHolder.set(this.session.shippingAddress.fullName);

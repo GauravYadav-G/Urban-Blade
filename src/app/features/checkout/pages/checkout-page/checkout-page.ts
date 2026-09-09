@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -6,15 +6,14 @@ import { SALON } from '@core/constants/salon.constants';
 import { CartService } from '@core/services/cart.service';
 import { AdminService, type AdminOrder } from '@core/services/admin.service';
 import { SiteSettingsService } from '@core/services/site-settings.service';
-import { PaymentService, CheckoutSessionResponse, PaymentReceipt } from '@core/services/payment.service';
+import { PaymentService, PaymentReceipt } from '@core/services/payment.service';
 import { ToastService } from '@core/services/toast.service';
 import { InrPipe } from '@shared/pipes/inr-pipe';
-import { PaymentModal } from '../../components/payment-modal/payment-modal';
 
 @Component({
   selector: 'app-checkout-page',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, InrPipe, PaymentModal],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, InrPipe],
   templateUrl: './checkout-page.html',
   styleUrl: './checkout-page.scss',
 })
@@ -31,14 +30,18 @@ export class CheckoutPage {
   readonly settings = this.siteSettings.settings;
   readonly placed = signal(false);
   readonly isInitiating = signal(false);
-  readonly activeSession = signal<CheckoutSessionResponse | null>(null);
   readonly confirmedReceipt = signal<PaymentReceipt | null>(null);
+
+  readonly estimatedTotal = computed(() => {
+    const sub = this.cart.subtotal();
+    return sub >= 999 ? sub : sub + 99;
+  });
 
   readonly form = this.fb.nonNullable.group({
     name: ['Gaurav Yadav', [Validators.required, Validators.minLength(2)]],
     phone: ['9015618265', [Validators.required, Validators.pattern(/^[0-9]{10}$/)]],
     address: [SALON.address, [Validators.required, Validators.minLength(5)]],
-    payment: ['upi' as 'upi' | 'card' | 'cash_on_delivery', Validators.required],
+    payment: ['razorpay' as 'razorpay' | 'cod', Validators.required],
   });
 
   initiateCheckout(event?: Event): void {
@@ -68,46 +71,91 @@ export class CheckoutPage {
       quantity: line.qty,
     }));
 
-    this.paymentService
-      .createCheckoutSession({
-        items,
-        shippingAddress: {
-          fullName: val.name,
-          phone: cleanPhone,
-          street: val.address,
-          city: 'Ghaziabad',
-        },
-        paymentMethod: val.payment,
-      })
-      .subscribe({
-        next: (session) => {
+    const shippingAddress = {
+      fullName: val.name,
+      phone: cleanPhone,
+      street: val.address,
+      city: 'Ghaziabad',
+    };
+
+    if (val.payment === 'cod') {
+      // 1-Click Cash on Delivery
+      this.paymentService.placeCodOrder({ items, shippingAddress }).subscribe({
+        next: (receipt) => {
           this.isInitiating.set(false);
-          this.activeSession.set(session);
+          this.toast.success(`🎉 COD Order #${receipt.receiptNumber} confirmed in Neon PostgreSQL!`);
+          this.onPaymentSuccess(receipt);
         },
         error: (err) => {
           this.isInitiating.set(false);
-          const errorMsg =
-            err.error?.message ||
-            'Unable to reserve inventory in Neon PostgreSQL. Please try again.';
-          this.toast.error(errorMsg);
+          const msg = err.error?.message || 'Unable to place Cash on Delivery order. Please try again.';
+          this.toast.error(msg);
         },
       });
+      return;
+    }
+
+    // Official Razorpay Standard Checkout
+    this.paymentService.createRazorpayOrder({ items, shippingAddress }).subscribe({
+      next: (orderData) => {
+        this.isInitiating.set(false);
+        this.toast.info('Launching official Razorpay payment gateway...');
+
+        this.paymentService.launchRazorpayCheckout(orderData, {
+          onSuccess: (rzpResp) => {
+            this.isInitiating.set(true);
+            this.toast.info('Cryptographically verifying payment with Neon PostgreSQL...');
+
+            this.paymentService
+              .verifyRazorpayPayment({
+                orderId: orderData.orderId,
+                razorpayOrderId: rzpResp.razorpay_order_id,
+                razorpayPaymentId: rzpResp.razorpay_payment_id,
+                razorpaySignature: rzpResp.razorpay_signature,
+              })
+              .subscribe({
+                next: (receipt) => {
+                  this.isInitiating.set(false);
+                  this.toast.success(`🎉 Payment Verified! Order #${receipt.receiptNumber} confirmed.`);
+                  this.onPaymentSuccess(receipt);
+                },
+                error: (err) => {
+                  this.isInitiating.set(false);
+                  const msg = err.error?.message || 'Payment verification failed.';
+                  this.toast.error(msg);
+                },
+              });
+          },
+          onDismiss: () => {
+            this.isInitiating.set(false);
+            this.toast.info('Payment window closed. Your cart remains saved.');
+          },
+          onError: (err) => {
+            this.isInitiating.set(false);
+            this.toast.error(err?.description || 'Razorpay payment could not be processed.');
+          },
+        });
+      },
+      error: (err) => {
+        this.isInitiating.set(false);
+        const msg = err.error?.message || 'Unable to initialize Razorpay checkout. Please try again.';
+        this.toast.error(msg);
+      },
+    });
   }
 
   onPaymentSuccess(receipt: PaymentReceipt): void {
-    this.activeSession.set(null);
     this.confirmedReceipt.set(receipt);
     this.placed.set(true);
 
-    // Sync into local Admin signals for real-time reactivity
     const adminOrder: AdminOrder = {
       id: receipt.orderId,
       status: 'confirmed',
       subtotal: receipt.totalAmount >= 999 ? receipt.totalAmount : receipt.totalAmount - 99,
       total_amount: receipt.totalAmount,
       currency: 'INR',
-      payment_method: receipt.paymentDetails?.method || 'UPI',
-      payment_status: 'captured',
+      payment_method: receipt.paymentDetails?.method || 'Razorpay',
+      payment_status: receipt.paymentStatus,
       shipping_address: {
         fullName: receipt.shippingAddress.fullName,
         phone: receipt.shippingAddress.phone,
@@ -122,17 +170,14 @@ export class CheckoutPage {
         image_url: i.image_url,
       })),
       tracking_number: `TRK-UB-${receipt.orderId.slice(0, 6).toUpperCase()}`,
+      notes: `Order placed via ${receipt.paymentDetails?.method || 'Razorpay'} with Neon DB stock reservation.`,
     };
     this.admin.addOrder(adminOrder);
 
     this.cart.clear();
   }
 
-  onPaymentCancelled(): void {
-    this.activeSession.set(null);
-  }
-
   shop(): void {
-    void this.router.navigate(['/']);
+    void this.router.navigate(['/shop']);
   }
 }

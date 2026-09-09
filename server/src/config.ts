@@ -43,4 +43,9 @@ export const config = {
     defaultTtlSec: parseInt(process.env.CACHE_TTL_DEFAULT_SEC || '300', 10),
     hotTtlSec: parseInt(process.env.CACHE_TTL_HOT_SEC || '60', 10),
   },
+
+  razorpay: {
+    keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_1DP5mmOlF5G5ag',
+    keySecret: process.env.RAZORPAY_KEY_SECRET || 'rzp_secret_test_ub2026',
+  },
 };

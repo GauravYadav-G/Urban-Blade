@@ -33,8 +33,10 @@
             <code>{{ confirmedReceipt()!.paymentId }}</code>
           </div>
           <div class="meta-item">
-            <span class="label">Status</span>
-            <span class="status-pill confirmed">CAPTURED & CONFIRMED</span>
+            <span class="label">Gateway & Status</span>
+            <span class="status-pill confirmed">
+              {{ confirmedReceipt()!.paymentDetails?.method || 'Razorpay' }} ({{ confirmedReceipt()!.paymentStatus | uppercase }})
+            </span>
           </div>
           <div class="meta-item">
             <span class="label">Delivery Address</span>
@@ -47,12 +49,12 @@
           @for (item of confirmedReceipt()!.items; track item.id) {
             <div class="receipt-line">
               <span class="item-name">{{ item.product_name }} × {{ item.quantity }}</span>
-              <span class="item-price">₹{{ (item.unit_price * item.quantity) | inr }}</span>
+              <span class="item-price">{{ (item.unit_price * item.quantity) | inr }}</span>
             </div>
           }
           <div class="receipt-total-line">
             <span>Total Paid (incl. Taxes & Shipping)</span>
-            <strong>₹{{ confirmedReceipt()!.totalAmount | inr }}</strong>
+            <strong>{{ confirmedReceipt()!.totalAmount | inr }}</strong>
           </div>
         </div>
       </div>
@@ -102,35 +104,34 @@
 
         <h2>2. Preferred Payment Channel</h2>
         <div class="payment-options">
-          <label class="radio-card" [class.selected]="form.controls.payment.value === 'upi'">
-            <input type="radio" formControlName="payment" value="upi" />
+          <label class="radio-card" [class.selected]="form.controls.payment.value === 'razorpay'">
+            <input type="radio" formControlName="payment" value="razorpay" />
             <div class="radio-content">
-              <span class="icon">📱</span>
+              <div class="channel-header">
+                <span class="channel-badge">⚡ Official Gateway</span>
+                <span class="rzp-brand">Razorpay</span>
+              </div>
               <div>
-                <strong>Instant UPI / QR Code</strong>
-                <p>GPay, PhonePe, Paytm, BHIM</p>
+                <strong>Razorpay Secure Gateway</strong>
+                <p>Instant UPI (GPay, PhonePe, Paytm, QR), Cards (Visa, MasterCard, RuPay), NetBanking & Wallets</p>
+                <div class="gateway-trust-icons">
+                  <span class="trust-tag">🔒 256-Bit Encryption</span>
+                  <span class="trust-tag">🛡️ PCI-DSS Certified</span>
+                  <span class="trust-tag">⚡ Instant Confirmation</span>
+                </div>
               </div>
             </div>
           </label>
 
-          <label class="radio-card" [class.selected]="form.controls.payment.value === 'card'">
-            <input type="radio" formControlName="payment" value="card" />
+          <label class="radio-card" [class.selected]="form.controls.payment.value === 'cod'">
+            <input type="radio" formControlName="payment" value="cod" />
             <div class="radio-content">
-              <span class="icon">💳</span>
-              <div>
-                <strong>Credit / Debit Card (3DS)</strong>
-                <p>Visa, MasterCard, RuPay</p>
+              <div class="channel-header">
+                <span class="channel-badge cod-badge">💵 Doorstep Payment</span>
               </div>
-            </div>
-          </label>
-
-          <label class="radio-card" [class.selected]="form.controls.payment.value === 'cash_on_delivery'">
-            <input type="radio" formControlName="payment" value="cash_on_delivery" />
-            <div class="radio-content">
-              <span class="icon">💵</span>
               <div>
                 <strong>Cash on Delivery (COD)</strong>
-                <p>Pay upon delivery at your door</p>
+                <p>Pay with cash or UPI at your doorstep upon order arrival</p>
               </div>
             </div>
           </label>
@@ -140,8 +141,10 @@
           @if (isInitiating()) {
             <span class="btn-spinner"></span>
             <span>Reserving Stock in Neon DB...</span>
+          } @else if (form.controls.payment.value === 'cod') {
+            <span>📦 Place Cash on Delivery Order ({{ estimatedTotal() | inr }})</span>
           } @else {
-            <span>Lock Stock & Proceed to Payment ({{ cart.subtotal() | inr }})</span>
+            <span>⚡ Proceed to Pay with Razorpay ({{ estimatedTotal() | inr }})</span>
           }
         </button>
       </form>
@@ -171,7 +174,7 @@
           </div>
           <div class="calc-row total">
             <span>Estimated Total</span>
-            <strong>{{ (cart.subtotal() >= 999 ? cart.subtotal() : cart.subtotal() + 99) | inr }}</strong>
+            <strong>{{ estimatedTotal() | inr }}</strong>
           </div>
         </div>
 
@@ -180,14 +183,5 @@
         </div>
       </aside>
     </div>
-  }
-
-  <!-- ─── 3. SECURE PAYMENT MODAL ─── -->
-  @if (activeSession()) {
-    <app-payment-modal
-      [session]="activeSession()!"
-      (paymentSuccess)="onPaymentSuccess($event)"
-      (paymentCancelled)="onPaymentCancelled()"
-    ></app-payment-modal>
   }
 </div>
