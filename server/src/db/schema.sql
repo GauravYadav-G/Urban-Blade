@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS orders (
   shipping_address JSONB NOT NULL,
   payment_method VARCHAR(50) DEFAULT 'cash_on_delivery',
   payment_status VARCHAR(30) DEFAULT 'pending' CHECK (payment_status IN ('pending', 'captured', 'refunded', 'failed')),
+  transaction_id VARCHAR(255),
   version INTEGER DEFAULT 0 NOT NULL,
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP

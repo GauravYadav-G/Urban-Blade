@@ -378,6 +378,30 @@
   color: #f8fafc;
 }
 
+.payment-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.tx-id-badge {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.675rem;
+  font-weight: 600;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  padding: 0.15rem 0.45rem;
+  border-radius: 5px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
 .pay-badge {
   font-size: 0.725rem;
   font-weight: 700;
@@ -792,6 +816,29 @@
       &.bold { font-weight: 700; }
       &.upper { text-transform: uppercase; }
       &.green { color: #34d399; font-weight: 600; text-transform: uppercase; }
+      &.mono-code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.775rem;
+        color: #10b981;
+        background: rgba(16, 185, 129, 0.1);
+        padding: 0.2rem 0.5rem;
+        border-radius: 6px;
+        border: 1px solid rgba(16, 185, 129, 0.25);
+        user-select: all;
+      }
+    }
+
+    &.highlight-tx-row {
+      background: rgba(16, 185, 129, 0.05);
+      border: 1px solid rgba(16, 185, 129, 0.15);
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      align-items: center;
+
+      .label {
+        color: #34d399;
+        font-weight: 600;
+      }
     }
 
     &.total {
@@ -956,19 +1003,43 @@
     padding-bottom: 1.5rem;
     margin-bottom: 1.75rem;
 
-    .salon-name {
-      font-size: 1.3rem;
-      font-weight: 800;
-      color: #0f172a;
-      letter-spacing: -0.02em;
-      margin: 0 0 0.35rem;
-    }
+    .seller-info {
+      .inv-logo {
+        width: 44px !important;
+        height: 44px !important;
+        max-width: 44px !important;
+        max-height: 44px !important;
+        border-radius: 6px;
+        border: 1px solid #d4af37;
+        object-fit: cover;
+        margin-bottom: 8px;
+        display: block;
+      }
 
-    .salon-addr {
-      font-size: 0.8rem;
-      color: #64748b;
-      margin: 0;
-      line-height: 1.4;
+      .salon-name {
+        font-size: 1.3rem;
+        font-weight: 800;
+        color: #0f172a;
+        letter-spacing: -0.02em;
+        margin: 0 0 0.15rem;
+      }
+
+      .salon-tagline {
+        display: block;
+        font-size: 0.725rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #b45309;
+        margin-bottom: 0.5rem;
+      }
+
+      .salon-addr {
+        font-size: 0.8rem;
+        color: #64748b;
+        margin: 0;
+        line-height: 1.4;
+      }
     }
 
     .inv-meta {
@@ -990,6 +1061,100 @@
         font-size: 0.8rem;
         color: #334155;
         margin-bottom: 0.2rem;
+      }
+    }
+  }
+
+  /* Electronic Bank & Gateway Audit Card */
+  .bank-transaction-audit-card {
+    background: #f8fafc;
+    border: 1.5px solid #cbd5e1;
+    border-left: 5px solid #10b981;
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.75rem;
+
+    .audit-header {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px dashed #cbd5e1;
+
+      .audit-icon-wrap {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background: rgba(16, 185, 129, 0.15);
+        color: #059669;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+
+      .audit-header-text {
+        h4 {
+          font-size: 0.925rem;
+          font-weight: 800;
+          color: #0f172a;
+          margin: 0;
+          letter-spacing: -0.01em;
+        }
+
+        p {
+          font-size: 0.75rem;
+          color: #64748b;
+          margin: 0;
+        }
+      }
+    }
+
+    .audit-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+
+      .audit-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+
+        .audit-label {
+          font-size: 0.72rem;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #64748b;
+          font-weight: 700;
+        }
+
+        .audit-val {
+          font-size: 0.875rem;
+          color: #0f172a;
+          font-weight: 600;
+
+          &.mono-val {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.825rem;
+            color: #047857;
+            background: rgba(16, 185, 129, 0.08);
+            padding: 3px 6px;
+            border-radius: 4px;
+            width: fit-content;
+            word-break: break-all;
+          }
+
+          &.channel-val {
+            color: #b45309;
+            font-weight: 700;
+          }
+
+          &.db-uuid {
+            color: #334155;
+            background: #e2e8f0;
+          }
+        }
       }
     }
   }
@@ -1098,32 +1263,115 @@
   .inv-footer {
     border-top: 1px solid #e2e8f0;
     padding-top: 1.25rem;
-    text-align: center;
-    font-size: 0.75rem;
-    color: #94a3b8;
+    margin-top: 0.5rem;
 
-    p {
-      margin: 0.2rem 0;
+    .inv-audit-details {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.85rem;
+      padding: 0.85rem 0;
+      margin-bottom: 1rem;
+      border-top: 1px dashed #cbd5e1;
+      border-bottom: 1px dashed #cbd5e1;
+      text-align: left;
+
+      @media (max-width: 700px) {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+      }
+
+      .audit-col {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+
+        .audit-label {
+          font-size: 0.68rem;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: #64748b;
+          font-weight: 700;
+        }
+
+        .audit-val {
+          font-size: 0.76rem;
+          color: #0f172a;
+          font-weight: 600;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          word-break: break-all;
+          line-height: 1.35;
+        }
+      }
+    }
+
+    .footer-notes {
+      text-align: center;
+      font-size: 0.75rem;
+      color: #94a3b8;
+
+      p {
+        margin: 0.2rem 0;
+      }
     }
   }
 }
 
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 15mm;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
   body * {
     visibility: hidden;
   }
+
   #printable-area, #printable-area * {
     visibility: visible;
   }
+
   #printable-area {
     position: absolute;
     left: 0;
     top: 0;
-    width: 100%;
-    padding: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
   }
 
-  .invoice-actions-bar {
+  .invoice-container {
+    box-shadow: none !important;
+    max-width: 100% !important;
+    border-radius: 0 !important;
+    border: none !important;
+    background: #ffffff !important;
+  }
+
+  .invoice-actions-bar,
+  header,
+  footer,
+  nav,
+  .sidebar {
     display: none !important;
   }
 }

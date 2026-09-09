@@ -19,7 +19,6 @@
         <span class="order-id">Order Ref: {{ session.orderId.slice(0, 8).toUpperCase() }}</span>
       </div>
       <div class="amount-right">
-        <span class="currency">₹</span>
         <span class="value">{{ session.totalAmount | inr }}</span>
       </div>
     </div>
@@ -119,16 +118,17 @@
                 @if (isVerifying()) {
                   <span class="spinner"></span>
                 } @else {
-                  <span>Verify & Pay ₹{{ session.totalAmount | inr }}</span>
+                  <span>Verify & Pay {{ session.totalAmount | inr }}</span>
                 }
               </button>
             </div>
           </div>
 
           <div class="upi-chips">
-            <button type="button" class="chip" (click)="upiVpa.set('gaurav@okaxis')">@okaxis</button>
-            <button type="button" class="chip" (click)="upiVpa.set('demo@okhdfcbank')">@okhdfcbank</button>
-            <button type="button" class="chip" (click)="upiVpa.set('customer@paytm')">@paytm</button>
+            <button type="button" class="chip" (click)="upiVpa.set('gaurav@okaxis')">GPay (@okaxis)</button>
+            <button type="button" class="chip" (click)="upiVpa.set('gaurav@ybl')">PhonePe (@ybl)</button>
+            <button type="button" class="chip" (click)="upiVpa.set('customer@paytm')">Paytm (@paytm)</button>
+            <button type="button" class="chip" (click)="upiVpa.set('demo@upi')">BHIM (@upi)</button>
           </div>
         </div>
       }

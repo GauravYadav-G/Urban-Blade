@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminService, type AdminOrder } from '@core/services/admin.service';
@@ -10,13 +10,21 @@ import { AdminService, type AdminOrder } from '@core/services/admin.service';
   templateUrl: './admin-orders.html',
   styleUrl: './admin-orders.scss',
 })
-export class AdminOrders {
+export class AdminOrders implements OnInit {
   readonly admin = inject(AdminService);
 
   readonly selectedTab = signal<string>('all');
   readonly searchQuery = signal<string>('');
   readonly selectedOrder = signal<AdminOrder | null>(null);
   readonly selectedInvoiceOrder = signal<AdminOrder | null>(null);
+
+  ngOnInit(): void {
+    this.admin.refreshOrders();
+  }
+
+  refreshFromDb(): void {
+    this.admin.refreshOrders();
+  }
 
   // Manual POS Order Modal State
   readonly isCreateModalOpen = signal(false);
@@ -106,7 +114,7 @@ export class AdminOrders {
       ],
     };
 
-    this.admin.addOrder(order);
+    this.admin.addOrder(order, true);
     this.isCreateModalOpen.set(false);
   }
 
@@ -141,7 +149,15 @@ export class AdminOrders {
   }
 
   printInvoice(): void {
+    const inv = this.selectedInvoiceOrder();
+    const originalTitle = document.title;
+    if (inv?.id) {
+      document.title = `Tax_Invoice_UB_${inv.id.slice(0, 8).toUpperCase()}`;
+    }
     window.print();
+    setTimeout(() => {
+      document.title = originalTitle;
+    }, 1000);
   }
 
   advanceStatus(order: AdminOrder): void {

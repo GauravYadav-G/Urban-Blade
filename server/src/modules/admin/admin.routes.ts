@@ -332,6 +332,7 @@ export async function adminRoutes(app: FastifyInstance) {
           o.currency,
           o.payment_method, 
           o.payment_status, 
+          o.transaction_id,
           o.shipping_address, 
           o.created_at,
           COALESCE(
@@ -370,6 +371,7 @@ export async function adminRoutes(app: FastifyInstance) {
       currency?: string;
       payment_method?: string;
       payment_status?: string;
+      transaction_id?: string;
       shipping_address: any;
       items?: Array<{
         product_name: string;
@@ -386,11 +388,12 @@ export async function adminRoutes(app: FastifyInstance) {
 
       const insertRes = await query(
         `
-        INSERT INTO orders (id, status, subtotal, total_amount, currency, payment_method, payment_status, shipping_address)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO orders (id, status, subtotal, total_amount, currency, payment_method, payment_status, transaction_id, shipping_address)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (id) DO UPDATE SET
           status = EXCLUDED.status,
           payment_status = EXCLUDED.payment_status,
+          transaction_id = COALESCE(EXCLUDED.transaction_id, orders.transaction_id),
           updated_at = CURRENT_TIMESTAMP
         RETURNING *;
         `,
@@ -402,18 +405,22 @@ export async function adminRoutes(app: FastifyInstance) {
           b.currency || 'INR',
           b.payment_method || 'UPI',
           b.payment_status || 'captured',
+          b.transaction_id || `pos_tx_${Date.now()}`,
           JSON.stringify(b.shipping_address || {}),
         ]
       );
 
       if (b.items && b.items.length > 0) {
-        for (const it of b.items) {
-          await query(
-            `INSERT INTO order_items (order_id, product_name, unit_price, quantity, image_url)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT DO NOTHING`,
-            [orderId, it.product_name, it.unit_price, it.quantity, it.image_url || '']
-          );
+        // Prevent duplicate item ingestion if order items already exist
+        const existingItems = await query('SELECT count(*)::int as count FROM order_items WHERE order_id = $1', [orderId]);
+        if ((existingItems.rows[0]?.count || 0) === 0) {
+          for (const it of b.items) {
+            await query(
+              `INSERT INTO order_items (order_id, product_name, unit_price, quantity, image_url)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [orderId, it.product_name, it.unit_price, it.quantity, it.image_url || '']
+            );
+          }
         }
       }
 

@@ -1,73 +1,166 @@
 <div class="checkout-container">
-  <h1>Checkout</h1>
+  @if (!placed()) {
+    <h1>Checkout</h1>
 
-  @if (settings().operations.emergencyNotice) {
-    <div class="checkout-notice-banner">
-      <strong>Store Notice:</strong> {{ settings().operations.emergencyNotice }}
-    </div>
+    @if (settings().operations.emergencyNotice) {
+      <div class="checkout-notice-banner">
+        <strong>Store Notice:</strong> {{ settings().operations.emergencyNotice }}
+      </div>
+    }
   }
 
-  <!-- ─── 1. ORDER CONFIRMATION SCREEN (POST-PAYMENT CAPTURED) ─── -->
-  @if (placed() && confirmedReceipt()) {
-    <section class="card order-confirmed-card">
-      <div class="confirmed-header">
-        <div class="success-icon-ring">✓</div>
-        <h2>Payment Verified & Order Confirmed!</h2>
-        <p class="subtitle">Thank you for choosing Urban Blade. Your order is secured and recorded in the database.</p>
-      </div>
+  <!-- ─── 1. OFFICIAL TAX INVOICE SCREEN (POST-PAYMENT CAPTURED) ─── -->
+  @if (placed() && (confirmedOrder() || confirmedReceipt())) {
+    @let inv = confirmedOrder() || {
+      id: confirmedReceipt()!.orderId,
+      created_at: confirmedReceipt()!.confirmedAt,
+      payment_method: confirmedReceipt()!.paymentDetails?.method || (confirmedReceipt()!.paymentId.startsWith('pay_cod') ? 'Cash on Delivery' : 'Razorpay'),
+      payment_status: confirmedReceipt()!.paymentStatus,
+      transaction_id: confirmedReceipt()!.paymentId || confirmedReceipt()!.transactionId,
+      gateway_order_id: confirmedReceipt()!.paymentDetails?.razorpayOrderId,
+      shipping_address: {
+        fullName: confirmedReceipt()!.shippingAddress.fullName,
+        street: confirmedReceipt()!.shippingAddress.street,
+        city: confirmedReceipt()!.shippingAddress.city || 'Ghaziabad',
+        phone: confirmedReceipt()!.shippingAddress.phone
+      },
+      items: confirmedReceipt()!.items,
+      subtotal: (confirmedReceipt()!.totalAmount >= 999 ? confirmedReceipt()!.totalAmount : confirmedReceipt()!.totalAmount - 99),
+      total_amount: confirmedReceipt()!.totalAmount
+    };
 
-      <div class="neon-db-badge">
-        <span class="pulse-dot"></span>
-        <span>ACID Verified in Neon PostgreSQL Database</span>
-        <span class="db-id">UUID: {{ confirmedReceipt()!.orderId }}</span>
-      </div>
-
-      <div class="receipt-grid">
-        <div class="receipt-meta-box">
-          <div class="meta-item">
-            <span class="label">Tax Receipt #</span>
-            <strong>{{ confirmedReceipt()!.receiptNumber }}</strong>
-          </div>
-          <div class="meta-item">
-            <span class="label">Payment ID</span>
-            <code>{{ confirmedReceipt()!.paymentId }}</code>
-          </div>
-          <div class="meta-item">
-            <span class="label">Gateway & Status</span>
-            <span class="status-pill confirmed">
-              {{ confirmedReceipt()!.paymentDetails?.method || 'Razorpay' }} ({{ confirmedReceipt()!.paymentStatus | uppercase }})
-            </span>
-          </div>
-          <div class="meta-item">
-            <span class="label">Delivery Address</span>
-            <span>{{ confirmedReceipt()!.shippingAddress.street }}, Ghaziabad</span>
+    <div class="invoice-page-wrapper">
+      <!-- Invoice Container (Identical to Admin Panel) -->
+      <div class="invoice-container">
+        <!-- Invoice Action Bar -->
+        <div class="invoice-actions-bar">
+          <div class="inv-title">Official Tax Invoice</div>
+          <div class="inv-btns">
+            <button type="button" class="inv-print-btn" (click)="printInvoice()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+              </svg>
+              <span>Print / Download PDF</span>
+            </button>
+            <button type="button" class="inv-shop-btn" (click)="shop()">
+              <span>Continue Shopping</span>
+            </button>
           </div>
         </div>
 
-        <div class="receipt-items-box">
-          <h4>Purchased Items</h4>
-          @for (item of confirmedReceipt()!.items; track item.id) {
-            <div class="receipt-line">
-              <span class="item-name">{{ item.product_name }} × {{ item.quantity }}</span>
-              <span class="item-price">{{ (item.unit_price * item.quantity) | inr }}</span>
+        <!-- Printable Document Area (Identical to Admin Panel) -->
+        <div class="printable-invoice" id="printable-area">
+          <div class="inv-header">
+            <div class="seller-info">
+              <img
+                src="/images/placeholder.svg"
+                alt="Urban Blade"
+                class="inv-logo"
+                width="44"
+                height="44"
+                style="width: 44px; height: 44px; max-width: 44px; max-height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid #d4af37; margin-bottom: 8px; display: block;"
+              />
+              <h2 class="salon-name">URBAN BLADE LUXURY SALON & SPA</h2>
+              <span class="salon-tagline">Authorized Unisex Salon & Premium Grooming Lounge</span>
+              <p class="salon-addr">
+                Tower B, Sector 62, Noida, Uttar Pradesh 201309<br/>
+                <strong>GSTIN:</strong> 07AAAAU1234F1Z5 • <strong>State Code:</strong> 07 (Uttar Pradesh)<br/>
+                <strong>Corporate Desk:</strong> orders&#64;urbanblade.in • <strong>Support:</strong> +91 90156 18265
+              </p>
             </div>
-          }
-          <div class="receipt-total-line">
-            <span>Total Paid (incl. Taxes & Shipping)</span>
-            <strong>{{ confirmedReceipt()!.totalAmount | inr }}</strong>
+            <div class="inv-meta">
+              <span class="inv-badge">OFFICIAL GST TAX INVOICE</span>
+              <div class="inv-meta-row"><strong>Invoice No:</strong> UB-{{ inv.id.slice(0, 8).toUpperCase() }}</div>
+              <div class="inv-meta-row"><strong>Date of Issue:</strong> {{ inv.created_at | date:'mediumDate' }}</div>
+              <div class="inv-meta-row"><strong>Payment:</strong> {{ inv.payment_method | uppercase }} ({{ inv.payment_status | uppercase }})</div>
+              @if (inv.transaction_id) {
+                <div class="inv-meta-row"><strong>Tx ID:</strong> {{ inv.transaction_id }}</div>
+              }
+            </div>
+          </div>
+
+          <div class="inv-buyer">
+            <h4>Billed & Shipped To:</h4>
+            <div class="buyer-name">{{ inv.shipping_address.fullName }}</div>
+            <div class="buyer-detail">{{ inv.shipping_address.street || 'Standard Delivery Address' }}</div>
+            <div class="buyer-detail">{{ inv.shipping_address.city }} • Phone: {{ inv.shipping_address.phone }}</div>
+            <div class="buyer-detail">Place of Supply: {{ inv.shipping_address.city }}, India</div>
+          </div>
+
+          <table class="inv-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Item Description</th>
+                <th>HSN / SAC</th>
+                <th>Qty</th>
+                <th>Rate (₹)</th>
+                <th>Taxable Val (₹)</th>
+                <th>GST (18%)</th>
+                <th>Total (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (item of inv.items; track item.product_name; let i = $index) {
+                <tr>
+                  <td>{{ i + 1 }}</td>
+                  <td><strong>{{ item.product_name }}</strong></td>
+                  <td>33059011</td>
+                  <td>{{ item.quantity }}</td>
+                  <td>₹{{ (item.unit_price / 1.18) | number:'1.2-2' }}</td>
+                  <td>₹{{ ((item.unit_price * item.quantity) / 1.18) | number:'1.2-2' }}</td>
+                  <td>₹{{ ((item.unit_price * item.quantity) - ((item.unit_price * item.quantity) / 1.18)) | number:'1.2-2' }}</td>
+                  <td>₹{{ item.unit_price * item.quantity | number:'1.0-0' }}</td>
+                </tr>
+              }
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="7" class="tfoot-label">Subtotal:</td>
+                <td class="tfoot-val">₹{{ inv.subtotal | number:'1.0-0' }}</td>
+              </tr>
+              <tr>
+                <td colspan="7" class="tfoot-label">Shipping & Handling:</td>
+                <td class="tfoot-val">{{ inv.total_amount >= 999 ? 'FREE' : '₹99' }}</td>
+              </tr>
+              <tr class="grand-total-row">
+                <td colspan="7" class="tfoot-label">Invoice Total (INR):</td>
+                <td class="tfoot-val grand-val">₹{{ inv.total_amount | number:'1.0-0' }}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div class="inv-footer">
+            <!-- Payment & Transaction Detail Audit (Clean IDs & Numbers, No Card) -->
+            <div class="inv-audit-details">
+              <div class="audit-col">
+                <span class="audit-label">Ref</span>
+                <span class="audit-val">{{ inv.transaction_id || ('pay_' + inv.id.slice(0, 14)) }}</span>
+              </div>
+              <div class="audit-col">
+                <span class="audit-label">Payment Channel</span>
+                <span class="audit-val">{{ inv.payment_method === 'cash_on_delivery' ? 'Cash on Delivery (Doorstep)' : 'Razorpay Secure Gateway (UPI / 3DS)' }}</span>
+              </div>
+              <div class="audit-col">
+                <span class="audit-label">Gateway Order Reference</span>
+                <span class="audit-val">{{ inv.gateway_order_id || ('order_' + inv.id.slice(0, 14)) }}</span>
+              </div>
+              <div class="audit-col">
+                <span class="audit-label">System Transaction UUID</span>
+                <span class="audit-val">{{ inv.id }}</span>
+              </div>
+            </div>
+
+            <div class="footer-notes">
+              <p>This is a computer-generated tax invoice and requires no physical signature under IT Act 2000.</p>
+              <p>Thank you for choosing Urban Blade Luxury Salon & Spa.</p>
+            </div>
           </div>
         </div>
       </div>
-
-      <div class="confirmed-actions">
-        <button type="button" class="print-btn" onclick="window.print()">
-          🖨️ Print Tax Invoice
-        </button>
-        <button type="button" class="primary-btn" (click)="shop()">
-          Continue Shopping
-        </button>
-      </div>
-    </section>
+    </div>
   } @else if (cart.lines().length === 0) {
     <section class="card empty-card">
       <p>Your shopping cart is empty.</p>

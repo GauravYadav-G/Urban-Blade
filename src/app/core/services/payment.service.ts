@@ -50,6 +50,7 @@ export interface PaymentReceipt {
   success: boolean;
   orderId: string;
   paymentId: string;
+  transactionId?: string;
   receiptNumber: string;
   status: 'confirmed';
   paymentStatus: 'captured' | 'pending';
@@ -261,52 +262,7 @@ export class PaymentService {
       theme: {
         color: '#d4af37', // Luxury gold
       },
-      method: {
-        upi: true,
-        card: true,
-        netbanking: true,
-        wallet: true,
-        paylater: true,
-      },
-      config: {
-        display: {
-          blocks: {
-            upi_block: {
-              name: 'Pay via UPI (GPay, PhonePe, Paytm, QR)',
-              instruments: [
-                {
-                  method: 'upi',
-                  flows: ['qr', 'intent', 'collect'],
-                  apps: ['google_pay', 'phonepe', 'paytm', 'bhim'],
-                },
-              ],
-            },
-            cards_block: {
-              name: 'Credit & Debit Cards',
-              instruments: [
-                {
-                  method: 'card',
-                },
-              ],
-            },
-            banks_block: {
-              name: 'NetBanking & Wallets',
-              instruments: [
-                {
-                  method: 'netbanking',
-                },
-                {
-                  method: 'wallet',
-                },
-              ],
-            },
-          },
-          sequence: ['block.upi_block', 'block.cards_block', 'block.banks_block'],
-          preferences: {
-            show_default_blocks: true,
-          },
-        },
-      },
+
       modal: {
         backdropclose: true,
         escape: true,
@@ -404,17 +360,78 @@ export class PaymentService {
     };
   }
 
-  cancelPayment(orderId: string, reason?: string): Observable<any> {
-    return of({ ok: true });
+  /**
+   * Phase 1: Real-time Two-Phase Checkout Session with Atomic Neon DB Inventory Lock
+   */
+  createCheckoutSession(payload: {
+    items: CheckoutItemRequest[];
+    shippingAddress: ShippingAddress;
+    paymentMethod?: 'upi' | 'card' | 'cash_on_delivery';
+    userId?: string;
+  }): Observable<CheckoutSessionResponse> {
+    this.isProcessing.set(true);
+
+    return this.http
+      .post<CheckoutSessionResponse>(`${API_BASE}/orders/checkout-session`, payload)
+      .pipe(
+        tap(() => this.isProcessing.set(false)),
+        catchError((err) => {
+          this.isProcessing.set(false);
+          console.warn('Backend checkout session fallback:', err.message);
+          const fallback = this.createFallbackCheckoutSession(payload);
+          return of(fallback);
+        })
+      );
   }
 
-  verifyPayment(payload: any): Observable<PaymentReceipt> {
-    const fallback = this.createFallbackReceipt({
-      orderId: payload.orderId,
-      razorpayOrderId: `order_${payload.orderId?.slice(0, 8)}`,
-      razorpayPaymentId: payload.paymentId || `pay_${Date.now()}`,
-      razorpaySignature: payload.signatureToken || 'sig_ok',
-    });
-    return of(fallback);
+  private createFallbackCheckoutSession(payload: {
+    items: CheckoutItemRequest[];
+    shippingAddress: ShippingAddress;
+    paymentMethod?: string;
+  }): CheckoutSessionResponse {
+    const base = this.createFallbackRazorpayOrder(payload);
+    return {
+      ...base,
+      signatureToken: `sig_fallback_${Date.now()}`,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+      paymentMethod: payload.paymentMethod || 'upi',
+    };
+  }
+
+  cancelPayment(orderId: string, reason?: string): Observable<any> {
+    return this.http
+      .post(`${API_BASE}/orders/cancel-payment`, { orderId, reason })
+      .pipe(catchError(() => of({ ok: true })));
+  }
+
+  verifyPayment(payload: {
+    orderId: string;
+    paymentId: string;
+    signatureToken?: string;
+    expiresAt?: number;
+    paymentDetails?: any;
+  }): Observable<PaymentReceipt> {
+    this.isProcessing.set(true);
+
+    return this.http
+      .post<PaymentReceipt>(`${API_BASE}/orders/verify-payment`, payload)
+      .pipe(
+        tap((receipt) => {
+          this.lastReceipt.set(receipt);
+          this.isProcessing.set(false);
+        }),
+        catchError((err) => {
+          this.isProcessing.set(false);
+          console.warn('Backend payment verification fallback:', err.message);
+          const fallback = this.createFallbackReceipt({
+            orderId: payload.orderId,
+            razorpayOrderId: `order_${payload.orderId.slice(0, 8)}`,
+            razorpayPaymentId: payload.paymentId,
+            razorpaySignature: payload.signatureToken || 'sig_ok',
+          });
+          this.lastReceipt.set(fallback);
+          return of(fallback);
+        })
+      );
   }
 }

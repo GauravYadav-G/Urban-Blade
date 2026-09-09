@@ -59,6 +59,8 @@ export interface AdminOrder {
   currency: string;
   payment_method: string;
   payment_status: string;
+  transaction_id?: string;
+  gateway_order_id?: string;
   shipping_address: {
     fullName: string;
     city: string;
@@ -127,7 +129,10 @@ const STORAGE_KEY_BOOKINGS = 'urban-blade-admin-bookings';
 const STORAGE_KEY_CUSTOMERS = 'urban-blade-admin-customers';
 const STORAGE_KEY_PRODUCTS = 'urban-blade-admin-products';
 
-const API_BASE = 'http://localhost:4000/api/admin';
+const API_BASE =
+  typeof window !== 'undefined' && window.location.port === '4200'
+    ? 'http://localhost:4000/api/admin'
+    : '/api/admin';
 
 @Injectable({ providedIn: 'root' })
 export class AdminService {
@@ -171,11 +176,13 @@ export class AdminService {
   // ─── REAL-TIME STOREFRONT TO ADMIN INTEGRATION ────────────────────────────
 
   /**
-   * Called by CheckoutPage when customer completes an order.
-   * Immediately registers in Admin, updates revenue, and pops alert.
+   * Called by CheckoutPage or Admin POS when an order is registered.
    */
-  addOrder(order: AdminOrder): void {
-    this.orders.update((list) => [order, ...list]);
+  addOrder(order: AdminOrder, syncToBackend = false): void {
+    this.orders.update((list) => {
+      const exists = list.some((o) => o.id === order.id);
+      return exists ? list.map((o) => (o.id === order.id ? order : o)) : [order, ...list];
+    });
     this.saveOrders(this.orders());
 
     // Update or create customer record
@@ -192,11 +199,13 @@ export class AdminService {
     this.recomputeAndPersistMetrics();
 
     this.toast.success(
-      `🛍️ New Order #${order.id.slice(0, 8).toUpperCase()} from ${order.shipping_address.fullName} (₹${order.total_amount}) received!`
+      `🛍️ Order #${order.id.slice(0, 8).toUpperCase()} from ${order.shipping_address.fullName} (₹${order.total_amount}) recorded!`
     );
 
-    // Sync to backend if available
-    this.http.post(`${API_BASE}/orders`, order).subscribe({ error: () => {} });
+    // Only post to backend if this is a manual counter POS order (storefront orders are already persisted in Neon DB)
+    if (syncToBackend) {
+      this.http.post(`${API_BASE}/orders`, order).subscribe({ error: () => {} });
+    }
   }
 
   /**
@@ -613,14 +622,78 @@ export class AdminService {
     this.saveCustomers(this.customers());
   }
 
+  refreshOrders(): void {
+    this.isSyncing.set(true);
+    this.http.get<{ data: any[] }>(`${API_BASE}/orders`).subscribe({
+      next: (res) => {
+        this.isSyncing.set(false);
+        if (res?.data && res.data.length > 0) {
+          const mapped: AdminOrder[] = res.data.map((o) => ({
+            id: o.id,
+            status: (o.status || 'accepted') as AdminOrder['status'],
+            subtotal: Number(o.subtotal) || Number(o.total_amount) || 0,
+            total_amount: Number(o.total_amount) || 0,
+            currency: o.currency || 'INR',
+            payment_method: o.payment_method || 'Razorpay',
+            payment_status: o.payment_status || 'pending',
+            transaction_id: o.transaction_id || o.payment_id || '',
+            shipping_address:
+              typeof o.shipping_address === 'string'
+                ? JSON.parse(o.shipping_address)
+                : o.shipping_address || { fullName: 'Walk-in Customer', city: 'Ghaziabad', phone: '' },
+            created_at: o.created_at || new Date().toISOString(),
+            items: (o.items || []).map((i: any) => ({
+              product_name: i.product_name || 'Salon Care Item',
+              unit_price: Number(i.unit_price) || 0,
+              quantity: Number(i.quantity) || 1,
+              image_url: i.image_url || '/images/products/hc-hair-serum.jpg',
+            })),
+            tracking_number: `TRK-UB-${o.id.slice(0, 6).toUpperCase()}`,
+          }));
+          this.orders.set(mapped);
+          this.saveOrders(mapped);
+          this.recomputeAndPersistMetrics();
+        }
+      },
+      error: (err) => {
+        this.isSyncing.set(false);
+        console.warn('Failed to sync orders from Neon DB:', err);
+      },
+    });
+  }
+
   private syncWithBackend(): void {
+    this.refreshOrders();
+
     this.http.get<AdminMetrics>(`${API_BASE}/metrics`).subscribe({
       next: (m) => this.metrics.set(m),
       error: () => {},
     });
+
     this.http.get<{ data: DailyMetric[] }>(`${API_BASE}/metrics/daily`).subscribe({
       next: (res) => {
         if (res.data && res.data.length > 0) this.dailyMetrics.set(res.data);
+      },
+      error: () => {},
+    });
+
+    this.http.get<{ data: any[] }>(`${API_BASE}/bookings`).subscribe({
+      next: (res) => {
+        if (res.data && res.data.length > 0) {
+          this.bookings.set(res.data);
+          this.saveBookings(res.data);
+          this.recomputeAndPersistMetrics();
+        }
+      },
+      error: () => {},
+    });
+
+    this.http.get<{ data: any[] }>(`${API_BASE}/customers`).subscribe({
+      next: (res) => {
+        if (res.data && res.data.length > 0) {
+          this.customers.set(res.data);
+          this.saveCustomers(res.data);
+        }
       },
       error: () => {},
     });

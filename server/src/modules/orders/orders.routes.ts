@@ -218,9 +218,9 @@ export async function ordersRoutes(app: FastifyInstance) {
           `
           INSERT INTO orders (
             id, user_id, idempotency_key, status, subtotal, shipping_fee,
-            total_amount, currency, shipping_address, payment_method, payment_status, created_at, updated_at
+            total_amount, currency, shipping_address, payment_method, payment_status, transaction_id, created_at, updated_at
           ) VALUES (
-            $1, $2, $3, 'accepted', $4, $5, $6, 'INR', $7, $8, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            $1, $2, $3, 'accepted', $4, $5, $6, 'INR', $7, $8, 'pending', $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
           );
           `,
           [
@@ -232,6 +232,7 @@ export async function ordersRoutes(app: FastifyInstance) {
             totalAmount,
             JSON.stringify(shippingAddress),
             paymentMethod,
+            `tx_init_${orderId.slice(0, 8)}`,
           ]
         );
 
@@ -343,18 +344,19 @@ export async function ordersRoutes(app: FastifyInstance) {
         });
       }
 
-      // 4. Mark order as confirmed & payment captured in Neon DB
+      // 4. Mark order as confirmed & payment captured in Neon DB with transaction_id
       const updatedOrder = await query(
         `
         UPDATE orders
         SET status = 'confirmed',
             payment_status = 'captured',
+            transaction_id = $2,
             version = version + 1,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $1
         RETURNING *;
         `,
-        [orderId]
+        [orderId, paymentId]
       );
 
       const itemsRes = await query('SELECT * FROM order_items WHERE order_id = $1', [orderId]);
@@ -365,6 +367,7 @@ export async function ordersRoutes(app: FastifyInstance) {
         success: true,
         orderId,
         paymentId,
+        transactionId: paymentId,
         receiptNumber,
         status: 'confirmed',
         paymentStatus: 'captured',
@@ -504,9 +507,9 @@ export async function ordersRoutes(app: FastifyInstance) {
           `
           INSERT INTO orders (
             id, idempotency_key, status, subtotal, shipping_fee, 
-            total_amount, currency, shipping_address, payment_method, payment_status
+            total_amount, currency, shipping_address, payment_method, payment_status, transaction_id
           ) VALUES (
-            $1, $2, 'accepted', $3, $4, $5, 'INR', $6, $7, 'pending'
+            $1, $2, 'accepted', $3, $4, $5, 'INR', $6, $7, 'pending', $8
           );
           `,
           [
@@ -517,6 +520,7 @@ export async function ordersRoutes(app: FastifyInstance) {
             totalAmount,
             JSON.stringify(shippingAddress),
             paymentMethod,
+            `tx_saga_${orderId.slice(0, 8)}`,
           ]
         );
 
@@ -618,8 +622,8 @@ export async function ordersRoutes(app: FastifyInstance) {
         await client.query(
           `INSERT INTO orders (
             id, user_id, idempotency_key, status, subtotal, shipping_fee, total_amount, currency,
-            shipping_address, payment_method, payment_status
-          ) VALUES ($1, $2, $3, 'accepted', $4, $5, $6, 'INR', $7, 'Razorpay', 'pending')`,
+            shipping_address, payment_method, payment_status, transaction_id
+          ) VALUES ($1, $2, $3, 'accepted', $4, $5, $6, 'INR', $7, 'Razorpay', 'pending', $8)`,
           [
             orderId,
             userId || null,
@@ -628,6 +632,7 @@ export async function ordersRoutes(app: FastifyInstance) {
             shippingFee,
             totalAmount,
             JSON.stringify(shippingAddress),
+            razorpayOrderId,
           ]
         );
 
@@ -700,16 +705,17 @@ export async function ordersRoutes(app: FastifyInstance) {
         });
       }
 
-      // 2. Update order in Neon DB to confirmed & captured
+      // 2. Update order in Neon DB to confirmed & captured with transaction_id
       const updateRes = await query(
         `UPDATE orders
          SET status = 'confirmed',
              payment_status = 'captured',
              payment_method = 'Razorpay',
+             transaction_id = $3,
              updated_at = CURRENT_TIMESTAMP
          WHERE id::text = $1 OR idempotency_key = $2
          RETURNING *`,
-        [orderId, razorpayOrderId]
+        [orderId, razorpayOrderId, razorpayPaymentId]
       );
 
       if (updateRes.rows.length === 0) {
@@ -726,6 +732,7 @@ export async function ordersRoutes(app: FastifyInstance) {
         success: true,
         orderId: order.id,
         paymentId: razorpayPaymentId,
+        transactionId: razorpayPaymentId,
         receiptNumber: `RCPT-UB-${order.id.slice(0, 8).toUpperCase()}`,
         status: 'confirmed',
         paymentStatus: 'captured',
@@ -737,6 +744,7 @@ export async function ordersRoutes(app: FastifyInstance) {
         paymentDetails: {
           method: 'Razorpay',
           gateway: 'Razorpay Standard Checkout',
+          transactionId: razorpayPaymentId,
           razorpayPaymentId,
           razorpayOrderId,
         },
@@ -788,11 +796,12 @@ export async function ordersRoutes(app: FastifyInstance) {
           }
         }
 
+        const codTxId = `pay_cod_${orderId.slice(0, 8)}`;
         await client.query(
           `INSERT INTO orders (
             id, user_id, idempotency_key, status, subtotal, shipping_fee, total_amount, currency,
-            shipping_address, payment_method, payment_status
-          ) VALUES ($1, $2, $3, 'confirmed', $4, $5, $6, 'INR', $7, 'Cash on Delivery', 'pending')`,
+            shipping_address, payment_method, payment_status, transaction_id
+          ) VALUES ($1, $2, $3, 'confirmed', $4, $5, $6, 'INR', $7, 'Cash on Delivery', 'pending', $8)`,
           [
             orderId,
             userId || null,
@@ -801,6 +810,7 @@ export async function ordersRoutes(app: FastifyInstance) {
             shippingFee,
             totalAmount,
             JSON.stringify(shippingAddress),
+            codTxId,
           ]
         );
 
@@ -813,10 +823,12 @@ export async function ordersRoutes(app: FastifyInstance) {
         }
       });
 
+      const codTxId = `pay_cod_${orderId.slice(0, 8)}`;
       const receipt = {
         success: true,
         orderId,
-        paymentId: `pay_cod_${Date.now()}`,
+        paymentId: codTxId,
+        transactionId: codTxId,
         receiptNumber: `RCPT-UB-${orderId.slice(0, 8).toUpperCase()}`,
         status: 'confirmed',
         paymentStatus: 'pending',
@@ -833,6 +845,7 @@ export async function ordersRoutes(app: FastifyInstance) {
         })),
         paymentDetails: {
           method: 'Cash on Delivery',
+          transactionId: codTxId,
           instruction: 'Pay upon delivery at your doorstep.',
         },
       };

@@ -20,6 +20,10 @@
         <span class="stat-label">Active Pipeline</span>
         <span class="stat-val">{{ admin.metrics().orders.processing + admin.metrics().orders.accepted }} active</span>
       </div>
+      <button type="button" class="btn-export" [disabled]="admin.isSyncing()" (click)="refreshFromDb()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        <span>{{ admin.isSyncing() ? 'Syncing...' : 'Sync Neon DB' }}</span>
+      </button>
       <button type="button" class="btn-export" (click)="exportCSV()">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         <span>Export CSV</span>
@@ -146,9 +150,16 @@
                 <span class="amount-cell">₹{{ order.total_amount | number:'1.0-0' }}</span>
               </td>
               <td>
-                <span class="pay-badge" [class.upi]="order.payment_method === 'upi'" [class.cod]="order.payment_method === 'cash_on_delivery'">
-                  {{ order.payment_method === 'cash_on_delivery' ? 'COD' : 'UPI' }}
-                </span>
+                <div class="payment-cell">
+                  <span class="pay-badge" [class.upi]="order.payment_method === 'upi' || order.payment_method === 'Razorpay'" [class.cod]="order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery'">
+                    {{ (order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery') ? 'COD' : (order.payment_method || 'Razorpay') }}
+                  </span>
+                  @if (order.transaction_id) {
+                    <span class="tx-id-badge" [title]="'Transaction ID: ' + order.transaction_id">
+                      {{ order.transaction_id.startsWith('pay_') ? order.transaction_id.slice(0, 14) + '...' : order.transaction_id }}
+                    </span>
+                  }
+                </div>
               </td>
               <td>
                 <span class="status-pill {{ order.status }}">
@@ -307,6 +318,12 @@
                   <span class="label">Status:</span>
                   <span class="val green">{{ o.payment_status }}</span>
                 </div>
+                @if (o.transaction_id) {
+                  <div class="detail-row highlight-tx-row">
+                    <span class="label">Transaction ID:</span>
+                    <span class="val mono-code">{{ o.transaction_id }}</span>
+                  </div>
+                }
                 <div class="detail-row">
                   <span class="label">Subtotal:</span>
                   <span class="val">₹{{ o.subtotal | number:'1.0-0' }}</span>
@@ -372,17 +389,30 @@
         <div class="printable-invoice" id="printable-area">
           <div class="inv-header">
             <div class="seller-info">
+              <img
+                src="/images/placeholder.svg"
+                alt="Urban Blade"
+                class="inv-logo"
+                width="44"
+                height="44"
+                style="width: 44px; height: 44px; max-width: 44px; max-height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid #d4af37; margin-bottom: 8px; display: block;"
+              />
               <h2 class="salon-name">URBAN BLADE LUXURY SALON & SPA</h2>
+              <span class="salon-tagline">Authorized Unisex Salon & Premium Grooming Lounge</span>
               <p class="salon-addr">
                 Tower B, Sector 62, Noida, Uttar Pradesh 201309<br/>
-                GSTIN: 07AAAAU1234F1Z5 • Email: orders&#64;urbanblade.in
+                <strong>GSTIN:</strong> 07AAAAU1234F1Z5 • <strong>State Code:</strong> 07 (Uttar Pradesh)<br/>
+                <strong>Corporate Desk:</strong> orders&#64;urbanblade.in • <strong>Support:</strong> +91 90156 18265
               </p>
             </div>
             <div class="inv-meta">
-              <span class="inv-badge">TAX INVOICE</span>
+              <span class="inv-badge">OFFICIAL GST TAX INVOICE</span>
               <div class="inv-meta-row"><strong>Invoice No:</strong> UB-{{ inv.id.slice(0, 8).toUpperCase() }}</div>
-              <div class="inv-meta-row"><strong>Date:</strong> {{ inv.created_at | date:'mediumDate' }}</div>
+              <div class="inv-meta-row"><strong>Date of Issue:</strong> {{ inv.created_at | date:'mediumDate' }}</div>
               <div class="inv-meta-row"><strong>Payment:</strong> {{ inv.payment_method | uppercase }} ({{ inv.payment_status | uppercase }})</div>
+              @if (inv.transaction_id) {
+                <div class="inv-meta-row"><strong>Tx ID:</strong> {{ inv.transaction_id }}</div>
+              }
             </div>
           </div>
 
@@ -438,8 +468,30 @@
           </table>
 
           <div class="inv-footer">
-            <p>This is a computer-generated tax invoice and requires no physical signature under IT Act 2000.</p>
-            <p>Thank you for choosing Urban Blade Salon & Grooming.</p>
+            <!-- Payment & Transaction Detail Audit (Clean IDs & Numbers, No Card) -->
+            <div class="inv-audit-details">
+              <div class="audit-col">
+                <span class="audit-label">Ref</span>
+                <span class="audit-val">{{ inv.transaction_id || ('pay_' + inv.id.slice(0, 14)) }}</span>
+              </div>
+              <div class="audit-col">
+                <span class="audit-label">Payment Channel</span>
+                <span class="audit-val">{{ inv.payment_method === 'cash_on_delivery' ? 'Cash on Delivery (Doorstep)' : 'Razorpay Secure Gateway (UPI / 3DS)' }}</span>
+              </div>
+              <div class="audit-col">
+                <span class="audit-label">Gateway Order Reference</span>
+                <span class="audit-val">{{ inv.gateway_order_id || ('order_' + inv.id.slice(0, 14)) }}</span>
+              </div>
+              <div class="audit-col">
+                <span class="audit-label">System Transaction UUID</span>
+                <span class="audit-val">{{ inv.id }}</span>
+              </div>
+            </div>
+
+            <div class="footer-notes">
+              <p>This is a computer-generated tax invoice and requires no physical signature under IT Act 2000.</p>
+              <p>Thank you for choosing Urban Blade Luxury Salon & Spa.</p>
+            </div>
           </div>
         </div>
       </div>

@@ -31,6 +31,7 @@ export class CheckoutPage {
   readonly placed = signal(false);
   readonly isInitiating = signal(false);
   readonly confirmedReceipt = signal<PaymentReceipt | null>(null);
+  readonly confirmedOrder = signal<AdminOrder | null>(null);
 
   readonly estimatedTotal = computed(() => {
     const sub = this.cart.subtotal();
@@ -156,6 +157,8 @@ export class CheckoutPage {
       currency: 'INR',
       payment_method: receipt.paymentDetails?.method || 'Razorpay',
       payment_status: receipt.paymentStatus,
+      transaction_id: receipt.paymentId || (receipt as any).transactionId || '',
+      gateway_order_id: receipt.paymentDetails?.razorpayOrderId || '',
       shipping_address: {
         fullName: receipt.shippingAddress.fullName,
         phone: receipt.shippingAddress.phone,
@@ -172,9 +175,22 @@ export class CheckoutPage {
       tracking_number: `TRK-UB-${receipt.orderId.slice(0, 6).toUpperCase()}`,
       notes: `Order placed via ${receipt.paymentDetails?.method || 'Razorpay'} with Neon DB stock reservation.`,
     };
+    this.confirmedOrder.set(adminOrder);
     this.admin.addOrder(adminOrder);
 
     this.cart.clear();
+  }
+
+  printInvoice(): void {
+    const inv = this.confirmedOrder();
+    const originalTitle = document.title;
+    if (inv?.id) {
+      document.title = `Tax_Invoice_UB_${inv.id.slice(0, 8).toUpperCase()}`;
+    }
+    window.print();
+    setTimeout(() => {
+      document.title = originalTitle;
+    }, 1000);
   }
 
   shop(): void {
