@@ -1,44 +1,193 @@
-<h1>Checkout</h1>
+<div class="checkout-container">
+  <h1>Checkout</h1>
 
-@if (settings().operations.emergencyNotice) {
-  <div class="checkout-notice-banner" style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.25rem; color: #fbbf24; font-size: 0.85rem;">
-    <strong>Store Notice:</strong> {{ settings().operations.emergencyNotice }}
-  </div>
-}
+  @if (settings().operations.emergencyNotice) {
+    <div class="checkout-notice-banner">
+      <strong>Store Notice:</strong> {{ settings().operations.emergencyNotice }}
+    </div>
+  }
 
-@if (placed()) {
-  <section class="card done">
-    <h2>Order placed</h2>
-    <p>Thank you. Urban Blade will confirm by phone on {{ settings().business.phoneDisplay }}.</p>
-    <button type="button" (click)="shop()">Continue shopping</button>
-  </section>
-} @else if (cart.lines().length === 0) {
-  <section class="card">
-    <p>Your cart is empty.</p>
-    <a routerLink="/shop">Add items to checkout</a>
-  </section>
-} @else {
-  <div class="checkout">
-    <form class="card" [formGroup]="form" (ngSubmit)="placeOrder()">
-      <h2>1. Delivery</h2>
-      <label>Full name <input formControlName="name" /></label>
-      <label>Mobile <input formControlName="phone" /></label>
-      <label>Address <textarea formControlName="address" rows="3"></textarea></label>
+  <!-- ─── 1. ORDER CONFIRMATION SCREEN (POST-PAYMENT CAPTURED) ─── -->
+  @if (placed() && confirmedReceipt()) {
+    <section class="card order-confirmed-card">
+      <div class="confirmed-header">
+        <div class="success-icon-ring">✓</div>
+        <h2>Payment Verified & Order Confirmed!</h2>
+        <p class="subtitle">Thank you for choosing Urban Blade. Your order is secured and recorded in the database.</p>
+      </div>
 
-      <h2>2. Payment</h2>
-      <label class="radio"><input type="radio" formControlName="payment" value="upi" /> UPI</label>
-      <label class="radio"><input type="radio" formControlName="payment" value="card" /> Credit / debit card</label>
-      <label class="radio"><input type="radio" formControlName="payment" value="cod" /> Pay at salon / cash on delivery</label>
+      <div class="neon-db-badge">
+        <span class="pulse-dot"></span>
+        <span>ACID Verified in Neon PostgreSQL Database</span>
+        <span class="db-id">UUID: {{ confirmedReceipt()!.orderId }}</span>
+      </div>
 
-      <button type="submit">Place your order</button>
-    </form>
+      <div class="receipt-grid">
+        <div class="receipt-meta-box">
+          <div class="meta-item">
+            <span class="label">Tax Receipt #</span>
+            <strong>{{ confirmedReceipt()!.receiptNumber }}</strong>
+          </div>
+          <div class="meta-item">
+            <span class="label">Payment ID</span>
+            <code>{{ confirmedReceipt()!.paymentId }}</code>
+          </div>
+          <div class="meta-item">
+            <span class="label">Status</span>
+            <span class="status-pill confirmed">CAPTURED & CONFIRMED</span>
+          </div>
+          <div class="meta-item">
+            <span class="label">Delivery Address</span>
+            <span>{{ confirmedReceipt()!.shippingAddress.street }}, Ghaziabad</span>
+          </div>
+        </div>
 
-    <aside class="card">
-      <h2>Order summary</h2>
-      @for (line of cart.lines(); track line.lineId) {
-        <p>{{ line.name }} × {{ line.qty }}</p>
-      }
-      <p class="total">Total: {{ cart.subtotal() | inr }}</p>
-    </aside>
-  </div>
-}
+        <div class="receipt-items-box">
+          <h4>Purchased Items</h4>
+          @for (item of confirmedReceipt()!.items; track item.id) {
+            <div class="receipt-line">
+              <span class="item-name">{{ item.product_name }} × {{ item.quantity }}</span>
+              <span class="item-price">₹{{ (item.unit_price * item.quantity) | inr }}</span>
+            </div>
+          }
+          <div class="receipt-total-line">
+            <span>Total Paid (incl. Taxes & Shipping)</span>
+            <strong>₹{{ confirmedReceipt()!.totalAmount | inr }}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="confirmed-actions">
+        <button type="button" class="print-btn" onclick="window.print()">
+          🖨️ Print Tax Invoice
+        </button>
+        <button type="button" class="primary-btn" (click)="shop()">
+          Continue Shopping
+        </button>
+      </div>
+    </section>
+  } @else if (cart.lines().length === 0) {
+    <section class="card empty-card">
+      <p>Your shopping cart is empty.</p>
+      <a routerLink="/shop" class="primary-btn">Browse Urban Blade Catalog</a>
+    </section>
+  } @else {
+    <!-- ─── 2. CHECKOUT FORM ─── -->
+    <div class="checkout">
+      <form class="card" [formGroup]="form" (ngSubmit)="initiateCheckout()">
+        <h2>1. Delivery Address</h2>
+        <label>
+          Full Name
+          <input formControlName="name" placeholder="Enter your full name" />
+          @if (form.controls.name.touched && form.controls.name.invalid) {
+            <span class="field-error">Name is required</span>
+          }
+        </label>
+
+        <label>
+          Mobile Number (10 digits)
+          <input formControlName="phone" placeholder="9015618265" maxlength="10" />
+          @if (form.controls.phone.touched && form.controls.phone.invalid) {
+            <span class="field-error">Valid 10-digit phone number is required</span>
+          }
+        </label>
+
+        <label>
+          Delivery Street Address
+          <textarea formControlName="address" rows="3" placeholder="Apartment, Street, Landmark"></textarea>
+          @if (form.controls.address.touched && form.controls.address.invalid) {
+            <span class="field-error">Delivery address is required</span>
+          }
+        </label>
+
+        <h2>2. Preferred Payment Channel</h2>
+        <div class="payment-options">
+          <label class="radio-card" [class.selected]="form.controls.payment.value === 'upi'">
+            <input type="radio" formControlName="payment" value="upi" />
+            <div class="radio-content">
+              <span class="icon">📱</span>
+              <div>
+                <strong>Instant UPI / QR Code</strong>
+                <p>GPay, PhonePe, Paytm, BHIM</p>
+              </div>
+            </div>
+          </label>
+
+          <label class="radio-card" [class.selected]="form.controls.payment.value === 'card'">
+            <input type="radio" formControlName="payment" value="card" />
+            <div class="radio-content">
+              <span class="icon">💳</span>
+              <div>
+                <strong>Credit / Debit Card (3DS)</strong>
+                <p>Visa, MasterCard, RuPay</p>
+              </div>
+            </div>
+          </label>
+
+          <label class="radio-card" [class.selected]="form.controls.payment.value === 'cash_on_delivery'">
+            <input type="radio" formControlName="payment" value="cash_on_delivery" />
+            <div class="radio-content">
+              <span class="icon">💵</span>
+              <div>
+                <strong>Cash on Delivery (COD)</strong>
+                <p>Pay upon delivery at your door</p>
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <button type="submit" class="submit-checkout-btn" [disabled]="isInitiating()">
+          @if (isInitiating()) {
+            <span class="btn-spinner"></span>
+            <span>Reserving Stock in Neon DB...</span>
+          } @else {
+            <span>Lock Stock & Proceed to Payment (₹{{ cart.subtotal() | inr }})</span>
+          }
+        </button>
+      </form>
+
+      <aside class="card summary-card">
+        <h2>Order Summary</h2>
+        <div class="summary-lines">
+          @for (line of cart.lines(); track line.lineId) {
+            <div class="summary-item">
+              <div class="item-info">
+                <span class="name">{{ line.name }}</span>
+                <span class="qty">Qty: {{ line.qty }}</span>
+              </div>
+              <span class="price">₹{{ (line.unitPrice * line.qty) | inr }}</span>
+            </div>
+          }
+        </div>
+
+        <div class="calc-box">
+          <div class="calc-row">
+            <span>Subtotal</span>
+            <span>₹{{ cart.subtotal() | inr }}</span>
+          </div>
+          <div class="calc-row">
+            <span>Shipping</span>
+            <span>{{ cart.subtotal() >= 999 ? 'FREE' : '₹99' }}</span>
+          </div>
+          <div class="calc-row total">
+            <span>Estimated Total</span>
+            <strong>₹{{ (cart.subtotal() >= 999 ? cart.subtotal() : cart.subtotal() + 99) | inr }}</strong>
+          </div>
+        </div>
+
+        <div class="security-guarantee">
+          <span>🔒 256-Bit Encrypted Neon Transaction</span>
+        </div>
+      </aside>
+    </div>
+  }
+
+  <!-- ─── 3. SECURE PAYMENT MODAL ─── -->
+  @if (activeSession()) {
+    <app-payment-modal
+      [session]="activeSession()!"
+      (paymentSuccess)="onPaymentSuccess($event)"
+      (paymentCancelled)="onPaymentCancelled()"
+    ></app-payment-modal>
+  }
+</div>

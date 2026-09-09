@@ -1,15 +1,20 @@
 import { Component, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { SALON } from '@core/constants/salon.constants';
 import { CartService } from '@core/services/cart.service';
 import { AdminService, type AdminOrder } from '@core/services/admin.service';
 import { SiteSettingsService } from '@core/services/site-settings.service';
+import { PaymentService, CheckoutSessionResponse, PaymentReceipt } from '@core/services/payment.service';
+import { ToastService } from '@core/services/toast.service';
 import { InrPipe } from '@shared/pipes/inr-pipe';
+import { PaymentModal } from '../../components/payment-modal/payment-modal';
 
 @Component({
   selector: 'app-checkout-page',
-  imports: [ReactiveFormsModule, RouterLink, InrPipe],
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, InrPipe, PaymentModal],
   templateUrl: './checkout-page.html',
   styleUrl: './checkout-page.scss',
 })
@@ -18,55 +23,100 @@ export class CheckoutPage {
   private readonly router = inject(Router);
   protected readonly cart = inject(CartService);
   private readonly admin = inject(AdminService);
+  private readonly paymentService = inject(PaymentService);
+  private readonly toast = inject(ToastService);
   readonly siteSettings = inject(SiteSettingsService);
 
   readonly salon = SALON;
   readonly settings = this.siteSettings.settings;
   readonly placed = signal(false);
+  readonly isInitiating = signal(false);
+  readonly activeSession = signal<CheckoutSessionResponse | null>(null);
+  readonly confirmedReceipt = signal<PaymentReceipt | null>(null);
 
   readonly form = this.fb.nonNullable.group({
-    name: ['', Validators.required],
-    phone: ['', [Validators.required, Validators.minLength(10)]],
-    address: [SALON.address, Validators.required],
-    payment: ['upi', Validators.required],
+    name: ['', [Validators.required, Validators.minLength(2)]],
+    phone: ['', [Validators.required, Validators.pattern(/^[0-9]{10}$/)]],
+    address: [SALON.address, [Validators.required, Validators.minLength(5)]],
+    payment: ['upi' as 'upi' | 'card' | 'cash_on_delivery', Validators.required],
   });
 
-  placeOrder(): void {
+  initiateCheckout(): void {
     if (this.form.invalid || this.cart.lines().length === 0) {
       this.form.markAllAsTouched();
       return;
     }
 
+    this.isInitiating.set(true);
     const val = this.form.getRawValue();
-    const lines = this.cart.lines();
-    const subtotal = this.cart.subtotal();
 
-    const order: AdminOrder = {
-      id: `ord-ub-${Date.now().toString().slice(-6)}`,
-      status: 'accepted',
-      subtotal,
-      total_amount: subtotal,
-      currency: 'INR',
-      payment_method: val.payment,
-      payment_status: val.payment === 'cash_on_delivery' ? 'pending' : 'paid',
-      shipping_address: {
-        fullName: val.name,
-        phone: val.phone,
-        city: 'Ghaziabad',
-        street: val.address,
-      },
-      created_at: new Date().toISOString(),
-      items: lines.map((l) => ({
-        product_name: l.name,
-        unit_price: l.unitPrice,
-        quantity: l.qty,
-        image_url: l.imageUrl,
-      })),
-    };
+    const items = this.cart.lines().map((line) => ({
+      productId: line.productId,
+      quantity: line.qty,
+    }));
 
-    this.admin.addOrder(order);
+    this.paymentService
+      .createCheckoutSession({
+        items,
+        shippingAddress: {
+          fullName: val.name,
+          phone: val.phone,
+          street: val.address,
+          city: 'Ghaziabad',
+        },
+        paymentMethod: val.payment,
+      })
+      .subscribe({
+        next: (session) => {
+          this.isInitiating.set(false);
+          this.activeSession.set(session);
+        },
+        error: (err) => {
+          this.isInitiating.set(false);
+          const errorMsg =
+            err.error?.message ||
+            'Unable to reserve inventory in Neon PostgreSQL. Please try again.';
+          this.toast.error(errorMsg);
+        },
+      });
+  }
+
+  onPaymentSuccess(receipt: PaymentReceipt): void {
+    this.activeSession.set(null);
+    this.confirmedReceipt.set(receipt);
     this.placed.set(true);
+
+    // Sync into local Admin signals for real-time reactivity
+    const adminOrder: AdminOrder = {
+      id: receipt.orderId,
+      status: 'confirmed',
+      subtotal: receipt.totalAmount >= 999 ? receipt.totalAmount : receipt.totalAmount - 99,
+      total_amount: receipt.totalAmount,
+      currency: 'INR',
+      payment_method: receipt.paymentDetails?.method || 'UPI',
+      payment_status: 'captured',
+      shipping_address: {
+        fullName: receipt.shippingAddress.fullName,
+        phone: receipt.shippingAddress.phone,
+        city: receipt.shippingAddress.city || 'Ghaziabad',
+        street: receipt.shippingAddress.street,
+      },
+      created_at: receipt.confirmedAt,
+      items: receipt.items.map((i) => ({
+        product_name: i.product_name,
+        unit_price: Number(i.unit_price),
+        quantity: i.quantity,
+        image_url: i.image_url,
+      })),
+      tracking_number: `TRK-UB-${receipt.orderId.slice(0, 6).toUpperCase()}`,
+    };
+    this.admin.addOrder(adminOrder);
+
     this.cart.clear();
+  }
+
+  onPaymentCancelled(): void {
+    this.activeSession.set(null);
   }
 
   shop(): void {

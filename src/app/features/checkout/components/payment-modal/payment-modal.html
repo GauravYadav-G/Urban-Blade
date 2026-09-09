@@ -1,0 +1,278 @@
+<div class="payment-overlay" (click)="cancelCheckout()">
+  <div class="payment-modal" (click)="$event.stopPropagation()">
+    <!-- Header -->
+    <div class="modal-header">
+      <div class="brand-badge">
+        <span class="icon">🔒</span>
+        <div class="brand-text">
+          <h3>Urban Blade Secure Gateway</h3>
+          <p>Direct 256-Bit Encrypted Neon DB Checkout</p>
+        </div>
+      </div>
+      <button class="close-btn" (click)="cancelCheckout()" [disabled]="isVerifying()">✕</button>
+    </div>
+
+    <!-- Amount Banner -->
+    <div class="amount-banner">
+      <div class="amount-left">
+        <span class="label">Total Payable</span>
+        <span class="order-id">Order Ref: {{ session.orderId.slice(0, 8).toUpperCase() }}</span>
+      </div>
+      <div class="amount-right">
+        <span class="currency">₹</span>
+        <span class="value">{{ session.totalAmount | inr }}</span>
+      </div>
+    </div>
+
+    <!-- Error Alert -->
+    @if (errorMessage()) {
+      <div class="error-banner">
+        <span class="error-icon">⚠️</span>
+        <span>{{ errorMessage() }}</span>
+      </div>
+    }
+
+    <!-- Payment Tabs -->
+    <div class="payment-tabs">
+      <button
+        class="tab-btn"
+        [class.active]="activeTab() === 'upi'"
+        [disabled]="isVerifying()"
+        (click)="setTab('upi')"
+      >
+        <span class="tab-icon">📱</span>
+        <span>UPI / QR</span>
+      </button>
+      <button
+        class="tab-btn"
+        [class.active]="activeTab() === 'card'"
+        [disabled]="isVerifying()"
+        (click)="setTab('card')"
+      >
+        <span class="tab-icon">💳</span>
+        <span>Cards</span>
+      </button>
+      <button
+        class="tab-btn"
+        [class.active]="activeTab() === 'cod'"
+        [disabled]="isVerifying()"
+        (click)="setTab('cod')"
+      >
+        <span class="tab-icon">💵</span>
+        <span>Cash On Delivery</span>
+      </button>
+    </div>
+
+    <!-- Tab Content -->
+    <div class="tab-body">
+      <!-- ─── 1. UPI TAB ─── -->
+      @if (activeTab() === 'upi') {
+        <div class="upi-section">
+          <div class="qr-container">
+            <!-- Dynamic SVG QR Code Illustration -->
+            <div class="qr-box">
+              <svg viewBox="0 0 100 100" class="qr-svg">
+                <rect width="100" height="100" fill="#0c0e12" rx="8" />
+                <!-- Corner Targets -->
+                <rect x="10" y="10" width="24" height="24" fill="none" stroke="#d4af37" stroke-width="4" rx="3" />
+                <rect x="16" y="16" width="12" height="12" fill="#d4af37" />
+                <rect x="66" y="10" width="24" height="24" fill="none" stroke="#d4af37" stroke-width="4" rx="3" />
+                <rect x="72" y="16" width="12" height="12" fill="#d4af37" />
+                <rect x="10" y="66" width="24" height="24" fill="none" stroke="#d4af37" stroke-width="4" rx="3" />
+                <rect x="16" y="72" width="12" height="12" fill="#d4af37" />
+                <!-- QR Dots -->
+                <rect x="42" y="14" width="6" height="6" fill="#f0f2f5" />
+                <rect x="52" y="24" width="6" height="6" fill="#d4af37" />
+                <rect x="42" y="34" width="6" height="6" fill="#f0f2f5" />
+                <rect x="24" y="44" width="6" height="6" fill="#d4af37" />
+                <rect x="34" y="52" width="6" height="6" fill="#f0f2f5" />
+                <rect x="50" y="44" width="8" height="8" fill="#d4af37" />
+                <rect x="66" y="44" width="6" height="6" fill="#f0f2f5" />
+                <rect x="44" y="66" width="8" height="8" fill="#f0f2f5" />
+                <rect x="56" y="74" width="6" height="6" fill="#d4af37" />
+                <rect x="74" y="66" width="12" height="12" fill="#d4af37" />
+              </svg>
+              <div class="scan-label">Scan with GPay / PhonePe / Paytm</div>
+            </div>
+
+            <div class="timer-badge" [class.urgent]="upiTimeRemaining() < 60">
+              ⏱️ Session expires in: <strong>{{ formattedTimer }}</strong>
+            </div>
+          </div>
+
+          <div class="vpa-input-group">
+            <label>Or enter UPI ID</label>
+            <div class="vpa-field">
+              <input
+                type="text"
+                [ngModel]="upiVpa()"
+                (ngModelChange)="upiVpa.set($event)"
+                placeholder="username@bank"
+                [disabled]="isVerifying()"
+              />
+              <button
+                type="button"
+                class="pay-now-btn"
+                [disabled]="isVerifying() || upiTimeRemaining() === 0"
+                (click)="processUpiPayment()"
+              >
+                @if (isVerifying()) {
+                  <span class="spinner"></span>
+                } @else {
+                  <span>Verify & Pay ₹{{ session.totalAmount | inr }}</span>
+                }
+              </button>
+            </div>
+          </div>
+
+          <div class="upi-chips">
+            <button type="button" class="chip" (click)="upiVpa.set('gaurav@okaxis')">@okaxis</button>
+            <button type="button" class="chip" (click)="upiVpa.set('demo@okhdfcbank')">@okhdfcbank</button>
+            <button type="button" class="chip" (click)="upiVpa.set('customer@paytm')">@paytm</button>
+          </div>
+        </div>
+      }
+
+      <!-- ─── 2. CARDS TAB ─── -->
+      @if (activeTab() === 'card') {
+        <div class="card-section">
+          <div class="input-row">
+            <label>Card Number</label>
+            <div class="card-input-wrap">
+              <input
+                type="text"
+                placeholder="4532 0000 0000 1234"
+                [value]="cardNumber()"
+                (input)="onCardNumberInput($event)"
+                maxlength="19"
+                [disabled]="isVerifying()"
+              />
+              <span class="card-badge">{{ cardBrand() | uppercase }}</span>
+            </div>
+          </div>
+
+          <div class="input-grid">
+            <div>
+              <label>Expiry Date</label>
+              <input
+                type="text"
+                placeholder="MM/YY"
+                [value]="cardExpiry()"
+                (input)="onExpiryInput($event)"
+                maxlength="5"
+                [disabled]="isVerifying()"
+              />
+            </div>
+            <div>
+              <label>CVV / CVC</label>
+              <input
+                type="password"
+                placeholder="•••"
+                [value]="cardCvv()"
+                (input)="onCvvInput($event)"
+                maxlength="4"
+                [disabled]="isVerifying()"
+              />
+            </div>
+          </div>
+
+          <div class="input-row">
+            <label>Cardholder Name</label>
+            <input
+              type="text"
+              [ngModel]="cardHolder()"
+              (ngModelChange)="cardHolder.set($event)"
+              placeholder="Full Name"
+              [disabled]="isVerifying()"
+            />
+          </div>
+
+          <button
+            type="button"
+            class="primary-submit-btn"
+            [disabled]="isVerifying()"
+            (click)="initiateCardPayment()"
+          >
+            Authorize ₹{{ session.totalAmount | inr }}
+          </button>
+        </div>
+      }
+
+      <!-- ─── 3. COD TAB ─── -->
+      @if (activeTab() === 'cod') {
+        <div class="cod-section">
+          <div class="cod-info-box">
+            <div class="icon">📦</div>
+            <div class="text">
+              <h4>Pay upon delivery at your door</h4>
+              <p>Delivery to: {{ session.shippingAddress.street }}, {{ session.shippingAddress.fullName }}</p>
+              <p class="phone-verify">Verified Contact: <strong>+91 {{ session.shippingAddress.phone }}</strong></p>
+            </div>
+          </div>
+
+          <div class="fee-badge">
+            <span>Convenience Fee:</span>
+            <strong>FREE (₹0)</strong>
+          </div>
+
+          <button
+            type="button"
+            class="primary-submit-btn"
+            [disabled]="isVerifying()"
+            (click)="processCodPayment()"
+          >
+            Confirm Order (Pay ₹{{ session.totalAmount | inr }} on Delivery)
+          </button>
+        </div>
+      }
+    </div>
+
+    <!-- Verification Progress Overlay -->
+    @if (isVerifying()) {
+      <div class="verifying-overlay">
+        <div class="spinner-large"></div>
+        <h4>Securing Transaction</h4>
+        <p>{{ verificationStep() }}</p>
+      </div>
+    }
+
+    <!-- 3D Secure OTP Submodal -->
+    @if (show3dsModal()) {
+      <div class="submodal-overlay">
+        <div class="submodal-box">
+          <div class="submodal-header">
+            <h4>🛡️ Verified by Visa / Mastercard 3DS</h4>
+            <button class="close-btn" (click)="show3dsModal.set(false)">✕</button>
+          </div>
+          <p class="submodal-desc">
+            A one-time passcode has been generated for your card ending in
+            <strong>{{ cardNumber().slice(-4) }}</strong> for <strong>₹{{ session.totalAmount | inr }}</strong>.
+          </p>
+
+          <div class="otp-row">
+            <input
+              type="text"
+              maxlength="6"
+              [ngModel]="otpInput()"
+              (ngModelChange)="otpInput.set($event)"
+              placeholder="Enter 6-digit OTP"
+            />
+            <button type="button" class="autofill-btn" (click)="otpInput.set(testOtp)">Auto-fill OTP</button>
+          </div>
+          <p class="hint">Test Sandbox OTP: <code>{{ testOtp }}</code></p>
+
+          <button type="button" class="primary-submit-btn" (click)="submit3dsOtp()">
+            Authenticate & Capture Order
+          </button>
+        </div>
+      </div>
+    }
+
+    <!-- Footer Trust Badges -->
+    <div class="modal-footer">
+      <span class="badge">🔒 Neon PostgreSQL Atomic OCC</span>
+      <span class="badge">🛡️ SHA-256 Cryptographic Token</span>
+      <span class="badge">⚡ Zero-Oversell Guarantee</span>
+    </div>
+  </div>
+</div>
