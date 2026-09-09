@@ -241,7 +241,7 @@ export class PaymentService {
     }
 
     const options = {
-      key: orderData.keyId || 'rzp_test_1DP5mmOlF5G5ag',
+      key: orderData.keyId || 'rzp_test_TZtC5tBbAEEppP',
       amount: orderData.amount,
       currency: orderData.currency || 'INR',
       name: 'Urban Blade Luxury Salon',
@@ -317,7 +317,7 @@ export class PaymentService {
       amount: Math.round(totalAmount * 100),
       totalAmount,
       currency: 'INR',
-      keyId: 'rzp_test_1DP5mmOlF5G5ag',
+      keyId: 'rzp_test_TZtC5tBbAEEppP',
       items: verifiedItems,
       shippingAddress: payload.shippingAddress,
     };

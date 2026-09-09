@@ -45,7 +45,7 @@ export const config = {
   },
 
   razorpay: {
-    keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_1DP5mmOlF5G5ag',
-    keySecret: process.env.RAZORPAY_KEY_SECRET || 'rzp_secret_test_ub2026',
+    keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_TZtC5tBbAEEppP',
+    keySecret: process.env.RAZORPAY_KEY_SECRET || 'bSQij93encYPYkJK6yLzy8xm',
   },
 };
