@@ -35,23 +35,36 @@ export class CheckoutPage {
   readonly confirmedReceipt = signal<PaymentReceipt | null>(null);
 
   readonly form = this.fb.nonNullable.group({
-    name: ['', [Validators.required, Validators.minLength(2)]],
-    phone: ['', [Validators.required, Validators.pattern(/^[0-9]{10}$/)]],
+    name: ['Gaurav Yadav', [Validators.required, Validators.minLength(2)]],
+    phone: ['9015618265', [Validators.required, Validators.pattern(/^[0-9]{10}$/)]],
     address: [SALON.address, [Validators.required, Validators.minLength(5)]],
     payment: ['upi' as 'upi' | 'card' | 'cash_on_delivery', Validators.required],
   });
 
-  initiateCheckout(): void {
-    if (this.form.invalid || this.cart.lines().length === 0) {
+  initiateCheckout(event?: Event): void {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if (this.cart.lines().length === 0) {
+      this.toast.error('Your cart is empty. Please add items to checkout.');
+      return;
+    }
+
+    if (this.form.invalid) {
       this.form.markAllAsTouched();
+      this.toast.error('Please enter a valid full name and 10-digit mobile number.');
       return;
     }
 
     this.isInitiating.set(true);
     const val = this.form.getRawValue();
+    const cleanPhone = val.phone.replace(/\D/g, '').slice(-10);
 
     const items = this.cart.lines().map((line) => ({
       productId: line.productId,
+      slug: (line as any).slug || line.productId.replace(/^(hc|bd|sk|tl|gf|sv)-/, ''),
       quantity: line.qty,
     }));
 
@@ -60,7 +73,7 @@ export class CheckoutPage {
         items,
         shippingAddress: {
           fullName: val.name,
-          phone: val.phone,
+          phone: cleanPhone,
           street: val.address,
           city: 'Ghaziabad',
         },

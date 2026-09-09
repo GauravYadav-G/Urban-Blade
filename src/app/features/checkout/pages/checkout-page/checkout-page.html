@@ -74,7 +74,7 @@
   } @else {
     <!-- ─── 2. CHECKOUT FORM ─── -->
     <div class="checkout">
-      <form class="card" [formGroup]="form" (ngSubmit)="initiateCheckout()">
+      <form class="card" [formGroup]="form" (ngSubmit)="initiateCheckout($event)">
         <h2>1. Delivery Address</h2>
         <label>
           Full Name
@@ -136,12 +136,12 @@
           </label>
         </div>
 
-        <button type="submit" class="submit-checkout-btn" [disabled]="isInitiating()">
+        <button type="button" class="submit-checkout-btn" [disabled]="isInitiating()" (click)="initiateCheckout($event)">
           @if (isInitiating()) {
             <span class="btn-spinner"></span>
             <span>Reserving Stock in Neon DB...</span>
           } @else {
-            <span>Lock Stock & Proceed to Payment (₹{{ cart.subtotal() | inr }})</span>
+            <span>Lock Stock & Proceed to Payment ({{ cart.subtotal() | inr }})</span>
           }
         </button>
       </form>
@@ -155,7 +155,7 @@
                 <span class="name">{{ line.name }}</span>
                 <span class="qty">Qty: {{ line.qty }}</span>
               </div>
-              <span class="price">₹{{ (line.unitPrice * line.qty) | inr }}</span>
+              <span class="price">{{ (line.unitPrice * line.qty) | inr }}</span>
             </div>
           }
         </div>
@@ -163,7 +163,7 @@
         <div class="calc-box">
           <div class="calc-row">
             <span>Subtotal</span>
-            <span>₹{{ cart.subtotal() | inr }}</span>
+            <span>{{ cart.subtotal() | inr }}</span>
           </div>
           <div class="calc-row">
             <span>Shipping</span>
@@ -171,7 +171,7 @@
           </div>
           <div class="calc-row total">
             <span>Estimated Total</span>
-            <strong>₹{{ (cart.subtotal() >= 999 ? cart.subtotal() : cart.subtotal() + 99) | inr }}</strong>
+            <strong>{{ (cart.subtotal() >= 999 ? cart.subtotal() : cart.subtotal() + 99) | inr }}</strong>
           </div>
         </div>
 

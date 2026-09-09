@@ -265,7 +265,8 @@ export async function adminRoutes(app: FastifyInstance) {
     const b = request.body;
 
     try {
-      const res = await query(
+        const cleanId = id.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
+        const res = await query(
         `
         UPDATE products SET
           name = COALESCE($1, name),
@@ -278,7 +279,7 @@ export async function adminRoutes(app: FastifyInstance) {
           description = COALESCE($8, description),
           image_url = COALESCE($9, image_url),
           updated_at = CURRENT_TIMESTAMP
-        WHERE id::text = $10 OR slug = $10
+        WHERE id::text = $10 OR slug = $10 OR slug = $11 OR slug ILIKE ('%' || $11 || '%')
         RETURNING *;
         `,
         [
@@ -292,6 +293,7 @@ export async function adminRoutes(app: FastifyInstance) {
           b.description,
           b.imageUrl,
           id,
+          cleanId,
         ]
       );
 
@@ -356,6 +358,69 @@ export async function adminRoutes(app: FastifyInstance) {
     } catch {}
 
     return reply.send({ data: [] });
+  });
+
+  // Direct Order Ingestion (from client checkout or direct POS)
+  app.post<{
+    Body: {
+      id?: string;
+      status?: string;
+      subtotal: number;
+      total_amount: number;
+      currency?: string;
+      payment_method?: string;
+      payment_status?: string;
+      shipping_address: any;
+      items?: Array<{
+        product_name: string;
+        unit_price: number;
+        quantity: number;
+        image_url?: string;
+      }>;
+    };
+  }>('/admin/orders', async (request, reply) => {
+    const b = request.body;
+    try {
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(b.id || '');
+      const orderId = isUUID ? b.id! : (await query('SELECT gen_random_uuid() as id')).rows[0].id;
+
+      const insertRes = await query(
+        `
+        INSERT INTO orders (id, status, subtotal, total_amount, currency, payment_method, payment_status, shipping_address)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (id) DO UPDATE SET
+          status = EXCLUDED.status,
+          payment_status = EXCLUDED.payment_status,
+          updated_at = CURRENT_TIMESTAMP
+        RETURNING *;
+        `,
+        [
+          orderId,
+          b.status || 'confirmed',
+          b.subtotal || b.total_amount,
+          b.total_amount,
+          b.currency || 'INR',
+          b.payment_method || 'UPI',
+          b.payment_status || 'captured',
+          JSON.stringify(b.shipping_address || {}),
+        ]
+      );
+
+      if (b.items && b.items.length > 0) {
+        for (const it of b.items) {
+          await query(
+            `INSERT INTO order_items (order_id, product_name, unit_price, quantity, image_url)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT DO NOTHING`,
+            [orderId, it.product_name, it.unit_price, it.quantity, it.image_url || '']
+          );
+        }
+      }
+
+      return reply.status(201).send({ ok: true, order: insertRes.rows[0] });
+    } catch (err: any) {
+      return reply.status(500).send({ error: 'FAILED_TO_CREATE_ADMIN_ORDER', message: err.message });
+    }
   });
 
   // Update Order Status
