@@ -1,0 +1,21 @@
+<section class="saved">
+  <p class="kicker">Your list</p>
+  <h1>Saved grooming products</h1>
+  <p class="lede">Keep hair, beard, skin, and tool picks here for later. Add items from any product page.</p>
+
+  @if (list.products().length === 0) {
+    <div class="empty">
+      <p>Your list is empty. Save shampoo, oil, tools, or gift cards while you shop.</p>
+      <a routerLink="/shop">Shop Urban Blade</a>
+    </div>
+  } @else {
+    <ul class="grid">
+      @for (item of list.products(); track item.id) {
+        <li>
+          <app-product-card [product]="item" />
+          <button type="button" (click)="list.remove(item.id)">Remove from list</button>
+        </li>
+      }
+    </ul>
+  }
+</section>

@@ -1,0 +1,185 @@
+<div class="dashboard-page">
+  <!-- Page Header & Official Management Bar -->
+  <div class="page-header">
+    <div>
+      <span class="eyebrow">COMMAND CONSOLE ✦ LIVE OPERATIONS</span>
+      <h1>Salon & E-Commerce Management Dashboard</h1>
+    </div>
+    
+    <div class="header-actions">
+      <!-- Live Sync Indicator -->
+      <div class="live-sync-indicator" title="Connected to Urban Blade PostgreSQL storage and reactive signals">
+        <span class="pulse-dot active"></span>
+        <span>Storefront Online & Synced</span>
+      </div>
+
+      <!-- Real Operational Quick Actions -->
+      <a routerLink="/admin/orders" class="btn-action btn-action--ghost">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+        <span>+ POS Order</span>
+      </a>
+
+      <a routerLink="/admin/bookings" class="btn-action btn-action--ghost">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>+ Book Walk-in</span>
+      </a>
+
+      <a routerLink="/admin/website" class="btn-action btn-action--ghost" title="Manage live store announcement, contact info, hours, and policies">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        <span>Website CMS</span>
+      </a>
+
+      <a routerLink="/admin/products" class="btn-action">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>Add Product</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Live Website Announcement Status Ribbon -->
+  @if (siteSettings.settings().announcement.enabled) {
+    <div class="cms-broadcast-strip">
+      <div class="cms-strip__left">
+        <span class="badge-tag">{{ siteSettings.settings().announcement.badge }}</span>
+        <span class="strip-label">Active Storefront Banner:</span>
+        <span class="strip-text">“{{ siteSettings.settings().announcement.text }}”</span>
+      </div>
+      <a routerLink="/admin/website" class="strip-manage-link">Edit Banner & Store Info ↗</a>
+    </div>
+  }
+
+  <!-- KPI Cards Grid (Dynamic from real persistent signals) -->
+  <div class="metrics-grid">
+    <app-metric-card
+      title="Gross Store Revenue"
+      [value]="'₹' + (admin.metrics().revenue.week | number:'1.0-0')"
+      [subtitle]="'₹' + (admin.metrics().revenue.today | number:'1.0-0') + ' clocked today'"
+      trend="+18.4%"
+      tone="amber"
+      icon='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>'
+    />
+
+    <app-metric-card
+      title="Orders Volume"
+      [value]="admin.metrics().orders.total + ' Units'"
+      [subtitle]="(admin.metrics().orders.accepted + admin.metrics().orders.processing) + ' awaiting dispatch'"
+      trend="+8.2%"
+      tone="emerald"
+      icon='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>'
+    />
+
+    <app-metric-card
+      title="Salon Floor Bookings"
+      [value]="admin.metrics().bookings.total + ' Visits'"
+      [subtitle]="admin.metrics().bookings.today + ' scheduled for today'"
+      [trend]="admin.metrics().bookings.occupancyRate + '% occupancy'"
+      tone="indigo"
+      icon='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>'
+    />
+
+    <app-metric-card
+      title="Inventory Health"
+      [value]="admin.lowStockItems().length + ' Low Stock'"
+      [subtitle]="admin.products().length + ' active catalog items'"
+      [trend]="admin.lowStockItems().length > 0 ? 'Restock Needed' : 'Optimal'"
+      [trendNegative]="admin.lowStockItems().length > 0"
+      tone="rose"
+      icon='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+    />
+  </div>
+
+  <!-- Interactive SVG Spline Chart -->
+  <div class="chart-section">
+    <app-spline-chart />
+  </div>
+
+  <!-- Dual Bottom Cards: Fulfillment Orders & Salon Chair Ticker -->
+  <div class="bottom-grid">
+    <!-- Orders Dispatch Queue -->
+    <div class="glass-panel">
+      <div class="panel-header">
+        <div>
+          <h3>Fulfillment Dispatch Queue</h3>
+          <p>Real-time order pipeline requiring pack or transit advance</p>
+        </div>
+        <a routerLink="/admin/orders" class="panel-link">Manage All ({{ admin.orders().length }}) ↗</a>
+      </div>
+
+      <div class="order-queue-list">
+        @for (order of admin.orders().slice(0, 4); track order.id) {
+          <div class="queue-item">
+            <div class="queue-item__left">
+              <span class="status-chip" [class]="'status-chip--' + order.status">{{ order.status | uppercase }}</span>
+              <div class="queue-item__info">
+                <strong>{{ order.shipping_address.fullName }}</strong>
+                <span>{{ order.items.length }} item(s) · ₹{{ order.total_amount | number }} · {{ order.payment_method | uppercase }}</span>
+              </div>
+            </div>
+
+            <div class="queue-item__actions">
+              @if (order.status === 'accepted') {
+                <button type="button" class="btn-mini btn-mini--blue" (click)="admin.updateOrderStatus(order.id, 'processing')">
+                  Pack Order
+                </button>
+              } @else if (order.status === 'processing') {
+                <button type="button" class="btn-mini btn-mini--amber" (click)="admin.updateOrderStatus(order.id, 'shipped')">
+                  Mark Shipped
+                </button>
+              } @else if (order.status === 'shipped') {
+                <button type="button" class="btn-mini btn-mini--emerald" (click)="admin.updateOrderStatus(order.id, 'delivered')">
+                  Mark Delivered
+                </button>
+              } @else if (order.status === 'delivered') {
+                <span class="tag-done">Fulfilled</span>
+              } @else {
+                <span class="tag-cancelled">Cancelled</span>
+              }
+            </div>
+          </div>
+        } @empty {
+          <div class="empty-inline">
+            <p>No pending orders requiring dispatch. Customer orders placed via website checkout or POS counter appear here.</p>
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Salon Floor Schedule -->
+    <div class="glass-panel">
+      <div class="panel-header">
+        <div>
+          <h3>Salon Chair Roster</h3>
+          <p>Today's client appointments and chair allocations</p>
+        </div>
+        <a routerLink="/admin/bookings" class="panel-link">View Roster ({{ admin.bookings().length }}) ↗</a>
+      </div>
+
+      <div class="booking-queue-list">
+        @for (bk of admin.bookings().slice(0, 4); track bk.id) {
+          <div class="booking-item">
+            <div class="booking-time-badge">
+              <span>{{ bk.time_slot }}</span>
+            </div>
+            <div class="booking-info">
+              <strong>{{ bk.customer_name }}</strong>
+              <span>{{ bk.notes || 'Salon Service' }} · Stylist: {{ bk.stylist_name || 'Master Barber' }} · ₹{{ bk.total_price }}</span>
+            </div>
+            <div class="booking-status">
+              @if (bk.status === 'confirmed' || bk.status === 'pending') {
+                <button type="button" class="btn-mini btn-mini--emerald" (click)="admin.updateBookingStatus(bk.id, 'completed')">
+                  Done
+                </button>
+              } @else {
+                <span class="status-chip" [class]="'status-chip--' + bk.status">{{ bk.status | uppercase }}</span>
+              }
+            </div>
+          </div>
+        } @empty {
+          <div class="empty-inline">
+            <p>No salon bookings scheduled for today. Online client bookings or walk-in entries appear here.</p>
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+</div>

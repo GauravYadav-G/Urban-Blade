@@ -1,0 +1,87 @@
+@if (product(); as p) {
+  <nav class="crumbs">
+    <a routerLink="/">Home</a>
+    <span>/</span>
+    <a routerLink="/shop" [queryParams]="{ cat: p.category }">{{ p.category }}</a>
+    <span>/</span>
+    <span>{{ p.name }}</span>
+  </nav>
+
+  <article class="pdp">
+    <div class="pdp__media">
+      <div
+        class="pdp__gallery"
+        (mouseenter)="onZoomEnter($event)"
+        (mousemove)="onZoomMove($event)"
+        (mouseleave)="onZoomLeave()"
+      >
+        <img class="pdp__img" [src]="p.imageUrl" [alt]="p.name" appImgFallback />
+        @if (zoomActive()) {
+          <div
+            class="pdp__lens"
+            [style.width.px]="lensW()"
+            [style.height.px]="lensH()"
+            [style.transform]="'translate(' + lensX() + 'px, ' + lensY() + 'px)'"
+          ></div>
+        }
+      </div>
+      <p class="pdp__zoom-hint">Hover image to zoom</p>
+    </div>
+    <div class="pdp__info">
+      @if (p.badge === 'deal') {
+        <p class="pdp__deal">Limited time deal</p>
+      }
+      <h1>{{ p.name }}</h1>
+      <p class="pdp__vendor">Visit the {{ p.vendor }} store</p>
+      <app-rating-stars [rating]="p.rating" [count]="p.reviewCount" />
+      <p class="pdp__price">
+        {{ p.price | inr }}
+        @if (p.compareAtPrice) {
+          <span>M.R.P.: <s>{{ p.compareAtPrice | inr }}</s></span>
+        }
+      </p>
+      @if (p.freeDelivery) {
+        <p class="pdp__ship">FREE delivery on this item</p>
+      }
+      <p>{{ p.longDescription }}</p>
+      <ul>
+        @for (item of p.highlights; track item) {
+          <li>{{ item }}</li>
+        }
+      </ul>
+    </div>
+    <aside class="pdp__buy">
+      <p class="pdp__price">{{ p.price | inr }}</p>
+      <p>{{ p.inStock ? 'In stock' : 'Currently unavailable' }}</p>
+      <label>
+        Qty
+        <select [ngModel]="qty" (ngModelChange)="qty = +$event" name="qty">
+          @for (n of [1, 2, 3, 4, 5]; track n) {
+            <option [ngValue]="n">{{ n }}</option>
+          }
+        </select>
+      </label>
+      <button type="button" class="btn btn--cart" (click)="addToCart()">Add to cart</button>
+      <button type="button" class="btn btn--buy" (click)="buyNow()">Buy now</button>
+      <button type="button" class="btn btn--list" (click)="toggleList()">
+        {{ savedOnList() ? 'Remove from your list' : 'Add to your list' }}
+      </button>
+      <p class="pdp__ship-to">Deliver to Ghaziabad 201009</p>
+    </aside>
+    @if (zoomActive()) {
+      <div
+        class="pdp__zoom"
+        role="presentation"
+        aria-hidden="true"
+        [style.background-image]="'url(' + p.imageUrl + ')'"
+        [style.background-position]="zoomPos()"
+      ></div>
+    }
+  </article>
+
+  @if (related().length) {
+    <app-product-slider title="Related items" [products]="related()" />
+  }
+} @else {
+  <p class="empty">This product is no longer listed. <a routerLink="/shop">Continue shopping</a></p>
+}

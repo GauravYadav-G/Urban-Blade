@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 48" width="220" height="48">
+  <rect width="220" height="48" rx="4" fill="transparent"/>
+  <text x="8" y="30" fill="#ffffff" font-family="Georgia, Times New Roman, serif" font-size="24" font-style="italic">urban</text>
+  <text x="96" y="30" fill="#febd69" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" letter-spacing="1.2">BLADE</text>
+  <path d="M12 38c48 10 120 10 196 0" stroke="#febd69" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+</svg>

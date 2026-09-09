@@ -1,0 +1,514 @@
+<div class="orders-view">
+  <!-- Header -->
+  <header class="page-header">
+    <div class="header-left">
+      <span class="status-indicator live">
+        <span class="pulse-dot"></span> Live Fulfillment Stream
+      </span>
+      <h1 class="page-title">Order Logistics & Dispatch</h1>
+      <p class="page-subtitle">
+        Amazon-grade asynchronous saga order tracking, instant fulfillment advancement, and line-item dispatch.
+      </p>
+    </div>
+
+    <div class="header-stats">
+      <div class="stat-pill">
+        <span class="stat-label">Total Volume</span>
+        <span class="stat-val">{{ admin.orders().length }} orders</span>
+      </div>
+      <div class="stat-pill highlight">
+        <span class="stat-label">Active Pipeline</span>
+        <span class="stat-val">{{ admin.metrics().orders.processing + admin.metrics().orders.accepted }} active</span>
+      </div>
+      <button type="button" class="btn-export" (click)="exportCSV()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Export CSV</span>
+      </button>
+      <button type="button" class="btn-create-order" (click)="openCreateModal()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>+ POS Order</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Filter Pipeline Tabs & Search -->
+  <div class="filter-bar">
+    <div class="tabs-container">
+      <button
+        class="tab-btn"
+        [class.active]="selectedTab() === 'all'"
+        (click)="setTab('all')"
+      >
+        <span>All Orders</span>
+        <span class="tab-badge">{{ admin.orders().length }}</span>
+      </button>
+      <button
+        class="tab-btn"
+        [class.active]="selectedTab() === 'accepted'"
+        (click)="setTab('accepted')"
+      >
+        <span class="dot accepted"></span>
+        <span>Accepted ({{ admin.metrics().orders.accepted }})</span>
+      </button>
+      <button
+        class="tab-btn"
+        [class.active]="selectedTab() === 'processing'"
+        (click)="setTab('processing')"
+      >
+        <span class="dot processing"></span>
+        <span>Processing ({{ admin.metrics().orders.processing }})</span>
+      </button>
+      <button
+        class="tab-btn"
+        [class.active]="selectedTab() === 'shipped'"
+        (click)="setTab('shipped')"
+      >
+        <span class="dot shipped"></span>
+        <span>In Transit ({{ admin.metrics().orders.shipped }})</span>
+      </button>
+      <button
+        class="tab-btn"
+        [class.active]="selectedTab() === 'delivered'"
+        (click)="setTab('delivered')"
+      >
+        <span class="dot delivered"></span>
+        <span>Delivered ({{ admin.metrics().orders.delivered }})</span>
+      </button>
+      <button
+        class="tab-btn"
+        [class.active]="selectedTab() === 'cancelled'"
+        (click)="setTab('cancelled')"
+      >
+        <span class="dot cancelled"></span>
+        <span>Cancelled ({{ admin.metrics().orders.cancelled }})</span>
+      </button>
+    </div>
+
+    <div class="search-input-wrap">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <input
+        type="text"
+        placeholder="Filter by ID, customer, city, item..."
+        [ngModel]="searchQuery()"
+        (ngModelChange)="searchQuery.set($event)"
+      />
+    </div>
+  </div>
+
+  <!-- Orders Grid / Table -->
+  <div class="table-card">
+    <div class="table-responsive">
+      <table class="orders-table">
+        <thead>
+          <tr>
+            <th>Order ID</th>
+            <th>Customer</th>
+            <th>Items</th>
+            <th>Total Amount</th>
+            <th>Payment</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (order of filteredOrders(); track order.id) {
+            <tr class="order-row" (click)="viewOrder(order)">
+              <td>
+                <span class="order-id-badge">#{{ order.id.slice(0, 10) }}</span>
+                <span class="order-time">{{ order.created_at | date:'mediumDate' }}</span>
+              </td>
+              <td>
+                <div class="customer-cell">
+                  <div class="avatar-circle">
+                    {{ order.shipping_address.fullName.charAt(0) }}
+                  </div>
+                  <div class="customer-meta">
+                    <span class="customer-name">{{ order.shipping_address.fullName }}</span>
+                    <span class="customer-city">{{ order.shipping_address.city }} • {{ order.shipping_address.phone }}</span>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <div class="items-cell">
+                  <span class="items-count">{{ order.items.length }} {{ order.items.length === 1 ? 'item' : 'items' }}</span>
+                  <span class="items-summary" [title]="order.items[0]?.product_name">
+                    {{ order.items[0]?.product_name }}
+                    @if (order.items.length > 1) {
+                      <span class="more-tag">+{{ order.items.length - 1 }} more</span>
+                    }
+                  </span>
+                </div>
+              </td>
+              <td>
+                <span class="amount-cell">₹{{ order.total_amount | number:'1.0-0' }}</span>
+              </td>
+              <td>
+                <span class="pay-badge" [class.upi]="order.payment_method === 'upi'" [class.cod]="order.payment_method === 'cash_on_delivery'">
+                  {{ order.payment_method === 'cash_on_delivery' ? 'COD' : 'UPI' }}
+                </span>
+              </td>
+              <td>
+                <span class="status-pill {{ order.status }}">
+                  {{ order.status | titlecase }}
+                </span>
+              </td>
+              <td>
+                <div class="actions-cell" (click)="$event.stopPropagation()">
+                  @if (order.status !== 'delivered' && order.status !== 'cancelled') {
+                    <button class="advance-btn" (click)="advanceStatus(order)" title="Advance to next stage">
+                      <span>Advance</span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                      </svg>
+                    </button>
+                  } @else {
+                    <span class="done-label">Complete</span>
+                  }
+                  <button class="icon-btn" (click)="openInvoice(order, $event)" title="Generate Tax Invoice">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <line x1="16" y1="13" x2="8" y2="13"></line>
+                      <line x1="16" y1="17" x2="8" y2="17"></line>
+                      <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                  </button>
+                  <button class="icon-btn" (click)="viewOrder(order)" title="Inspect Order Details">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                      <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="7" class="empty-state">
+                <div class="empty-content">
+                  <span class="empty-icon">📦</span>
+                  <h4>No orders found matching criteria</h4>
+                  <p>All orders in this filter category have been dispatched or moved to another stage.</p>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Detailed Order Modal / Slide Drawer -->
+  @if (selectedOrder(); as o) {
+    <div class="modal-backdrop" (click)="closeModal()">
+      <div class="modal-container" (click)="$event.stopPropagation()">
+        <!-- Modal Header -->
+        <div class="modal-header">
+          <div class="modal-title-box">
+            <span class="order-tag">Order Inspector</span>
+            <h2 class="modal-id">#{{ o.id }}</h2>
+            <span class="modal-date">Placed on {{ o.created_at | date:'medium' }}</span>
+          </div>
+          <button class="close-btn" (click)="closeModal()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Saga Stage Flow Tracker -->
+        <div class="saga-stepper">
+          <div class="step-item" [class.done]="o.status === 'accepted' || o.status === 'processing' || o.status === 'shipped' || o.status === 'delivered'">
+            <div class="step-circle">1</div>
+            <span class="step-label">Accepted</span>
+          </div>
+          <div class="step-line" [class.active]="o.status === 'processing' || o.status === 'shipped' || o.status === 'delivered'"></div>
+          <div class="step-item" [class.done]="o.status === 'processing' || o.status === 'shipped' || o.status === 'delivered'">
+            <div class="step-circle">2</div>
+            <span class="step-label">Processing</span>
+          </div>
+          <div class="step-line" [class.active]="o.status === 'shipped' || o.status === 'delivered'"></div>
+          <div class="step-item" [class.done]="o.status === 'shipped' || o.status === 'delivered'">
+            <div class="step-circle">3</div>
+            <span class="step-label">Shipped</span>
+          </div>
+          <div class="step-line" [class.active]="o.status === 'delivered'"></div>
+          <div class="step-item" [class.done]="o.status === 'delivered'">
+            <div class="step-circle">4</div>
+            <span class="step-label">Delivered</span>
+          </div>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="modal-body">
+          <!-- Line Items Section -->
+          <div class="section-card">
+            <h4 class="section-title">Purchased Items ({{ o.items.length }})</h4>
+            <div class="items-list">
+              @for (item of o.items; track item.product_name) {
+                <div class="item-row">
+                  <div class="item-thumb">
+                    @if (item.image_url) {
+                      <img [src]="item.image_url" [alt]="item.product_name" />
+                    } @else {
+                      <div class="placeholder-box">✂️</div>
+                    }
+                  </div>
+                  <div class="item-info">
+                    <span class="item-name">{{ item.product_name }}</span>
+                    <span class="item-qty">Quantity: {{ item.quantity }} × ₹{{ item.unit_price }}</span>
+                  </div>
+                  <div class="item-total">
+                    ₹{{ item.quantity * item.unit_price | number:'1.0-0' }}
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+
+          <!-- Customer & Shipping Card -->
+          <div class="section-grid">
+            <div class="section-card">
+              <h4 class="section-title">Shipping Address</h4>
+              <div class="details-list">
+                <div class="detail-row">
+                  <span class="label">Recipient:</span>
+                  <span class="val bold">{{ o.shipping_address.fullName }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="label">Phone:</span>
+                  <span class="val">{{ o.shipping_address.phone }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="label">City & State:</span>
+                  <span class="val">{{ o.shipping_address.city }}</span>
+                </div>
+                @if (o.shipping_address.street) {
+                  <div class="detail-row">
+                    <span class="label">Street:</span>
+                    <span class="val">{{ o.shipping_address.street }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <div class="section-card">
+              <h4 class="section-title">Payment Breakdown</h4>
+              <div class="details-list">
+                <div class="detail-row">
+                  <span class="label">Method:</span>
+                  <span class="val upper">{{ o.payment_method }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="label">Status:</span>
+                  <span class="val green">{{ o.payment_status }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="label">Subtotal:</span>
+                  <span class="val">₹{{ o.subtotal | number:'1.0-0' }}</span>
+                </div>
+                <div class="detail-row total">
+                  <span class="label">Total Paid:</span>
+                  <span class="val total-val">₹{{ o.total_amount | number:'1.0-0' }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal Footer Actions -->
+        <div class="modal-footer">
+          <button class="modal-action-btn secondary" (click)="openInvoice(o)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+            <span>View Tax Invoice</span>
+          </button>
+          @if (o.status !== 'delivered' && o.status !== 'cancelled') {
+            <button class="modal-action-btn advance" (click)="advanceStatus(o)">
+              <span>Advance ({{ o.status === 'accepted' ? 'Pack Order' : o.status === 'processing' ? 'Mark In Transit' : 'Mark Delivered' }})</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          }
+          @if (o.status !== 'cancelled') {
+            <button class="modal-action-btn cancel-btn" (click)="cancelOrder(o)" title="Cancel order and restock items">
+              <span>Cancel Order</span>
+            </button>
+          }
+          <button class="modal-action-btn close" (click)="closeModal()">Close Details</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Print-Ready GST Tax Invoice Modal -->
+  @if (selectedInvoiceOrder(); as inv) {
+    <div class="modal-backdrop print-backdrop" (click)="closeInvoice()">
+      <div class="invoice-container" (click)="$event.stopPropagation()">
+        <!-- Invoice Action Bar -->
+        <div class="invoice-actions-bar">
+          <div class="inv-title">Official Tax Invoice</div>
+          <div class="inv-btns">
+            <button class="inv-print-btn" (click)="printInvoice()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+              </svg>
+              <span>Print / Download PDF</span>
+            </button>
+            <button class="inv-close-btn" (click)="closeInvoice()">✕</button>
+          </div>
+        </div>
+
+        <!-- Printable Document Area -->
+        <div class="printable-invoice" id="printable-area">
+          <div class="inv-header">
+            <div class="seller-info">
+              <h2 class="salon-name">URBAN BLADE LUXURY SALON & SPA</h2>
+              <p class="salon-addr">
+                Tower B, Sector 62, Noida, Uttar Pradesh 201309<br/>
+                GSTIN: 07AAAAU1234F1Z5 • Email: orders&#64;urbanblade.in
+              </p>
+            </div>
+            <div class="inv-meta">
+              <span class="inv-badge">TAX INVOICE</span>
+              <div class="inv-meta-row"><strong>Invoice No:</strong> UB-{{ inv.id.slice(0, 8).toUpperCase() }}</div>
+              <div class="inv-meta-row"><strong>Date:</strong> {{ inv.created_at | date:'mediumDate' }}</div>
+              <div class="inv-meta-row"><strong>Payment:</strong> {{ inv.payment_method | uppercase }} ({{ inv.payment_status | uppercase }})</div>
+            </div>
+          </div>
+
+          <div class="inv-buyer">
+            <h4>Billed & Shipped To:</h4>
+            <div class="buyer-name">{{ inv.shipping_address.fullName }}</div>
+            <div class="buyer-detail">{{ inv.shipping_address.street || 'Standard Delivery Address' }}</div>
+            <div class="buyer-detail">{{ inv.shipping_address.city }} • Phone: {{ inv.shipping_address.phone }}</div>
+            <div class="buyer-detail">Place of Supply: {{ inv.shipping_address.city }}, India</div>
+          </div>
+
+          <table class="inv-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Item Description</th>
+                <th>HSN / SAC</th>
+                <th>Qty</th>
+                <th>Rate (₹)</th>
+                <th>Taxable Val (₹)</th>
+                <th>GST (18%)</th>
+                <th>Total (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (item of inv.items; track item.product_name; let i = $index) {
+                <tr>
+                  <td>{{ i + 1 }}</td>
+                  <td><strong>{{ item.product_name }}</strong></td>
+                  <td>33059011</td>
+                  <td>{{ item.quantity }}</td>
+                  <td>₹{{ (item.unit_price / 1.18) | number:'1.2-2' }}</td>
+                  <td>₹{{ ((item.unit_price * item.quantity) / 1.18) | number:'1.2-2' }}</td>
+                  <td>₹{{ ((item.unit_price * item.quantity) - ((item.unit_price * item.quantity) / 1.18)) | number:'1.2-2' }}</td>
+                  <td>₹{{ item.unit_price * item.quantity | number:'1.0-0' }}</td>
+                </tr>
+              }
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="7" class="tfoot-label">Subtotal:</td>
+                <td class="tfoot-val">₹{{ inv.subtotal | number:'1.0-0' }}</td>
+              </tr>
+              <tr>
+                <td colspan="7" class="tfoot-label">Shipping & Handling:</td>
+                <td class="tfoot-val">FREE</td>
+              </tr>
+              <tr class="grand-total-row">
+                <td colspan="7" class="tfoot-label">Invoice Total (INR):</td>
+                <td class="tfoot-val grand-val">₹{{ inv.total_amount | number:'1.0-0' }}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div class="inv-footer">
+            <p>This is a computer-generated tax invoice and requires no physical signature under IT Act 2000.</p>
+            <p>Thank you for choosing Urban Blade Salon & Grooming.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Manual POS Order Modal -->
+  @if (isCreateModalOpen()) {
+    <div class="modal-backdrop" (click)="closeCreateModal()">
+      <div class="pos-modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <div>
+            <span class="modal-eyebrow">COUNTER DISPATCH</span>
+            <h3 class="modal-title">Create Manual POS Order</h3>
+          </div>
+          <button class="btn-modal-close" (click)="closeCreateModal()">✕</button>
+        </div>
+
+        <div class="modal-form">
+          <div class="form-row">
+            <div class="form-field">
+              <label>Customer Full Name *</label>
+              <input type="text" placeholder="e.g. Vikram Malhotra" [ngModel]="manualCustomerName()" (ngModelChange)="manualCustomerName.set($event)" />
+            </div>
+            <div class="form-field">
+              <label>Phone Number *</label>
+              <input type="tel" placeholder="e.g. +91 9811223344" [ngModel]="manualCustomerPhone()" (ngModelChange)="manualCustomerPhone.set($event)" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label>Select Catalog Item</label>
+              <select [ngModel]="manualProductId()" (ngModelChange)="manualProductId.set($event)">
+                @for (prod of admin.products(); track prod.id) {
+                  <option [value]="prod.id">{{ prod.name }} (₹{{ prod.price }}) - Stock: {{ prod.stock_quantity ?? 100 }}</option>
+                }
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Quantity</label>
+              <input type="number" min="1" [ngModel]="manualQuantity()" (ngModelChange)="manualQuantity.set($event)" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label>Payment Method</label>
+              <select [ngModel]="manualPaymentMethod()" (ngModelChange)="manualPaymentMethod.set($event)">
+                <option value="upi">UPI / QR Code</option>
+                <option value="cash_on_delivery">Cash on Hand</option>
+                <option value="card">POS Card Terminal</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Delivery / Pickup Location</label>
+              <input type="text" placeholder="e.g. Salon Counter / Ghaziabad" [ngModel]="manualCustomerStreet()" (ngModelChange)="manualCustomerStreet.set($event)" />
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" (click)="closeCreateModal()">Cancel</button>
+          <button type="button" class="btn-confirm" (click)="saveManualOrder()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Record Order</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

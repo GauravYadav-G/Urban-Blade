@@ -1,0 +1,51 @@
+<section class="help">
+  <header class="help__intro">
+    <p class="kicker">Help</p>
+    <h1>Help with Urban Blade products</h1>
+    <p class="lede">
+      {{ salon.name }} is a salon store in {{ salon.city }}. We sell the hair, beard, skin, and
+      tools used on the floor, plus gift cards and chair services at {{ salon.address }}.
+    </p>
+  </header>
+
+  <section class="block" aria-labelledby="shop-heading">
+    <h2 id="shop-heading">Shop by product</h2>
+    <div class="departments">
+      @for (item of departments; track item.title) {
+        <a class="dept" [routerLink]="item.route" [queryParams]="item.query">
+          <strong>{{ item.title }}</strong>
+          <span>{{ item.body }}</span>
+        </a>
+      }
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="guides-heading">
+    <h2 id="guides-heading">Using our products</h2>
+    <div class="guides">
+      @for (guide of guides; track guide.title) {
+        <article>
+          <h3>{{ guide.title }}</h3>
+          <ul>
+            @for (line of guide.items; track line) {
+              <li>{{ line }}</li>
+            }
+          </ul>
+        </article>
+      }
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="order-heading">
+    <h2 id="order-heading">Orders and store help</h2>
+    <div class="topics">
+      @for (topic of policies; track topic.title) {
+        <article>
+          <h3>{{ topic.title }}</h3>
+          <p>{{ topic.body }}</p>
+        </article>
+      }
+    </div>
+  </section>
+
+</section>

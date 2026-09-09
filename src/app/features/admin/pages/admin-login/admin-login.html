@@ -1,0 +1,128 @@
+<div class="admin-login-shell">
+  <div class="glow-orb glow-orb--top"></div>
+  <div class="glow-orb glow-orb--bottom"></div>
+
+  <div class="admin-login-card">
+    <!-- Brand Crest & Header -->
+    <div class="card-header">
+      <div class="terminal-badge">
+        <span class="pulse-dot"></span>
+        <span>COMMAND CONSOLE · AIR-GAPPED GATE</span>
+      </div>
+      
+      <div class="brand-badge">
+        <span class="brand-symbol">✦</span>
+        <h1 class="brand-title">URBAN BLADE</h1>
+      </div>
+      <p class="brand-subtitle">Executive Operations & Catalog Control Portal</p>
+    </div>
+
+    <!-- Error Alert -->
+    @if (errorMessage()) {
+      <div class="alert-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <span>{{ errorMessage() }}</span>
+      </div>
+    }
+
+    <!-- Login Form -->
+    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="login-form">
+      <div class="form-group">
+        <label for="admin-email">Administrator Email</label>
+        <div class="input-wrap">
+          <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+            <polyline points="22,6 12,13 2,6"></polyline>
+          </svg>
+          <input
+            id="admin-email"
+            type="email"
+            formControlName="email"
+            placeholder="admin@urbanblade.in"
+            autocomplete="email"
+          />
+        </div>
+        @if (form.controls.email.touched && form.controls.email.invalid) {
+          <span class="field-error">Valid admin email is required</span>
+        }
+      </div>
+
+      <div class="form-group">
+        <div class="label-row">
+          <label for="admin-password">Master Key / Password</label>
+          <button type="button" class="btn-toggle-pw" (click)="togglePassword()">
+            {{ showPassword() ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+        <div class="input-wrap">
+          <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <input
+            id="admin-password"
+            [type]="showPassword() ? 'text' : 'password'"
+            formControlName="password"
+            placeholder="Enter security key"
+            autocomplete="current-password"
+          />
+        </div>
+        @if (form.controls.password.touched && form.controls.password.invalid) {
+          <span class="field-error">Password must be at least 4 characters</span>
+        }
+      </div>
+
+      <button type="submit" class="btn-submit" [disabled]="isSubmitting()">
+        @if (isSubmitting()) {
+          <span class="spinner"></span>
+          <span>Authenticating...</span>
+        } @else {
+          <span>Access Command Terminal</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        }
+      </button>
+
+      <!-- Official Root Operator Credentials Box -->
+      <div class="auth-credential-card">
+        <div class="auth-credential-header">
+          <div class="auth-credential-info">
+            <span class="credential-badge">ENTERPRISE KEY</span>
+            <span class="credential-title">Authorized Root Administrator</span>
+          </div>
+          <button type="button" class="btn-fill-key" (click)="fillMasterAdmin()">
+            Fill Root Key
+          </button>
+        </div>
+        <div class="credential-meta">
+          <span class="mono">{{ masterCreds.email }}</span>
+          <span class="sep">·</span>
+          <span class="mono">{{ masterCreds.password }}</span>
+        </div>
+      </div>
+    </form>
+
+    <!-- Footer Links & Security Stamp -->
+    <div class="card-footer">
+      <a routerLink="/" class="back-link">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        <span>Return to Storefront</span>
+      </a>
+
+      <div class="security-stamp">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+        </svg>
+        <span>Protected by High-Security RBAC Gate</span>
+      </div>
+    </div>
+  </div>
+</div>

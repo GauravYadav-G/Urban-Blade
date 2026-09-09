@@ -1,0 +1,312 @@
+<div class="bookings-view">
+  <!-- Page Header -->
+  <header class="page-header">
+    <div class="header-left">
+      <span class="status-indicator live">
+        <span class="pulse-dot"></span> Real-time Chair Dispatch
+      </span>
+      <h1 class="page-title">Stylist & Appointment Roster</h1>
+      <p class="page-subtitle">
+        Manage master barber schedules, client time-slots, and salon chair occupancy in real-time.
+      </p>
+    </div>
+
+    <div class="header-stats">
+      <div class="stat-pill">
+        <span class="stat-label">Today's Appointments</span>
+        <span class="stat-val">{{ admin.metrics().bookings.today }} clients</span>
+      </div>
+      <div class="stat-pill highlight">
+        <span class="stat-label">Chair Occupancy</span>
+        <span class="stat-val">{{ admin.metrics().bookings.occupancyRate }}%</span>
+      </div>
+      <button type="button" class="btn-export" (click)="exportCSV()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Export CSV</span>
+      </button>
+      <button type="button" class="btn-new-booking" (click)="openCreateModal()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>Book Client Slot</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Filter & Control Bar -->
+  <div class="filter-controls">
+    <!-- Status Filter -->
+    <div class="filter-group">
+      <span class="filter-label">Status:</span>
+      <div class="pill-group">
+        <button class="filter-pill" [class.active]="selectedStatus() === 'all'" (click)="setStatus('all')">
+          All ({{ admin.bookings().length }})
+        </button>
+        <button class="filter-pill" [class.active]="selectedStatus() === 'confirmed'" (click)="setStatus('confirmed')">
+          Confirmed
+        </button>
+        <button class="filter-pill" [class.active]="selectedStatus() === 'completed'" (click)="setStatus('completed')">
+          Completed
+        </button>
+        <button class="filter-pill" [class.active]="selectedStatus() === 'cancelled'" (click)="setStatus('cancelled')">
+          Cancelled
+        </button>
+      </div>
+    </div>
+
+    <!-- Stylist Filter -->
+    <div class="filter-group">
+      <span class="filter-label">Stylist:</span>
+      <div class="pill-group">
+        <button class="filter-pill" [class.active]="selectedStylist() === 'all'" (click)="setStylist('all')">
+          All Stylists
+        </button>
+        @for (st of stylists(); track st) {
+          <button class="filter-pill" [class.active]="selectedStylist() === st" (click)="setStylist(st)">
+            {{ st }}
+          </button>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Bookings Grid -->
+  <div class="bookings-grid">
+    @for (b of filteredBookings(); track b.id) {
+      <div class="booking-card" [class.completed]="b.status === 'completed'" [class.cancelled]="b.status === 'cancelled'">
+        <div class="card-header">
+          <div class="time-slot-badge">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span>{{ b.time_slot }}</span>
+          </div>
+          <span class="status-chip {{ b.status }}">{{ b.status | titlecase }}</span>
+        </div>
+
+        <div class="client-section">
+          <div class="client-avatar">
+            {{ b.customer_name.charAt(0) }}
+          </div>
+          <div class="client-info">
+            <h3 class="client-name">{{ b.customer_name }}</h3>
+            <span class="client-contact">{{ b.customer_phone }}</span>
+            <span class="client-email">{{ b.customer_email }}</span>
+          </div>
+        </div>
+
+        <div class="service-details">
+          <div class="detail-item">
+            <span class="d-label">Stylist:</span>
+            <span class="d-val stylist-val">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+              {{ b.stylist_name || 'Master Barber' }}
+            </span>
+          </div>
+          <div class="detail-item">
+            <span class="d-label">Date:</span>
+            <span class="d-val">{{ b.booking_date }}</span>
+          </div>
+          @if (b.notes) {
+            <div class="notes-box">
+              <span class="notes-label">Service:</span>
+              <span class="notes-text">"{{ b.notes }}"</span>
+            </div>
+          }
+        </div>
+
+        <div class="card-footer">
+          <div class="price-box">
+            <span class="fee-label">Service Fee</span>
+            <span class="price-val">₹{{ b.total_price }}</span>
+          </div>
+
+          <div class="card-actions">
+            @if (b.status === 'confirmed' || b.status === 'pending') {
+              <button class="btn-action complete" (click)="updateStatus(b, 'completed')" title="Mark Completed">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Done</span>
+              </button>
+              <button class="btn-action reschedule" (click)="openReschedule(b, $event)" title="Reschedule Time Slot">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+              </button>
+              <button class="btn-action cancel" (click)="updateStatus(b, 'cancelled')" title="Cancel Appointment">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            } @else if (b.status === 'cancelled') {
+              <button class="btn-action restore" (click)="updateStatus(b, 'confirmed')">
+                <span>Restore</span>
+              </button>
+            }
+ @else {
+              <span class="completed-tag">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                Fulfilled
+              </span>
+            }
+          </div>
+        </div>
+      </div>
+    } @empty {
+      <div class="empty-state-card">
+        <span class="empty-icon">💈</span>
+        <h3>No Appointments Scheduled</h3>
+        <p>There are no bookings matching the selected filter criteria.</p>
+      </div>
+    }
+  </div>
+
+  <!-- New Appointment Booking Modal -->
+  @if (isCreateModalOpen()) {
+    <div class="modal-backdrop" (click)="closeCreateModal()">
+      <div class="booking-modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <div>
+            <span class="modal-eyebrow">CHAIR DISPATCH</span>
+            <h3 class="modal-title">Book New Appointment</h3>
+          </div>
+          <button class="btn-modal-close" (click)="closeCreateModal()">✕</button>
+        </div>
+
+        <div class="modal-form">
+          <div class="form-row">
+            <div class="form-field">
+              <label>Client Full Name *</label>
+              <input type="text" placeholder="e.g. Aman Dixit" [ngModel]="clientName()" (ngModelChange)="clientName.set($event)" />
+            </div>
+            <div class="form-field">
+              <label>Mobile Number *</label>
+              <input type="tel" placeholder="e.g. 9811223344" [ngModel]="clientPhone()" (ngModelChange)="clientPhone.set($event)" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label>Email Address</label>
+              <input type="email" placeholder="client@example.com" [ngModel]="clientEmail()" (ngModelChange)="clientEmail.set($event)" />
+            </div>
+            <div class="form-field">
+              <label>Assigned Stylist</label>
+              <select [ngModel]="stylistName()" (ngModelChange)="stylistName.set($event)">
+                @for (s of stylists(); track s) {
+                  <option [value]="s">{{ s }}</option>
+                }
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label>Appointment Date</label>
+              <input type="date" [ngModel]="bookingDate()" (ngModelChange)="bookingDate.set($event)" />
+            </div>
+            <div class="form-field">
+              <label>Time Slot</label>
+              <select [ngModel]="timeSlot()" (ngModelChange)="timeSlot.set($event)">
+                <option value="10:00 AM">10:00 AM</option>
+                <option value="11:00 AM">11:00 AM</option>
+                <option value="12:00 PM">12:00 PM</option>
+                <option value="02:00 PM">02:00 PM</option>
+                <option value="03:30 PM">03:30 PM</option>
+                <option value="04:30 PM">04:30 PM</option>
+                <option value="05:30 PM">05:30 PM</option>
+                <option value="07:00 PM">07:00 PM</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label>Service Description</label>
+              <input type="text" placeholder="e.g. Skin-Fade & Hot Towel Shave" [ngModel]="serviceName()" (ngModelChange)="serviceName.set($event)" />
+            </div>
+            <div class="form-field">
+              <label>Service Fee (₹)</label>
+              <input type="number" [ngModel]="servicePrice()" (ngModelChange)="servicePrice.set($event)" />
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" (click)="closeCreateModal()">Cancel</button>
+          <button type="button" class="btn-confirm" (click)="saveNewBooking()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Confirm Reservation</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Reschedule Appointment Modal -->
+  @if (isRescheduleModalOpen()) {
+    <div class="modal-backdrop" (click)="closeReschedule()">
+      <div class="booking-modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <div>
+            <span class="modal-eyebrow">CHAIR DISPATCH</span>
+            <h3 class="modal-title">Reschedule Appointment</h3>
+          </div>
+          <button class="btn-modal-close" (click)="closeReschedule()">✕</button>
+        </div>
+
+        <div class="modal-form">
+          <p class="reschedule-target" style="font-size: 0.85rem; color: #94a3b8; margin: 0 0 0.5rem;">
+            Rescheduling client <strong style="color: #f8fafc;">{{ reschedulingBooking()?.customer_name }}</strong> ({{ reschedulingBooking()?.notes }})
+          </p>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label>New Appointment Date</label>
+              <input type="date" [ngModel]="rescheduleDate()" (ngModelChange)="rescheduleDate.set($event)" />
+            </div>
+            <div class="form-field">
+              <label>New Time Slot</label>
+              <select [ngModel]="rescheduleSlot()" (ngModelChange)="rescheduleSlot.set($event)">
+                <option value="10:00 AM">10:00 AM</option>
+                <option value="11:00 AM">11:00 AM</option>
+                <option value="12:00 PM">12:00 PM</option>
+                <option value="02:00 PM">02:00 PM</option>
+                <option value="03:30 PM">03:30 PM</option>
+                <option value="04:30 PM">04:30 PM</option>
+                <option value="05:30 PM">05:30 PM</option>
+                <option value="07:00 PM">07:00 PM</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field" style="grid-column: 1 / -1;">
+              <label>Re-assign Stylist</label>
+              <select [ngModel]="rescheduleStylist()" (ngModelChange)="rescheduleStylist.set($event)">
+                @for (s of stylists(); track s) {
+                  <option [value]="s">{{ s }}</option>
+                }
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" (click)="closeReschedule()">Cancel</button>
+          <button type="button" class="btn-confirm" (click)="confirmReschedule()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Update Slot</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

@@ -1,0 +1,86 @@
+<section class="hero" aria-label="Featured campaigns" (mouseenter)="pause()" (mouseleave)="resume()">
+  @let slide = current();
+  @let product = featuredProduct();
+  <div class="hero__inner">
+    <div class="hero__visual">
+      <img [src]="slide.leftImage" [alt]="slide.leftAlt" appImgFallback />
+    </div>
+
+    <div class="hero__copy">
+      <p class="hero__kicker">{{ slide.kicker }}</p>
+      <h1>{{ slide.title }}</h1>
+      <p class="hero__terms">{{ slide.terms }}</p>
+      <a class="hero__cta" [routerLink]="slide.link" [queryParams]="slide.query ?? {}">{{ slide.cta }}</a>
+    </div>
+
+    @if (product) {
+      <article class="hero__offer">
+        <img class="hero__offer-img" [src]="slide.offerImage" [alt]="product.name" appImgFallback />
+        @if (saveAmount(product) > 0) {
+          <span class="hero__badge">Save {{ saveAmount(product) | inr }}</span>
+        }
+        <p class="hero__special">Special Offer</p>
+        <div class="hero__offer-copy">
+          <p class="hero__offer-cat">{{ slide.categoryLabel }}</p>
+          <h2>
+            <a [routerLink]="['/shop', product.id]">{{ product.name }}</a>
+          </h2>
+          <p class="hero__price">
+            @if (product.compareAtPrice) {
+              <s>{{ product.compareAtPrice | inr }}</s>
+            }
+            <strong>{{ product.price | inr }}</strong>
+          </p>
+          <button type="button" class="hero__add" (click)="addFeatured($event, product)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 7h15l-1.6 8.2A2 2 0 0117.4 17H9.2a2 2 0 01-2-1.6L5 5H3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            Add To Cart
+          </button>
+        </div>
+      </article>
+    }
+  </div>
+
+  <div class="hero__pager">
+    @for (item of slides; track item.productId; let i = $index) {
+      <button
+        type="button"
+        class="hero__dot"
+        [class.hero__dot--active]="i === activeSlide"
+        (click)="goTo(i)"
+        [attr.aria-label]="'Go to slide ' + (i + 1)"
+      ></button>
+    }
+  </div>
+  <div class="hero__controls">
+    <button type="button" (click)="prev()" aria-label="Previous slide">‹</button>
+    <button type="button" (click)="next()" aria-label="Next slide">›</button>
+  </div>
+</section>
+
+<div class="home-body">
+  <div class="tiles">
+    @for (tile of tiles; track tile.cat) {
+      <a class="tile" [routerLink]="'/shop'" [queryParams]="{ cat: tile.cat }">
+        <img [src]="tile.image" [alt]="tile.title" appImgFallback />
+        <span>{{ tile.title }}</span>
+      </a>
+    }
+  </div>
+
+  <app-product-slider title="Related items" [products]="relatedPicks" />
+  <app-product-shelf title="Today's deals" [products]="deals" seeAllLink="/shop" [seeAllQuery]="{ deals: '1' }" />
+  <app-hair-care-section [products]="hair" />
+  <app-hair-care-section
+    [products]="beard"
+    title="Beard & Moustache"
+    kicker="Barber shelf"
+    lede="Oil, balm, wax, wash, and tools — the full Urban Blade beard and moustache line."
+    category="beard"
+    seeAllLabel="See all Beard & Moustache"
+    sectionId="beard-moustache"
+  />
+  <app-product-slider title="Bestsellers" [products]="bestsellers" seeAllLink="/shop" />
+  <app-product-shelf title="Book a salon service" [products]="services" seeAllLink="/book" />
+</div>

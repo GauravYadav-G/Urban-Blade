@@ -1,0 +1,43 @@
+<footer class="site-footer" role="contentinfo">
+  <a class="site-footer__back-top" href="#top" (click)="scrollToTop($event)">Back to top</a>
+
+  <div class="site-footer__main">
+    <app-store-logo class="site-footer__brand" />
+
+    <nav class="site-footer__grid" aria-label="Footer">
+      @for (col of columns; track col.title) {
+        <div>
+          <h2>{{ col.title }}</h2>
+          <ul>
+            @for (link of col.links; track link.label) {
+              <li>
+                <a [routerLink]="link.route" [queryParams]="link.query ?? {}">{{ link.label }}</a>
+              </li>
+            }
+          </ul>
+        </div>
+      }
+    </nav>
+
+    <div class="site-footer__contact">
+      <p>{{ settings().business.name }} · {{ settings().business.tagline }}</p>
+      <p>{{ settings().business.address }}, {{ settings().business.pin }}</p>
+      <p>
+        <a [href]="'tel:' + settings().business.phoneTel">{{ settings().business.phoneDisplay }}</a>
+        ·
+        <a [href]="'mailto:' + settings().business.email">{{ settings().business.email }}</a>
+      </p>
+      <p>{{ settings().business.hours }}</p>
+    </div>
+  </div>
+
+  <div class="site-footer__bottom">
+    <app-store-logo class="site-footer__logo" [size]="28" />
+    <nav class="site-footer__legal" aria-label="Legal">
+      <a routerLink="/terms">Terms and conditions</a>
+      <a routerLink="/privacy">Privacy policy</a>
+    </nav>
+    <p>India · English · INR · {{ settings().business.city }}</p>
+    <p>© {{ year }} {{ settings().business.name }} · Hair, beard, skin, tools and gift cards</p>
+  </div>
+</footer>

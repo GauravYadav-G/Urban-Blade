@@ -1,0 +1,16 @@
+<section class="hair-care" [id]="sectionId()" [attr.aria-labelledby]="sectionId() + '-title'">
+  <header class="hair-care__head">
+    <div>
+      <p class="hair-care__kicker">{{ kicker() }}</p>
+      <h2 [id]="sectionId() + '-title'">{{ title() }}</h2>
+      <p class="hair-care__lede">{{ lede() }}</p>
+    </div>
+    <a routerLink="/shop" [queryParams]="{ cat: category() }" class="hair-care__all">{{ seeAllLabel() }}</a>
+  </header>
+
+  <div class="hair-care__grid">
+    @for (product of products(); track product.id) {
+      <app-product-card [product]="product" />
+    }
+  </div>
+</section>

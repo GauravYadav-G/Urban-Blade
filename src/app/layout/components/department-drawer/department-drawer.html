@@ -1,0 +1,52 @@
+@if (open()) {
+  <div class="dept-backdrop" (click)="requestClose()" aria-hidden="true"></div>
+}
+
+<aside
+  class="dept-drawer"
+  [class.dept-drawer--open]="open()"
+  [attr.inert]="open() ? null : ''"
+  [attr.aria-hidden]="!open()"
+  id="department-drawer"
+  aria-labelledby="dept-drawer-title"
+>
+  <header class="dept-drawer__head">
+    <div>
+      <p class="dept-drawer__greeting">{{ isSignedIn() ? 'Hello' : 'Hello, sign in' }}</p>
+      <h2 id="dept-drawer-title" class="dept-drawer__title">Browse Urban Blade</h2>
+    </div>
+    <button type="button" class="dept-drawer__close" (click)="requestClose()" aria-label="Close menu">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </header>
+
+  <nav class="dept-drawer__nav" aria-label="Departments">
+    @for (section of sections; track section.title) {
+      <div class="dept-drawer__section">
+        <h3 class="dept-drawer__section-title">{{ section.title }}</h3>
+        <ul>
+          @for (item of section.items; track item.label) {
+            <li>
+              <a
+                [routerLink]="item.route"
+                [queryParams]="item.query ?? {}"
+                class="dept-drawer__link"
+                (click)="requestClose()"
+              >
+                <span>
+                  <span class="dept-drawer__label">{{ item.label }}</span>
+                  @if (item.hint) {
+                    <span class="dept-drawer__hint">{{ item.hint }}</span>
+                  }
+                </span>
+                <span aria-hidden="true">›</span>
+              </a>
+            </li>
+          }
+        </ul>
+      </div>
+    }
+  </nav>
+</aside>

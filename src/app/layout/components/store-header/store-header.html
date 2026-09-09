@@ -1,0 +1,180 @@
+<header class="store-header">
+  @if (settings().announcement.enabled) {
+    <div class="store-top-announcement">
+      <div class="store-header__inner announcement-inner">
+        <span class="announcement-pill">{{ settings().announcement.badge }}</span>
+        <span class="announcement-message">{{ settings().announcement.text }}</span>
+        @if (settings().announcement.linkText) {
+          <a [routerLink]="settings().announcement.linkUrl" class="announcement-cta">
+            {{ settings().announcement.linkText }} &rarr;
+          </a>
+        }
+      </div>
+    </div>
+  }
+  <div class="store-header__top">
+    <div class="store-header__inner store-header__top-inner">
+      <nav class="store-header__top-links" aria-label="Support">
+        <a routerLink="/help">Help</a>
+        <span>/</span>
+        <a routerLink="/help">Support</a>
+        <span>/</span>
+        <a routerLink="/help">Contact</a>
+      </nav>
+      <p class="store-header__call">
+        Call Us: <a [href]="'tel:' + settings().business.phoneTel">{{ settings().business.phoneDisplay }}</a>
+      </p>
+      <div class="store-header__top-right">
+        <span>INR</span>
+        <span>English</span>
+        <a routerLink="/admin" class="store-header__admin-link" style="color: #f59e0b; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          Admin Console
+        </a>
+        <a routerLink="/account">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3l9-8z"/>
+          </svg>
+          Account
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="store-header__mid">
+    <div class="store-header__inner store-header__mid-inner">
+      <app-store-logo class="store-header__logo" />
+
+      <form class="store-header__search" (submit)="onSearch($event)">
+        <label class="visually-hidden" for="store-search">Search Urban Blade</label>
+        <input
+          id="store-search"
+          type="search"
+          class="store-header__search-input"
+          placeholder="Search Looking For?"
+          autocomplete="off"
+          name="searchQ"
+          [ngModel]="query()"
+          (ngModelChange)="query.set($event); suggestionsOpen.set(true)"
+          (focus)="suggestionsOpen.set(true)"
+          (blur)="suggestionsOpen.set(false)"
+        />
+        <select
+          class="store-header__search-cat"
+          aria-label="Search category"
+          [ngModel]="category()"
+          (ngModelChange)="category.set($event)"
+          name="searchCat"
+        >
+          @for (cat of categories; track cat.value) {
+            <option [value]="cat.value">{{ cat.value === 'all' ? 'All Category' : cat.label }}</option>
+          }
+        </select>
+        <button type="submit" class="store-header__search-submit" aria-label="Search">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2.2"/>
+            <path d="M20 20l-4-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          </svg>
+        </button>
+
+        @if (suggestionsOpen() && suggestions().length) {
+          <ul class="store-header__suggest" role="listbox">
+            @for (item of suggestions(); track item.id) {
+              <li>
+                <button type="button" class="store-header__suggest-item" (mousedown)="goToProduct(item.id)">
+                  <img [src]="item.imageUrl" [alt]="item.name" width="36" height="36" appImgFallback />
+                  <span>{{ item.name }}</span>
+                </button>
+              </li>
+            }
+          </ul>
+        }
+      </form>
+
+      <div class="store-header__tools">
+        <app-theme-toggle />
+        <a routerLink="/shop" class="store-header__tool" aria-label="Compare products">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M7 7h13M7 7l3-3M7 7l3 3M17 17H4M17 17l-3-3M17 17l-3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </a>
+        <a routerLink="/lists" class="store-header__tool" aria-label="Your list">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 20s-7-4.4-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.6-7 10-7 10z" stroke="currentColor" stroke-width="1.8"/>
+          </svg>
+        </a>
+        <a routerLink="/cart" class="store-header__cart" [attr.aria-label]="'Cart, ' + (subtotal() | inr)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 7h15l-1.6 8.2A2 2 0 0117.4 17H9.2a2 2 0 01-2-1.6L5 5H3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <circle cx="10" cy="20" r="1.4" fill="currentColor"/>
+            <circle cx="17" cy="20" r="1.4" fill="currentColor"/>
+          </svg>
+          @if (itemCount() > 0) {
+            <span class="store-header__cart-count">{{ itemCount() }}</span>
+          }
+          <span>{{ subtotal() | inr }}</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <nav class="store-header__nav" aria-label="Main">
+    <div class="store-header__inner store-header__nav-inner">
+      <button
+        type="button"
+        class="store-header__cats"
+        [class.store-header__cats--open]="menuOpen()"
+        (click)="toggleMenu()"
+        [attr.aria-expanded]="menuOpen()"
+        aria-controls="department-drawer"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/>
+        </svg>
+        All Categories
+      </button>
+
+      <div class="store-header__links">
+        @for (link of navLinks; track link.label) {
+          <a [routerLink]="link.route" [queryParams]="link.query ?? {}" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: true, queryParams: 'exact' }">
+            {{ link.label }}
+          </a>
+        }
+        <div
+          class="store-header__pages"
+          [class.is-open]="pagesOpen()"
+          (mouseenter)="pagesOpen.set(true)"
+          (mouseleave)="closePages()"
+        >
+          <button type="button" (click)="togglePages()" [attr.aria-expanded]="pagesOpen()">
+            More
+            <svg width="10" height="6" viewBox="0 0 10 6" fill="currentColor" aria-hidden="true">
+              <path d="M1 1l4 4 4-4"/>
+            </svg>
+          </button>
+          <ul>
+            @for (page of pagesNav; track page.label) {
+              <li>
+                <a [routerLink]="page.route" (click)="closePages()">{{ page.label }}</a>
+              </li>
+            }
+          </ul>
+        </div>
+      </div>
+
+      <a class="store-header__phone" [href]="'tel:' + salon.phoneTel">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M6.6 10.8a15 15 0 006.6 6.6l2.2-2.2a1 1 0 011-.24 11 11 0 003.4.54 1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1 11 11 0 00.54 3.4 1 1 0 01-.24 1L6.6 10.8z"/>
+        </svg>
+        {{ salon.phoneDisplay }}
+      </a>
+    </div>
+  </nav>
+</header>
+
+<app-department-drawer [open]="menuOpen()" (closed)="closeMenu()" />

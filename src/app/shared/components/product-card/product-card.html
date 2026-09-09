@@ -1,0 +1,30 @@
+@let p = product();
+<article class="card" [class.card--large]="largeMedia()">
+  <a class="card__media" [routerLink]="['/shop', p.id]" [attr.aria-label]="p.name">
+    @if (p.badge === 'deal') {
+      <span class="card__badge">Deal</span>
+    } @else if (p.badge === 'bestseller') {
+      <span class="card__badge card__badge--best">Bestseller</span>
+    } @else if (p.badge === 'new') {
+      <span class="card__badge card__badge--new">New</span>
+    }
+    <img [src]="p.imageUrl" [alt]="p.name" width="320" height="240" loading="lazy" appImgFallback />
+  </a>
+  <div class="card__body">
+    <h3 class="card__title">
+      <a [routerLink]="['/shop', p.id]">{{ p.name }}</a>
+    </h3>
+    <app-rating-stars [rating]="p.rating" [count]="p.reviewCount" />
+    <p class="card__price">
+      <span>{{ p.price | inr }}</span>
+      @if (p.compareAtPrice) {
+        <s>{{ p.compareAtPrice | inr }}</s>
+      }
+    </p>
+    @if (p.freeDelivery) {
+      <p class="card__ship">FREE delivery</p>
+    }
+    <p class="card__vendor">Sold by {{ p.vendor }}</p>
+    <button type="button" class="card__btn" (click)="add($event)">Add to cart</button>
+  </div>
+</article>

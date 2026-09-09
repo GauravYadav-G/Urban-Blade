@@ -1,0 +1,87 @@
+:root,
+html[data-theme='light'] {
+  --brand: #ff9800;
+  --brand-dark: #f57c00;
+  --brand-soft: #fff3e0;
+  --phone: #e53935;
+  --phone-hover: #c62828;
+  --nav: #ff9800;
+  --nav-sub: #ff9800;
+  --nav-hover: rgb(0 0 0 / 0.08);
+  --search-btn: #ff9800;
+  --search-btn-hover: #fb8c00;
+  --search-btn-text: #fff;
+  --cart-badge: #e53935;
+
+  --gold: #ff9800;
+  --gold-soft: #fff3e0;
+  --ink: #333333;
+  --muted: #747474;
+  --page: #f5f5f5;
+  --surface: #ffffff;
+  --border: #e5e5e5;
+  --link: #333333;
+  --sale: #e53935;
+  --success: #43a047;
+  --star: #ff9800;
+  --focus: #ff9800;
+
+  --header-bg: #ffffff;
+  --input-bg: #fafafa;
+  --input-focus-bg: #ffffff;
+  --media-bg: #f3f3f3;
+  --hover-fill: #f7f7f7;
+  --on-accent: #ffffff;
+  --search-border: #dcdcdc;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --shadow-sm: 0 1px 2px rgb(15 17 17 / 0.08);
+  --shadow-md: 0 4px 12px rgb(15 17 17 / 0.1);
+  --shadow-header: 0 1px 4px rgb(0 0 0 / 0.08);
+  --ease-out: cubic-bezier(0.33, 1, 0.68, 1);
+  --duration-fast: 0.15s;
+  --header-max: 1400px;
+  color-scheme: light;
+}
+
+html[data-theme='dark'] {
+  --brand: #ff9800;
+  --brand-dark: #ffb74d;
+  --brand-soft: #3d2a12;
+  --phone: #ef5350;
+  --phone-hover: #e57373;
+  --nav: #e68900;
+  --nav-sub: #e68900;
+  --nav-hover: rgb(255 255 255 / 0.1);
+  --search-btn: #ff9800;
+  --search-btn-hover: #ffb74d;
+  --search-btn-text: #1a1a1a;
+  --cart-badge: #ef5350;
+
+  --gold: #ffb74d;
+  --gold-soft: #3d2a12;
+  --ink: #f0f0f0;
+  --muted: #b0b0b0;
+  --page: #121212;
+  --surface: #1c1c1c;
+  --border: #333333;
+  --link: #f0f0f0;
+  --sale: #ef5350;
+  --success: #66bb6a;
+  --star: #ffb74d;
+  --focus: #ff9800;
+
+  --header-bg: #1a1a1a;
+  --input-bg: #242424;
+  --input-focus-bg: #2a2a2a;
+  --media-bg: #2a2a2a;
+  --hover-fill: #2a2a2a;
+  --on-accent: #ffffff;
+  --search-border: #3d3d3d;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.45);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.45);
+  --shadow-header: 0 1px 4px rgb(0 0 0 / 0.4);
+  color-scheme: dark;
+}

@@ -1,0 +1,49 @@
+<div class="catalog">
+  <aside class="filters" aria-label="Filters">
+    <h2>Department</h2>
+    <a routerLink="/shop" [class.active]="!query().cat">All</a>
+    @for (cat of categories; track cat.slug) {
+      <a [routerLink]="'/shop'" [queryParams]="{ cat: cat.slug }" [class.active]="query().cat === cat.slug">
+        {{ cat.label }}
+      </a>
+    }
+
+    <h2>Customer</h2>
+    <button type="button" [class.active]="query().audience === 'men'" (click)="setFilter('audience', 'men')">Men</button>
+    <button type="button" [class.active]="query().audience === 'ladies'" (click)="setFilter('audience', 'ladies')">Ladies</button>
+    <button type="button" (click)="setFilter('audience', null)">Any</button>
+
+    <h2>Deals</h2>
+    <button type="button" [class.active]="query().deals" (click)="setFilter('deals', query().deals ? null : '1')">
+      Today's deals
+    </button>
+  </aside>
+
+  <section>
+    <header class="catalog__head">
+      <div>
+        <h1>{{ heading() }}</h1>
+        <p>{{ products().length }} results</p>
+      </div>
+      <label>
+        Sort
+        <select [value]="query().sort" (change)="setFilter('sort', $any($event.target).value)">
+          <option value="featured">Featured</option>
+          <option value="price-asc">Price: Low to High</option>
+          <option value="price-desc">Price: High to Low</option>
+          <option value="rating">Avg. customer review</option>
+        </select>
+      </label>
+    </header>
+
+    @if (products().length === 0) {
+      <p class="empty">No matches. Try another department or clear search.</p>
+    } @else {
+      <div class="catalog__grid">
+        @for (product of products(); track product.id) {
+          <app-product-card [product]="product" />
+        }
+      </div>
+    }
+  </section>
+</div>

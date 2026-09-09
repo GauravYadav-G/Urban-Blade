@@ -1,0 +1,226 @@
+<div class="account">
+  @if (account.isSignedIn()) {
+    <section class="profile">
+      <div class="profile__avatar" aria-hidden="true">{{ initials() }}</div>
+      <div class="profile__copy">
+        <p class="profile__kicker">Your account</p>
+        <h1>{{ account.user()?.name }}</h1>
+        <p class="profile__email">{{ account.user()?.email }}</p>
+      </div>
+      <button type="button" class="profile__out" (click)="signOut()">Sign out</button>
+    </section>
+
+    <nav class="shortcuts" aria-label="Account shortcuts">
+      <a routerLink="/orders" class="shortcut">
+        <span class="shortcut__icon shortcut__icon--orders" aria-hidden="true"></span>
+        <span class="shortcut__copy">
+          <strong>Your orders</strong>
+          <em>Track salon and store orders</em>
+        </span>
+      </a>
+      <a routerLink="/cart" class="shortcut">
+        <span class="shortcut__icon shortcut__icon--cart" aria-hidden="true"></span>
+        <span class="shortcut__copy">
+          <strong>Your cart</strong>
+          <em>Review items before checkout</em>
+        </span>
+      </a>
+    </nav>
+
+    <section class="panel" aria-labelledby="addresses-heading">
+      <div class="panel__head">
+        <div>
+          <h2 id="addresses-heading">Your addresses</h2>
+          <p>Save a delivery address for faster checkout.</p>
+        </div>
+        @if (!showForm()) {
+          <button type="button" class="btn-primary" (click)="startAdd()">Add a new address</button>
+        }
+      </div>
+
+      @if (addresses.addresses().length === 0 && !showForm()) {
+        <div class="empty">
+          <p>No saved address yet.</p>
+          <button type="button" class="btn-primary" (click)="startAdd()">Add your first address</button>
+        </div>
+      }
+
+      @if (addresses.addresses().length > 0) {
+        <ul class="address-list">
+          @for (item of addresses.addresses(); track item.id) {
+            <li class="address-card" [class.address-card--default]="item.isDefault">
+              <div class="address-card__top">
+                <strong>{{ item.fullName }}</strong>
+                @if (item.isDefault) {
+                  <span class="badge">Default</span>
+                }
+              </div>
+              <p>{{ item.house }}</p>
+              <p>{{ item.street }}</p>
+              @if (item.landmark) {
+                <p>Landmark: {{ item.landmark }}</p>
+              }
+              <p>{{ item.city }}, {{ item.state }} {{ item.pinCode }}</p>
+              <p>Mobile: {{ item.mobile }}</p>
+              @if (item.location) {
+                <p class="address-card__pin">Map: {{ item.location.label }}</p>
+              }
+              <div class="address-card__actions">
+                <button type="button" (click)="startEdit(item)">Edit</button>
+                @if (!item.isDefault) {
+                  <button type="button" (click)="addresses.setDefault(item.id)">Make default</button>
+                }
+                <button type="button" class="danger" (click)="removeAddress(item.id)">Remove</button>
+              </div>
+            </li>
+          }
+        </ul>
+      }
+
+      @if (showForm()) {
+        <form class="address-form" [formGroup]="form" (ngSubmit)="saveAddress()">
+          <h3>{{ editingId() ? 'Edit address' : 'Add a new address' }}</h3>
+
+          <label>
+            Full name (First and last name)
+            <input type="text" formControlName="fullName" autocomplete="name" placeholder="e.g. Rahul Sharma" />
+            @if (form.controls.fullName.touched && form.controls.fullName.invalid) {
+              <span class="error">Enter your first and last name.</span>
+            }
+          </label>
+
+          <label>
+            Mobile number
+            <input
+              type="tel"
+              formControlName="mobile"
+              inputmode="numeric"
+              maxlength="10"
+              autocomplete="tel"
+              placeholder="10-digit mobile number"
+            />
+            @if (form.controls.mobile.touched && form.controls.mobile.invalid) {
+              <span class="error">Enter a valid 10-digit Indian mobile number.</span>
+            }
+          </label>
+
+          <div class="map-field">
+            <div class="map-field__bar">
+              <button type="button" class="map-btn" (click)="toggleMap()">
+                {{ pinnedLocation() ? 'Change location on map' : 'Add location on map' }}
+              </button>
+              @if (pinnedLocation()) {
+                <button type="button" class="map-btn map-btn--ghost" (click)="clearPin()">Remove pin</button>
+              }
+            </div>
+
+            @if (pinnedLocation()) {
+              <p class="map-field__label">{{ pinnedLocation()?.label }}</p>
+            }
+
+            @if (mapOpen()) {
+              <div class="map-picker">
+                <div class="map-picker__tools">
+                  <input
+                    type="search"
+                    [value]="locationQuery()"
+                    (input)="onLocationInput($event)"
+                    (keydown.enter)="$event.preventDefault(); searchLocation()"
+                    placeholder="Search area, landmark, or city"
+                    aria-label="Search location on map"
+                  />
+                  <button type="button" (click)="searchLocation()" [disabled]="mapStatus() === 'searching'">
+                    {{ mapStatus() === 'searching' ? 'Searching…' : 'Search' }}
+                  </button>
+                  <button type="button" (click)="useCurrentLocation()" [disabled]="mapStatus() === 'locating'">
+                    {{ mapStatus() === 'locating' ? 'Locating…' : 'Use current location' }}
+                  </button>
+                </div>
+                <iframe title="Address location map" [src]="mapEmbedUrl()" loading="lazy"></iframe>
+                @if (mapMessage()) {
+                  <p class="map-picker__note">{{ mapMessage() }}</p>
+                }
+              </div>
+            }
+          </div>
+
+          <label>
+            Flat, House no., Building, Company, Apartment
+            <input type="text" formControlName="house" autocomplete="address-line1" placeholder="Flat / house / company" />
+            @if (form.controls.house.touched && form.controls.house.invalid) {
+              <span class="error">Enter your flat, house no., company, or apartment.</span>
+            }
+          </label>
+
+          <label>
+            Area, Street, Sector, Village
+            <input type="text" formControlName="street" autocomplete="address-line2" placeholder="Area, street, sector, village" />
+            @if (form.controls.street.touched && form.controls.street.invalid) {
+              <span class="error">Enter your area, street, sector, or village.</span>
+            }
+          </label>
+
+          <label>
+            Landmark
+            <input type="text" formControlName="landmark" placeholder="Nearby landmark (optional)" />
+          </label>
+
+          <div class="row">
+            <label>
+              Pin code
+              <input
+                type="text"
+                formControlName="pinCode"
+                inputmode="numeric"
+                maxlength="6"
+                autocomplete="postal-code"
+                placeholder="6-digit pin code"
+              />
+              @if (form.controls.pinCode.touched && form.controls.pinCode.invalid) {
+                <span class="error">Enter a 6-digit pin code.</span>
+              }
+            </label>
+
+            <label>
+              Town / City
+              <input type="text" formControlName="city" autocomplete="address-level2" placeholder="Town or city" />
+              @if (form.controls.city.touched && form.controls.city.invalid) {
+                <span class="error">Enter your town or city.</span>
+              }
+            </label>
+          </div>
+
+          <label>
+            State
+            <select formControlName="state" autocomplete="address-level1">
+              <option value="" disabled>Select state</option>
+              @for (state of states; track state) {
+                <option [value]="state">{{ state }}</option>
+              }
+            </select>
+            @if (form.controls.state.touched && form.controls.state.invalid) {
+              <span class="error">Select your state.</span>
+            }
+          </label>
+
+          <label class="check">
+            <input type="checkbox" formControlName="isDefault" />
+            Make this my default address
+          </label>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-primary">{{ editingId() ? 'Update address' : 'Save address' }}</button>
+            <button type="button" class="btn-ghost" (click)="cancelForm()">Cancel</button>
+          </div>
+        </form>
+      }
+    </section>
+  } @else {
+    <section class="guest">
+      <p class="profile__kicker">Your account</p>
+      <h1>Hello, sign in</h1>
+      <p>Sign in to manage orders, your cart, and saved addresses.</p>
+      <a class="btn-primary" routerLink="/auth/login">Sign in</a>
+    </section>
+  }
+</div>

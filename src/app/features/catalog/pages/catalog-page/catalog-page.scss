@@ -1,0 +1,84 @@
+.catalog {
+  display: grid;
+  gap: 1.25rem;
+  width: 100%;
+  padding: 1.25rem clamp(1rem, 3vw, 2.5rem) 2.5rem;
+
+  @media (min-width: 860px) {
+    grid-template-columns: 14rem 1fr;
+  }
+}
+
+.filters {
+  background: var(--surface);
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  height: fit-content;
+
+  h2 {
+    margin: 1rem 0 0.4rem;
+    font-size: 0.95rem;
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
+  a,
+  button {
+    display: block;
+    width: 100%;
+    padding: 0.3rem 0;
+    border: none;
+    background: none;
+    text-align: left;
+    color: var(--ink);
+    text-decoration: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+
+    &.active {
+      font-weight: 700;
+      color: var(--sale);
+    }
+  }
+}
+
+.catalog__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+
+  h1 {
+    margin: 0;
+    font-size: 1.4rem;
+  }
+
+  p {
+    margin: 0.2rem 0 0;
+    color: var(--muted);
+  }
+
+  select {
+    margin-left: 0.4rem;
+    padding: 0.35rem;
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--border);
+  }
+}
+
+.catalog__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1.1rem;
+}
+
+.empty {
+  background: var(--surface);
+  padding: 2rem;
+  border-radius: var(--radius-md);
+}

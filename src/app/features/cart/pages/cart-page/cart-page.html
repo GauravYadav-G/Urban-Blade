@@ -1,0 +1,77 @@
+<h1>Shopping cart</h1>
+
+@if (cart.lines().length === 0) {
+  <section class="empty">
+    <p class="empty__kicker">Your bag is empty</p>
+    <h2>No salon products in the cart yet</h2>
+    <p>Add hair care, beard oil, or tools from the Urban Blade shelf.</p>
+    <a routerLink="/shop">Continue shopping</a>
+  </section>
+} @else {
+  <div class="cart">
+    <ul class="cart__lines">
+      @for (line of cart.lines(); track line.lineId) {
+        @let product = productFor(line);
+        <li class="cart__line">
+          <a class="cart__media" [routerLink]="['/shop', line.productId]">
+            <img [src]="line.imageUrl" [alt]="line.name" appImgFallback />
+          </a>
+          <div class="cart__info">
+            <a class="cart__name" [routerLink]="['/shop', line.productId]">{{ line.name }}</a>
+            @if (product) {
+              <p class="cart__vendor">Sold by {{ product.vendor }}</p>
+            }
+            @if (descriptionFor(line); as text) {
+              <p class="cart__desc">{{ text }}</p>
+            }
+            @if (highlightsFor(line).length) {
+              <ul class="cart__tags">
+                @for (tag of highlightsFor(line); track tag) {
+                  <li>{{ tag }}</li>
+                }
+              </ul>
+            }
+            <div class="cart__actions">
+              <label>
+                Qty
+                <select [value]="line.qty" (change)="setQty(line.lineId, $event)">
+                  @for (n of [1, 2, 3, 4, 5, 6, 7, 8]; track n) {
+                    <option [value]="n">{{ n }}</option>
+                  }
+                </select>
+              </label>
+              <button type="button" class="cart__delete" (click)="cart.removeLine(line.lineId)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M5 7h14M10 7V5h4v2m-6 3v8m4-8v8M7 7l1 12a2 2 0 002 2h4a2 2 0 002-2l1-12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+                Delete
+              </button>
+            </div>
+          </div>
+          <div class="cart__price">
+            @if (line.compareAtPrice) {
+              <s>{{ line.compareAtPrice | inr }}</s>
+            }
+            <strong>{{ line.unitPrice | inr }}</strong>
+            <span>Line total {{ lineTotal(line) | inr }}</span>
+          </div>
+        </li>
+      }
+    </ul>
+
+    <aside class="cart__summary">
+      <h2>Order summary</h2>
+      <p class="cart__sub">
+        Subtotal ({{ cart.itemCount() }} {{ cart.itemCount() === 1 ? 'item' : 'items' }})
+        <strong>{{ cart.subtotal() | inr }}</strong>
+      </p>
+      <p class="cart__ship">FREE delivery on salon retail in Ghaziabad 201009.</p>
+      <a routerLink="/checkout" class="checkout">Proceed to checkout</a>
+      <a routerLink="/shop" class="cart__keep">Continue shopping</a>
+    </aside>
+  </div>
+
+  @if (related().length) {
+    <app-product-slider title="Related to your cart" [products]="related()" seeAllLink="/shop" />
+  }
+}

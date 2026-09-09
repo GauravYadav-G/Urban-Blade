@@ -1,0 +1,24 @@
+<h1>Book a visit</h1>
+<p class="lede">{{ settings().business.address }} · {{ settings().business.hours }} · {{ settings().business.phoneDisplay }}</p>
+
+@if (submitted) {
+  <section class="card">
+    <h2>Request sent</h2>
+    <p>The Urban Blade team will call to lock your slot. For same-day, call {{ settings().business.phoneDisplay }}.</p>
+  </section>
+} @else {
+  <form class="card" [formGroup]="form" (ngSubmit)="submit()">
+    <label>Name <input formControlName="name" /></label>
+    <label>Mobile <input formControlName="phone" /></label>
+    <label>
+      Service
+      <select formControlName="service">
+        @for (svc of services; track svc.id) {
+          <option [value]="svc.name">{{ svc.name }} — in salon</option>
+        }
+      </select>
+    </label>
+    <label>Preferred date <input type="date" formControlName="date" /></label>
+    <button type="submit">Send booking request</button>
+  </form>
+}

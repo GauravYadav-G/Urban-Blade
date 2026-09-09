@@ -1,0 +1,45 @@
+<section class="panel">
+  <p class="panel__kicker">Welcome back</p>
+  <h1>Sign in</h1>
+  <p class="panel__lede">Use your Urban Blade account to shop, track orders, and book a chair.</p>
+
+  <aside class="panel__demo">
+    <p class="panel__demo-title">Dummy login</p>
+    <p><span>Email</span> {{ demo.email }}</p>
+    <p><span>Password</span> {{ demo.password }}</p>
+    <button type="button" class="panel__demo-btn" (click)="fillDemo()">Fill dummy account</button>
+  </aside>
+
+  <form [formGroup]="form" (ngSubmit)="submit()">
+    <label>
+      Email
+      <input type="email" formControlName="email" autocomplete="username" placeholder="you@email.com" />
+      @if (form.controls.email.touched && form.controls.email.invalid) {
+        <span class="panel__error">Enter a valid email address.</span>
+      }
+    </label>
+    <label>
+      Password
+      <span class="panel__password">
+        <input
+          [type]="showPassword() ? 'text' : 'password'"
+          formControlName="password"
+          autocomplete="current-password"
+          placeholder="••••••••"
+        />
+        <button type="button" class="panel__toggle" (click)="togglePassword()">
+          {{ showPassword() ? 'Hide' : 'Show' }}
+        </button>
+      </span>
+      @if (form.controls.password.touched && form.controls.password.invalid) {
+        <span class="panel__error">Password must be at least 4 characters.</span>
+      }
+    </label>
+    @if (loginError()) {
+      <p class="panel__error">{{ loginError() }}</p>
+    }
+    <button type="submit">Continue</button>
+  </form>
+
+  <p class="panel__foot">New to Urban Blade? <a routerLink="/auth/register">Create an account</a></p>
+</section>

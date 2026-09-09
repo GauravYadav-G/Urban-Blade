@@ -1,0 +1,224 @@
+<div class="website-cms-page">
+  <!-- Page Header -->
+  <header class="page-header">
+    <div class="header-left">
+      <span class="status-indicator live">
+        <span class="pulse-dot"></span> Storefront Broadcast Active
+      </span>
+      <h1 class="page-title">Website & Storefront CMS</h1>
+      <p class="page-subtitle">
+        Manage the live customer storefront: announcement banner marquee, salon hotline, operational hours, checkout rules, and studio location.
+      </p>
+    </div>
+
+    <div class="header-actions">
+      @if (isSavedRecently()) {
+        <span class="save-status-pill">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          Broadcasted Live
+        </span>
+      }
+
+      <button type="button" class="btn-reset" (click)="onReset()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M3 21v-5h5"></path></svg>
+        <span>Reset Defaults</span>
+      </button>
+
+      <button type="button" class="btn-save" (click)="onSave()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+        <span>Save Storefront Settings</span>
+      </button>
+    </div>
+  </header>
+
+  <form [formGroup]="form" (ngSubmit)="onSave()" class="cms-form">
+    <!-- Section 1: Live Top Announcement Banner -->
+    <div class="cms-card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Top Announcement Bar (Storefront Header)</h2>
+          <p class="card-subtitle">Promote festive specials, grooming vouchers, or urgent updates displayed above all customer pages.</p>
+        </div>
+        <div class="toggle-wrap" formGroupName="announcement">
+          <label class="switch-label">
+            <input type="checkbox" formControlName="enabled" />
+            <span class="switch-slider"></span>
+            <span class="toggle-text">{{ form.get('announcement.enabled')?.value ? 'Banner Active' : 'Banner Hidden' }}</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Live Mockup Preview -->
+      <div class="banner-preview-box">
+        <span class="preview-label">LIVE STOREFRONT PREVIEW</span>
+        @if (form.get('announcement.enabled')?.value) {
+          <div class="preview-banner-bar">
+            <span class="p-badge">{{ form.get('announcement.badge')?.value || 'ANNOUNCEMENT' }}</span>
+            <span class="p-text">{{ form.get('announcement.text')?.value || 'Your announcement text appears here' }}</span>
+            @if (form.get('announcement.linkText')?.value) {
+              <span class="p-link">{{ form.get('announcement.linkText')?.value }} &rarr;</span>
+            }
+          </div>
+        } @else {
+          <div class="preview-banner-bar disabled">
+            <span>Announcement bar is currently toggled OFF on the storefront.</span>
+          </div>
+        }
+      </div>
+
+      <div class="form-grid" formGroupName="announcement">
+        <div class="form-field">
+          <label for="ann-badge">Badge Label</label>
+          <input id="ann-badge" type="text" formControlName="badge" placeholder="e.g. OFFICIAL, SPECIAL, 20% OFF" />
+        </div>
+
+        <div class="form-field span-2">
+          <label for="ann-text">Announcement Message Text</label>
+          <input id="ann-text" type="text" formControlName="text" placeholder="Headline displayed to visitors" />
+        </div>
+
+        <div class="form-field">
+          <label for="ann-link-text">CTA Button Text (Optional)</label>
+          <input id="ann-link-text" type="text" formControlName="linkText" placeholder="e.g. Book Visit, Shop Now" />
+        </div>
+
+        <div class="form-field">
+          <label for="ann-link-url">Target Route / URL</label>
+          <input id="ann-link-url" type="text" formControlName="linkUrl" placeholder="e.g. /book or /shop" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 2: Studio Contact & Operating Hours -->
+    <div class="cms-card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Studio Identity & Contact Hotline</h2>
+          <p class="card-subtitle">Public contact numbers, customer care lines, operating schedule, and physical studio address.</p>
+        </div>
+      </div>
+
+      <div class="form-grid" formGroupName="business">
+        <div class="form-field">
+          <label for="biz-name">Brand / Salon Name</label>
+          <input id="biz-name" type="text" formControlName="name" />
+        </div>
+
+        <div class="form-field">
+          <label for="biz-tagline">Tagline</label>
+          <input id="biz-tagline" type="text" formControlName="tagline" />
+        </div>
+
+        <div class="form-field">
+          <label for="biz-phone">Customer Hotline (Display)</label>
+          <input id="biz-phone" type="text" formControlName="phoneDisplay" placeholder="+91 90156 18265" />
+        </div>
+
+        <div class="form-field">
+          <label for="biz-tel">Hotline Dial URI (tel:)</label>
+          <input id="biz-tel" type="text" formControlName="phoneTel" placeholder="+919015618265" />
+        </div>
+
+        <div class="form-field">
+          <label for="biz-email">Support Email</label>
+          <input id="biz-email" type="email" formControlName="email" placeholder="urbanbladestudio@gmail.com" />
+        </div>
+
+        <div class="form-field">
+          <label for="biz-hours">Salon Operating Hours</label>
+          <input id="biz-hours" type="text" formControlName="hours" placeholder="Mon–Sun: 7 AM – 11 PM" />
+        </div>
+
+        <div class="form-field span-2">
+          <label for="biz-address">Physical Salon Address</label>
+          <input id="biz-address" type="text" formControlName="address" placeholder="L-245, Sec-12, Pratap Vihar" />
+        </div>
+
+        <div class="form-field">
+          <label for="biz-city">City</label>
+          <input id="biz-city" type="text" formControlName="city" placeholder="Ghaziabad" />
+        </div>
+
+        <div class="form-field">
+          <label for="biz-pin">Postal PIN Code</label>
+          <input id="biz-pin" type="text" formControlName="pin" placeholder="201009" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 3: E-Commerce & Shipping Rules -->
+    <div class="cms-card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Commercial & Checkout Configuration</h2>
+          <p class="card-subtitle">Define free shipping thresholds, courier flat fee, and standard tax rate calculated at checkout.</p>
+        </div>
+      </div>
+
+      <div class="form-grid" formGroupName="ecommerce">
+        <div class="form-field">
+          <label for="ecom-free-ship">Free Courier Delivery Threshold (₹)</label>
+          <input id="ecom-free-ship" type="number" formControlName="freeShippingThreshold" />
+          <span class="field-hint">Orders at or above this amount receive complimentary shipping.</span>
+        </div>
+
+        <div class="form-field">
+          <label for="ecom-flat-ship">Standard Delivery Fee (₹)</label>
+          <input id="ecom-flat-ship" type="number" formControlName="standardShippingFee" />
+          <span class="field-hint">Applies to orders below the free shipping threshold.</span>
+        </div>
+
+        <div class="form-field">
+          <label for="ecom-tax">GST / Service Tax Rate (%)</label>
+          <input id="ecom-tax" type="number" formControlName="taxRatePercent" />
+          <span class="field-hint">Applicable tax rate on products and styling rituals.</span>
+        </div>
+
+        <div class="form-field">
+          <label for="ecom-curr">Currency Symbol / Code</label>
+          <input id="ecom-curr" type="text" formControlName="currency" readonly />
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 4: Salon Capacity & Storefront Operations -->
+    <div class="cms-card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Salon Operations & Floor Capacity</h2>
+          <p class="card-subtitle">Manage maximum simultaneous chairs and storefront checkout status.</p>
+        </div>
+        <div class="toggle-wrap" formGroupName="operations">
+          <label class="switch-label">
+            <input type="checkbox" formControlName="acceptingOrders" />
+            <span class="switch-slider"></span>
+            <span class="toggle-text">{{ form.get('operations.acceptingOrders')?.value ? 'Storefront Open' : 'Storefront Paused' }}</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-grid" formGroupName="operations">
+        <div class="form-field">
+          <label for="ops-chairs">Active Barber Chairs</label>
+          <input id="ops-chairs" type="number" formControlName="chairCount" />
+          <span class="field-hint">Maximum appointments handled simultaneously per time slot.</span>
+        </div>
+
+        <div class="form-field span-2">
+          <label for="ops-notice">Emergency Store Notice (Optional)</label>
+          <input id="ops-notice" type="text" formControlName="emergencyNotice" placeholder="e.g. Expect minor delivery delays due to local festival" />
+          <span class="field-hint">Displayed prominently during customer checkout if filled.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Action Bar -->
+    <div class="form-submit-bar">
+      <button type="button" class="btn-reset" (click)="onReset()">Reset Defaults</button>
+      <button type="submit" class="btn-save">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+        <span>Save Storefront Settings</span>
+      </button>
+    </div>
+  </form>
+</div>

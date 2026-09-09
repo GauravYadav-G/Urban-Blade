@@ -1,0 +1,27 @@
+<section class="saved">
+  <div class="saved__head">
+    <div>
+      <p class="kicker">Recently viewed</p>
+      <h1>Your recently viewed items</h1>
+      <p class="lede">Hair care, beard, skin, tools, and gift cards you opened in this browser.</p>
+    </div>
+    @if (recent.products().length) {
+      <button type="button" class="clear" (click)="recent.clear()">Clear history</button>
+    }
+  </div>
+
+  @if (recent.products().length === 0) {
+    <div class="empty">
+      <p>No recently viewed items yet. Open a product to see it here.</p>
+      <a routerLink="/shop">Browse the store</a>
+    </div>
+  } @else {
+    <ul class="grid">
+      @for (item of recent.products(); track item.id) {
+        <li>
+          <app-product-card [product]="item" />
+        </li>
+      }
+    </ul>
+  }
+</section>

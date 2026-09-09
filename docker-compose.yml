@@ -1,0 +1,116 @@
+
+services:
+  # ─── 1. POSTGRESQL 16 (PRIMARY ACID WRITE MASTER) ──────────────────────────
+  postgres-primary:
+    image: postgres:16-alpine
+    container_name: urbanblade-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-urbanblade}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-urbanblade_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-urbanblade_db}
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=512MB
+      -c effective_cache_size=1536MB
+      -c maintenance_work_mem=128MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=16MB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+      -c statement_timeout=10000
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U urbanblade -d urbanblade_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── 2. PGBOUNCER (TRANSACTION POOLING FOR 10,000+ SOCKS) ──────────────────
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: urbanblade-pgbouncer
+    restart: unless-stopped
+    environment:
+      DB_USER: ${POSTGRES_USER:-urbanblade}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-urbanblade_secret}
+      DB_HOST: postgres-primary
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-urbanblade_db}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 10000
+      DEFAULT_POOL_SIZE: 50
+      MIN_POOL_SIZE: 10
+      RESERVE_POOL_SIZE: 5
+      MAX_DB_CONNECTIONS: 100
+      SERVER_IDLE_TIMEOUT: 60
+      SERVER_LIFETIME: 3600
+    ports:
+      - "6432:5432"
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+
+  # ─── 3. REDIS 7.2 (CACHE, SESSIONS, IDEMPOTENCY, BULLMQ) ───────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: urbanblade-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --tcp-backlog 2048
+      --timeout 0
+      --tcp-keepalive 300
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── 4. URBAN BLADE FASTIFY API SERVER (AMAZON-GRADE) ──────────────────────
+  api-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: urbanblade-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      HOST: 0.0.0.0
+      LOG_LEVEL: info
+      JWT_SECRET: ${JWT_SECRET:-urbanblade-super-secret-jwt-key-change-in-prod}
+      DATABASE_URL: postgres://urbanblade:urbanblade_secret@postgres-primary:5432/urbanblade_db
+      DATABASE_POOL_MIN: 5
+      DATABASE_POOL_MAX: 50
+      DATABASE_STATEMENT_TIMEOUT_MS: 5000
+      REDIS_URL: redis://redis:6379
+      CACHE_TTL_DEFAULT_SEC: 300
+      CACHE_TTL_HOT_SEC: 60
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,0 +1,231 @@
+<div class="customers-view">
+  <!-- Page Header -->
+  <header class="page-header">
+    <div class="header-left">
+      <span class="status-indicator live">
+        <span class="pulse-dot"></span> CRM & Identity Directory
+      </span>
+      <h1 class="page-title">Customers & Salon Staff</h1>
+      <p class="page-subtitle">
+        Manage customer accounts, salon stylist credentials, lifetime customer value (LTV), and role permissions.
+      </p>
+    </div>
+
+    <div class="header-stats">
+      <div class="stat-pill">
+        <span class="stat-label">Total Users</span>
+        <span class="stat-val">{{ admin.customers().length }} accounts</span>
+      </div>
+      <div class="stat-pill highlight">
+        <span class="stat-label">Lifetime Value (LTV)</span>
+        <span class="stat-val">₹{{ totalSpentSum() | number:'1.0-0' }}</span>
+      </div>
+      <button type="button" class="btn-export" (click)="exportCSV()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Export CSV</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Controls Bar: Search & Role Filter -->
+  <div class="controls-bar">
+    <div class="search-box">
+      <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input
+        type="text"
+        placeholder="Search customers by name or email..."
+        [ngModel]="searchQuery()"
+        (ngModelChange)="searchQuery.set($event)"
+      />
+    </div>
+
+    <div class="role-filters">
+      <button class="filter-tab" [class.active]="selectedRole() === 'all'" (click)="setRoleFilter('all')">
+        All ({{ admin.customers().length }})
+      </button>
+      <button class="filter-tab" [class.active]="selectedRole() === 'customer'" (click)="setRoleFilter('customer')">
+        Customers
+      </button>
+      <button class="filter-tab" [class.active]="selectedRole() === 'stylist'" (click)="setRoleFilter('stylist')">
+        Stylists
+      </button>
+      <button class="filter-tab" [class.active]="selectedRole() === 'admin'" (click)="setRoleFilter('admin')">
+        Admins
+      </button>
+    </div>
+  </div>
+
+  <!-- Customers Table Card -->
+  <div class="table-card">
+    <div class="table-responsive">
+      <table class="customers-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role & Access</th>
+            <th>Registered</th>
+            <th>Total Orders</th>
+            <th>Total Spend</th>
+            <th>Role Permissions</th>
+            <th>History</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (c of filteredCustomers(); track c.id) {
+            <tr class="customer-row clickable-row" (click)="inspectCustomer(c)">
+              <td>
+                <div class="user-cell">
+                  <div class="user-avatar" [class.admin-avatar]="c.role === 'admin'" [class.stylist-avatar]="c.role === 'stylist'">
+                    {{ c.name.charAt(0) }}
+                  </div>
+                  <div class="user-meta">
+                    <span class="user-name">{{ c.name }}</span>
+                    <span class="user-email">{{ c.email }}</span>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="role-pill {{ c.role }}">
+                  @if (c.role === 'admin') {
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                    </svg>
+                  } @else if (c.role === 'stylist') {
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <circle cx="6" cy="6" r="3"></circle>
+                      <circle cx="6" cy="18" r="3"></circle>
+                      <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+                      <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+                      <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+                    </svg>
+                  }
+                  {{ c.role | uppercase }}
+                </span>
+              </td>
+              <td>
+                <span class="date-cell">{{ c.created_at | date:'mediumDate' }}</span>
+              </td>
+              <td>
+                <span class="orders-count">{{ c.total_orders }} orders</span>
+              </td>
+              <td>
+                <span class="spend-cell">₹{{ c.total_spent | number:'1.0-0' }}</span>
+              </td>
+              <td>
+                <div class="role-switcher" (click)="$event.stopPropagation()">
+                  <select
+                    [ngModel]="c.role"
+                    (ngModelChange)="changeRole(c, $event)"
+                    class="role-select"
+                  >
+                    <option value="customer">Customer</option>
+                    <option value="stylist">Stylist</option>
+                    <option value="admin">Administrator</option>
+                  </select>
+                </div>
+              </td>
+              <td>
+                <button class="btn-inspect" (click)="inspectCustomer(c); $event.stopPropagation()" title="View Customer History">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 18l6-6-6-6"></path>
+                  </svg>
+                </button>
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="7" class="empty-state">
+                <div class="empty-content">
+                  <span class="empty-icon">👥</span>
+                  <h4>No users found</h4>
+                  <p>No customers match "{{ searchQuery() }}". Try adjusting your search query.</p>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Customer Detail Drawer / Modal -->
+  @if (selectedCustomerDetails(); as det) {
+    <div class="modal-backdrop" (click)="closeCustomerDetails()">
+      <div class="crm-drawer" (click)="$event.stopPropagation()">
+        <div class="drawer-head">
+          <div class="crm-avatar">
+            {{ det.user.name.charAt(0) }}
+          </div>
+          <div class="crm-meta">
+            <span class="crm-tag">Customer Profile</span>
+            <h2 class="crm-title">{{ det.user.name }}</h2>
+            <span class="crm-sub">{{ det.user.email }} • Member since {{ det.user.created_at | date:'mediumDate' }}</span>
+          </div>
+          <button class="crm-close" (click)="closeCustomerDetails()">✕</button>
+        </div>
+
+        <div class="drawer-body">
+          <!-- Lifetime Stats -->
+          <div class="crm-stats-grid">
+            <div class="crm-stat-card">
+              <span class="stat-title">Lifetime Orders</span>
+              <span class="stat-num">{{ det.orders.length }} orders</span>
+            </div>
+            <div class="crm-stat-card">
+              <span class="stat-title">Salon Appointments</span>
+              <span class="stat-num">{{ det.bookings.length }} sessions</span>
+            </div>
+          </div>
+
+          <!-- Purchase History -->
+          <div class="crm-section">
+            <h4 class="crm-sec-title">Order History ({{ det.orders.length }})</h4>
+            <div class="crm-orders-list">
+              @for (ord of det.orders; track ord.id) {
+                <div class="crm-order-item">
+                  <div class="order-main">
+                    <span class="ord-id">#{{ ord.id.slice(0, 8) }}</span>
+                    <span class="ord-status {{ ord.status }}">{{ ord.status | uppercase }}</span>
+                    <span class="ord-date">{{ ord.created_at | date:'mediumDate' }}</span>
+                  </div>
+                  <div class="order-items-names">
+                    {{ ord.item_names?.join(', ') || 'Salon products' }}
+                  </div>
+                  <div class="ord-amount">₹{{ ord.total_amount | number:'1.0-0' }}</div>
+                </div>
+              } @empty {
+                <div class="empty-sub">No past orders placed by this account yet.</div>
+              }
+            </div>
+          </div>
+
+          <!-- Stylist Bookings -->
+          <div class="crm-section">
+            <h4 class="crm-sec-title">Salon Appointments ({{ det.bookings.length }})</h4>
+            <div class="crm-bookings-list">
+              @for (bk of det.bookings; track bk.id) {
+                <div class="crm-booking-item">
+                  <div class="bk-main">
+                    <span class="bk-slot">{{ bk.time_slot }} • {{ bk.booking_date }}</span>
+                    <span class="bk-status {{ bk.status }}">{{ bk.status | uppercase }}</span>
+                  </div>
+                  <div class="bk-service">{{ bk.notes }} with {{ bk.stylist_name || 'Master Barber' }}</div>
+                  <div class="bk-price">₹{{ bk.total_price }}</div>
+                </div>
+              } @empty {
+                <div class="empty-sub">No appointment reservations for this customer.</div>
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="drawer-footer">
+          <button class="btn-done" (click)="closeCustomerDetails()">Close Profile</button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

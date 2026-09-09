@@ -1,0 +1,44 @@
+<h1>Checkout</h1>
+
+@if (settings().operations.emergencyNotice) {
+  <div class="checkout-notice-banner" style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.25rem; color: #fbbf24; font-size: 0.85rem;">
+    <strong>Store Notice:</strong> {{ settings().operations.emergencyNotice }}
+  </div>
+}
+
+@if (placed()) {
+  <section class="card done">
+    <h2>Order placed</h2>
+    <p>Thank you. Urban Blade will confirm by phone on {{ settings().business.phoneDisplay }}.</p>
+    <button type="button" (click)="shop()">Continue shopping</button>
+  </section>
+} @else if (cart.lines().length === 0) {
+  <section class="card">
+    <p>Your cart is empty.</p>
+    <a routerLink="/shop">Add items to checkout</a>
+  </section>
+} @else {
+  <div class="checkout">
+    <form class="card" [formGroup]="form" (ngSubmit)="placeOrder()">
+      <h2>1. Delivery</h2>
+      <label>Full name <input formControlName="name" /></label>
+      <label>Mobile <input formControlName="phone" /></label>
+      <label>Address <textarea formControlName="address" rows="3"></textarea></label>
+
+      <h2>2. Payment</h2>
+      <label class="radio"><input type="radio" formControlName="payment" value="upi" /> UPI</label>
+      <label class="radio"><input type="radio" formControlName="payment" value="card" /> Credit / debit card</label>
+      <label class="radio"><input type="radio" formControlName="payment" value="cod" /> Pay at salon / cash on delivery</label>
+
+      <button type="submit">Place your order</button>
+    </form>
+
+    <aside class="card">
+      <h2>Order summary</h2>
+      @for (line of cart.lines(); track line.lineId) {
+        <p>{{ line.name }} × {{ line.qty }}</p>
+      }
+      <p class="total">Total: {{ cart.subtotal() | inr }}</p>
+    </aside>
+  </div>
+}

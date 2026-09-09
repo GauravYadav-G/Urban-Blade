@@ -1,0 +1,12 @@
+@if (cart.addToast(); as toast) {
+  <aside class="cart-toast" role="status">
+    <img [src]="toast.imageUrl" [alt]="toast.productName" width="56" height="56" appImgFallback />
+    <div class="cart-toast__copy">
+      <p class="cart-toast__ok">Added to cart</p>
+      <p>{{ toast.productName }}</p>
+      <p class="cart-toast__meta">{{ toast.lineQty }} in basket · {{ cart.subtotal() | inr }}</p>
+    </div>
+    <a routerLink="/cart" class="cart-toast__cta">View cart</a>
+    <button type="button" class="cart-toast__close" (click)="cart.dismissToast()" aria-label="Dismiss">×</button>
+  </aside>
+}

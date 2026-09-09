@@ -1,0 +1,30 @@
+<section class="support">
+  <header class="support__intro">
+    <p class="kicker">Client support</p>
+    <h1>Product support for your order</h1>
+    <p class="lede">
+      Help with Urban Blade hair care, beard, skin, tools, and gift cards — missing items, damaged
+      packs, checkout codes, delivery, and returns.
+    </p>
+  </header>
+
+  <div class="topics">
+    @for (topic of topics; track topic.title) {
+      <article>
+        <h2>{{ topic.title }}</h2>
+        <p>{{ topic.body }}</p>
+        <a [routerLink]="topic.route" [queryParams]="topic.query">{{ topic.link }}</a>
+      </article>
+    }
+  </div>
+
+  <section class="contact" aria-labelledby="contact-heading">
+    <h2 id="contact-heading">Talk to product support</h2>
+    <p>Have the product name and order ID ready. We reply on email and phone.</p>
+    <ul>
+      <li>Email <a [href]="'mailto:' + salon.email">{{ salon.email }}</a></li>
+      <li>Call <a [href]="'tel:' + salon.phoneTel">{{ salon.phoneDisplay }}</a></li>
+    </ul>
+    <a class="cta" routerLink="/help">Product how-to guides</a>
+  </section>
+</section>
