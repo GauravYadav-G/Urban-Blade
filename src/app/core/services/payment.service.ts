@@ -252,6 +252,7 @@ export class PaymentService {
         name: orderData.shippingAddress.fullName,
         contact: orderData.shippingAddress.phone,
         email: 'customer@urbanblade.in',
+        method: 'upi',
       },
       notes: {
         orderId: orderData.orderId,
@@ -259,6 +260,52 @@ export class PaymentService {
       },
       theme: {
         color: '#d4af37', // Luxury gold
+      },
+      method: {
+        upi: true,
+        card: true,
+        netbanking: true,
+        wallet: true,
+        paylater: true,
+      },
+      config: {
+        display: {
+          blocks: {
+            upi_block: {
+              name: 'Pay via UPI (GPay, PhonePe, Paytm, QR)',
+              instruments: [
+                {
+                  method: 'upi',
+                  flows: ['qr', 'intent', 'collect'],
+                  apps: ['google_pay', 'phonepe', 'paytm', 'bhim'],
+                },
+              ],
+            },
+            cards_block: {
+              name: 'Credit & Debit Cards',
+              instruments: [
+                {
+                  method: 'card',
+                },
+              ],
+            },
+            banks_block: {
+              name: 'NetBanking & Wallets',
+              instruments: [
+                {
+                  method: 'netbanking',
+                },
+                {
+                  method: 'wallet',
+                },
+              ],
+            },
+          },
+          sequence: ['block.upi_block', 'block.cards_block', 'block.banks_block'],
+          preferences: {
+            show_default_blocks: true,
+          },
+        },
       },
       modal: {
         backdropclose: true,
