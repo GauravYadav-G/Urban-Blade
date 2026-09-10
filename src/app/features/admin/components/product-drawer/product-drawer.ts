@@ -135,22 +135,23 @@ import type { AdminProduct } from '@core/services/admin.service';
       .drawer-backdrop {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.65);
-        backdrop-filter: blur(8px);
-        z-index: 999;
+        background: rgba(15, 23, 42, 0.45);
+        backdrop-filter: blur(4px);
+        z-index: 100;
         display: flex;
         justify-content: flex-end;
       }
       .drawer-panel {
-        width: 820px;
-        max-width: 95vw;
-        height: 100vh;
-        background: #0f172a;
-        border-left: 1px solid rgba(255, 255, 255, 0.1);
+        width: 100%;
+        max-width: 820px;
+        background: #ffffff;
+        color: #0f172a;
+        height: 100%;
         display: flex;
         flex-direction: column;
         animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-        box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+        box-shadow: -10px 0 40px rgba(0, 0, 0, 0.12);
+        border-left: 1px solid #e2e8f0;
       }
       @keyframes slideIn {
         from {
@@ -165,24 +166,24 @@ import type { AdminProduct } from '@core/services/admin.service';
         justify-content: space-between;
         align-items: center;
         padding: 1.5rem 2rem;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        border-bottom: 1px solid #e2e8f0;
       }
       .drawer-badge {
         font-size: 0.65rem;
-        font-weight: 700;
-        color: #f59e0b;
+        font-weight: 800;
+        color: #b45309;
         letter-spacing: 0.08em;
       }
       .drawer-header h2 {
         font-size: 1.25rem;
-        font-weight: 700;
-        color: #f9fafb;
+        font-weight: 800;
+        color: #0f172a;
         margin: 0.2rem 0 0;
       }
       .close-btn {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        color: #9ca3af;
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        color: #64748b;
         width: 34px;
         height: 34px;
         border-radius: 8px;
@@ -194,8 +195,8 @@ import type { AdminProduct } from '@core/services/admin.service';
         transition: all 0.2s;
       }
       .close-btn:hover {
-        background: rgba(255, 255, 255, 0.1);
-        color: #fff;
+        background: #e2e8f0;
+        color: #0f172a;
       }
       .drawer-content {
         flex: 1;
@@ -222,16 +223,16 @@ import type { AdminProduct } from '@core/services/admin.service';
       }
       label span {
         font-size: 0.75rem;
-        font-weight: 600;
-        color: #9ca3af;
+        font-weight: 700;
+        color: #334155;
       }
       input,
       select,
       textarea {
-        background: rgba(17, 24, 39, 0.8);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
         border-radius: 8px;
-        color: #f9fafb;
+        color: #0f172a;
         padding: 0.6rem 0.85rem;
         font-size: 0.85rem;
         outline: none;
@@ -241,20 +242,20 @@ import type { AdminProduct } from '@core/services/admin.service';
       select:focus,
       textarea:focus {
         border-color: #f59e0b;
-        box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
       }
       .drawer-actions {
         display: flex;
         gap: 0.75rem;
         margin-top: 1rem;
         padding-top: 1rem;
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        border-top: 1px solid #e2e8f0;
       }
       .btn-save {
         flex: 1;
         background: linear-gradient(135deg, #f59e0b, #d97706);
         border: none;
-        color: #111827;
+        color: #ffffff;
         font-weight: 700;
         padding: 0.75rem;
         border-radius: 8px;
@@ -266,12 +267,17 @@ import type { AdminProduct } from '@core/services/admin.service';
         opacity: 0.92;
       }
       .btn-cancel {
-        background: transparent;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        color: #9ca3af;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        color: #475569;
+        font-weight: 600;
         padding: 0.75rem 1.25rem;
         border-radius: 8px;
         cursor: pointer;
+      }
+      .btn-cancel:hover {
+        background: #f8fafc;
+        color: #0f172a;
       }
       .drawer-preview {
         display: flex;
@@ -281,22 +287,23 @@ import type { AdminProduct } from '@core/services/admin.service';
       .preview-tag {
         font-size: 0.65rem;
         font-weight: 700;
-        color: #6b7280;
+        color: #64748b;
         letter-spacing: 0.08em;
       }
       .preview-card {
-        background: #1e293b;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
         border-radius: 12px;
         overflow: hidden;
       }
       .preview-img-wrap {
         height: 180px;
-        background: #0f172a;
+        background: #ffffff;
         position: relative;
         display: flex;
         align-items: center;
         justify-content: center;
+        border-bottom: 1px solid #f1f5f9;
       }
       .preview-img-wrap img {
         max-height: 100%;
@@ -307,8 +314,9 @@ import type { AdminProduct } from '@core/services/admin.service';
         position: absolute;
         top: 8px;
         left: 8px;
-        background: #f59e0b;
-        color: #111827;
+        background: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fde68a;
         font-size: 0.65rem;
         font-weight: 700;
         padding: 0.15rem 0.45rem;
@@ -320,17 +328,18 @@ import type { AdminProduct } from '@core/services/admin.service';
       }
       .preview-cat {
         font-size: 0.65rem;
-        color: #f59e0b;
+        color: #b45309;
         font-weight: 700;
       }
       .preview-name {
         font-size: 0.95rem;
-        color: #f9fafb;
+        font-weight: 700;
+        color: #0f172a;
         margin: 0.25rem 0 0.4rem;
       }
       .preview-desc {
         font-size: 0.75rem;
-        color: #9ca3af;
+        color: #64748b;
         margin: 0 0 0.75rem;
         line-height: 1.4;
       }
@@ -343,7 +352,7 @@ import type { AdminProduct } from '@core/services/admin.service';
       .price-val {
         font-size: 1.15rem;
         font-weight: 700;
-        color: #fbbf24;
+        color: #d97706;
       }
       .price-strike {
         font-size: 0.8rem;
@@ -355,13 +364,15 @@ import type { AdminProduct } from '@core/services/admin.service';
         font-size: 0.7rem;
         padding: 0.15rem 0.5rem;
         border-radius: 9999px;
-        background: rgba(16, 185, 129, 0.15);
-        color: #34d399;
-        font-weight: 600;
+        background: #ecfdf5;
+        color: #047857;
+        border: 1px solid #a7f3d0;
+        font-weight: 700;
       }
       .preview-stock-pill.out {
-        background: rgba(244, 63, 94, 0.15);
-        color: #fb7185;
+        background: #fef2f2;
+        color: #b91c1c;
+        border: 1px solid #fecaca;
       }
     `,
   ],

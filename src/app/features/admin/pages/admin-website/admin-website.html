@@ -146,42 +146,95 @@
       </div>
     </div>
 
-    <!-- Section 3: E-Commerce & Shipping Rules -->
+    <!-- Section 3: Commercial, Tax & Delivery Rules -->
     <div class="cms-card">
       <div class="card-header">
         <div>
-          <h2 class="card-title">Commercial & Checkout Configuration</h2>
-          <p class="card-subtitle">Define free shipping thresholds, courier flat fee, and standard tax rate calculated at checkout.</p>
+          <h2 class="card-title">Commercial, Tax & Delivery Rules</h2>
+          <p class="card-subtitle">Control shipping charges, free courier thresholds, GST tax percentages, and checkout calculation behavior.</p>
         </div>
       </div>
 
       <div class="form-grid" formGroupName="ecommerce">
+        <!-- Delivery Controls -->
         <div class="form-field">
-          <label for="ecom-free-ship">Free Courier Delivery Threshold (₹)</label>
+          <label for="ecom-free-ship">Free Delivery Threshold (₹)</label>
           <input id="ecom-free-ship" type="number" formControlName="freeShippingThreshold" />
-          <span class="field-hint">Orders at or above this amount receive complimentary shipping.</span>
+          <span class="field-hint">Customer carts reaching this subtotal receive FREE delivery.</span>
         </div>
 
         <div class="form-field">
-          <label for="ecom-flat-ship">Standard Delivery Fee (₹)</label>
+          <label for="ecom-flat-ship">Standard Delivery Charge (₹)</label>
           <input id="ecom-flat-ship" type="number" formControlName="standardShippingFee" />
-          <span class="field-hint">Applies to orders below the free shipping threshold.</span>
+          <span class="field-hint">Charged on orders below the free delivery threshold.</span>
+        </div>
+
+        <!-- Tax Controls -->
+        <div class="form-field">
+          <label for="ecom-tax">GST / Tax Rate (%)</label>
+          <input id="ecom-tax" type="number" formControlName="taxRatePercent" min="0" max="100" />
+          <span class="field-hint">Standard GST rate applied to grooming catalog (e.g. 18%, 12%, 5%).</span>
         </div>
 
         <div class="form-field">
-          <label for="ecom-tax">GST / Service Tax Rate (%)</label>
-          <input id="ecom-tax" type="number" formControlName="taxRatePercent" />
-          <span class="field-hint">Applicable tax rate on products and styling rituals.</span>
-        </div>
-
-        <div class="form-field">
-          <label for="ecom-curr">Currency Symbol / Code</label>
+          <label for="ecom-curr">Currency</label>
           <input id="ecom-curr" type="text" formControlName="currency" readonly />
+        </div>
+
+        <!-- Toggles Row -->
+        <div class="form-field span-2 toggle-row-container">
+          <label class="custom-toggle-inline">
+            <input type="checkbox" formControlName="freeShippingEnabled" />
+            <span class="toggle-pill"></span>
+            <span class="toggle-title">Enable Free Shipping Policy (Promote Free Delivery Threshold on storefront)</span>
+          </label>
+
+          <label class="custom-toggle-inline">
+            <input type="checkbox" formControlName="taxEnabled" />
+            <span class="toggle-pill"></span>
+            <span class="toggle-title">Enable GST / Tax Breakdown on Invoices and Order Summaries</span>
+          </label>
+
+          <label class="custom-toggle-inline">
+            <input type="checkbox" formControlName="taxInclusive" />
+            <span class="toggle-pill"></span>
+            <span class="toggle-title">Prices are inclusive of Tax (GST is extracted from price rather than added on top)</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Live Calculation Rule Simulator -->
+      <div class="calc-simulator-card">
+        <div class="sim-header">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          <strong>Storefront Live Rule Simulator</strong>
+        </div>
+        <div class="sim-grid">
+          <div class="sim-box">
+            <span class="sim-label">Cart below threshold (e.g. ₹500)</span>
+            <div class="sim-calc">
+              <span>Items: ₹500</span>
+              <span>+ Delivery: <strong>₹{{ form.get('ecommerce.standardShippingFee')?.value || 0 }}</strong></span>
+              <span class="sim-tot">Total: ₹{{ (500 + (form.get('ecommerce.standardShippingFee')?.value || 0)) }}</span>
+            </div>
+          </div>
+          <div class="sim-box free-highlight">
+            <span class="sim-label">Cart at / above threshold (₹{{ form.get('ecommerce.freeShippingThreshold')?.value || 999 }}+)</span>
+            <div class="sim-calc">
+              <span>Items: ₹{{ form.get('ecommerce.freeShippingThreshold')?.value || 999 }}</span>
+              <span>+ Delivery: <strong class="text-green">{{ form.get('ecommerce.freeShippingEnabled')?.value ? 'FREE (₹0)' : ('₹' + (form.get('ecommerce.standardShippingFee')?.value || 0)) }}</strong></span>
+              <span class="sim-tot">Total: ₹{{ form.get('ecommerce.freeShippingThreshold')?.value || 999 }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Section 4: Salon Capacity & Storefront Operations -->
+    <!-- Section 4: Salon Operations & Floor Capacity -->
     <div class="cms-card">
       <div class="card-header">
         <div>
@@ -221,4 +274,202 @@
       </button>
     </div>
   </form>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECTION 5: COUPONS, PROMO CODES & DISCOUNTS (INDEPENDENT CRUD)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="cms-card coupon-section-card">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title">Coupons, Promo Codes & Discounts</h2>
+        <p class="card-subtitle">Create promotional codes, configure percentage or flat discounts, set minimum purchase requirements, and monitor usage.</p>
+      </div>
+
+      <div class="coupon-header-actions">
+        <a routerLink="/admin/coupons" class="btn-dedicated-hub" title="Open full dedicated coupon management page">
+          <span>Dedicated Coupon Hub ↗</span>
+        </a>
+        @if (couponService.coupons().length > 0) {
+          <button type="button" class="btn-reset-coupons" (click)="clearAllCoupons()" title="Clear all coupon codes">
+            <span>Clear All</span>
+          </button>
+        }
+        <button type="button" class="btn-add-coupon" (click)="openCreateCoupon()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>Create Coupon Code</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Coupons Data Table -->
+    <div class="coupons-table-wrapper">
+      <table class="coupons-table">
+        <thead>
+          <tr>
+            <th>Coupon Code</th>
+            <th>Discount Value</th>
+            <th>Min Order Req.</th>
+            <th>Max Cap</th>
+            <th>Description</th>
+            <th>Redemptions</th>
+            <th>Status</th>
+            <th class="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (c of couponService.coupons(); track c.id) {
+            <tr [class.row-inactive]="!c.isActive">
+              <td>
+                <div class="coupon-code-pill">
+                  <span class="code-text">{{ c.code }}</span>
+                </div>
+              </td>
+              <td>
+                <strong class="discount-display">
+                  @if (c.discountType === 'percentage') {
+                    {{ c.discountValue }}% OFF
+                  } @else {
+                    {{ c.discountValue | inr }} OFF
+                  }
+                </strong>
+              </td>
+              <td>{{ c.minOrderValue | inr }}</td>
+              <td>
+                @if (c.discountType === 'percentage' && c.maxDiscountAmount) {
+                  <span>Up to {{ c.maxDiscountAmount | inr }}</span>
+                } @else {
+                  <span class="text-muted">No Cap</span>
+                }
+              </td>
+              <td class="col-desc" title="{{ c.description }}">{{ c.description }}</td>
+              <td>
+                <span class="usage-count">{{ c.usageCount }} times</span>
+              </td>
+              <td>
+                <button
+                  type="button"
+                  class="status-badge-btn"
+                  [class.is-active]="c.isActive"
+                  (click)="toggleCoupon(c.id)"
+                  title="Click to toggle coupon active status"
+                >
+                  <span class="status-dot"></span>
+                  <span>{{ c.isActive ? 'Active' : 'Paused' }}</span>
+                </button>
+              </td>
+              <td class="text-right">
+                <div class="row-actions">
+                  <button type="button" class="btn-action-edit" (click)="openEditCoupon(c)" title="Edit coupon details">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    <span>Edit</span>
+                  </button>
+                  <button type="button" class="btn-action-del" (click)="deleteCoupon(c.id)" title="Delete coupon">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ─── MODAL: CREATE / EDIT COUPON DIALOG ─── -->
+  @if (showCouponModal()) {
+    <div class="modal-overlay" (click)="closeCouponModal()">
+      <div class="coupon-modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <h3 class="modal-title">{{ editingCouponId() ? 'Edit Coupon Code' : 'Create New Promotional Code' }}</h3>
+            <p class="modal-subtitle">Define promo terms, discount calculations, and cart requirements.</p>
+          </div>
+          <button type="button" class="btn-modal-close" (click)="closeCouponModal()">✕</button>
+        </div>
+
+        <form [formGroup]="couponForm" (ngSubmit)="saveCoupon()" class="modal-form">
+          <div class="modal-grid">
+            <div class="form-field">
+              <label for="cp-code">Coupon Promo Code</label>
+              <input id="cp-code" type="text" formControlName="code" placeholder="e.g. SUMMER25, FESTIVE50" style="text-transform: uppercase;" />
+              @if (couponForm.controls.code.touched && couponForm.controls.code.invalid) {
+                <span class="field-error">Alphanumeric coupon code (3-20 characters) required</span>
+              }
+            </div>
+
+            <div class="form-field">
+              <label for="cp-type">Discount Type</label>
+              <select id="cp-type" formControlName="discountType">
+                <option value="percentage">Percentage Discount (%)</option>
+                <option value="fixed">Flat Amount Discount (₹)</option>
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="cp-val">
+                {{ couponForm.controls.discountType.value === 'percentage' ? 'Discount Percentage (%)' : 'Discount Amount (₹)' }}
+              </label>
+              <input id="cp-val" type="number" formControlName="discountValue" min="1" placeholder="10" />
+              @if (couponForm.controls.discountValue.touched && couponForm.controls.discountValue.invalid) {
+                <span class="field-error">Valid discount value required</span>
+              }
+            </div>
+
+            <div class="form-field">
+              <label for="cp-min">Minimum Cart Subtotal (₹)</label>
+              <input id="cp-min" type="number" formControlName="minOrderValue" min="0" placeholder="499" />
+              <span class="field-hint">Cart must reach this amount to use this coupon.</span>
+            </div>
+
+            @if (couponForm.controls.discountType.value === 'percentage') {
+              <div class="form-field">
+                <label for="cp-cap">Maximum Discount Cap (₹ Optional)</label>
+                <input id="cp-cap" type="number" formControlName="maxDiscountAmount" placeholder="e.g. 200" />
+                <span class="field-hint">Limits maximum discount deduction.</span>
+              </div>
+            }
+
+            <div class="form-field span-2">
+              <label for="cp-desc">Promotion Description</label>
+              <input id="cp-desc" type="text" formControlName="description" placeholder="e.g. 20% off on all grooming products for festive season" />
+              @if (couponForm.controls.description.touched && couponForm.controls.description.invalid) {
+                <span class="field-error">Description is required (minimum 5 characters)</span>
+              }
+            </div>
+
+            <div class="form-field span-2">
+              <label for="cp-exp-web">Auto-Disable Timeline (Date &amp; Time)</label>
+              <input id="cp-exp-web" type="datetime-local" formControlName="expiresAt" style="color-scheme: dark;" />
+              <span class="field-hint">Once this timeline arrives, the coupon will automatically disable and stay disabled until manually reopened.</span>
+            </div>
+
+            <div class="form-field span-2">
+              <label class="custom-toggle-inline">
+                <input type="checkbox" formControlName="isActive" />
+                <span class="toggle-pill"></span>
+                <span class="toggle-title">Activate Coupon Immediately (Customers can apply at checkout)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn-modal-cancel" (click)="closeCouponModal()">Cancel</button>
+            <button type="submit" class="btn-modal-save">
+              <span>{{ editingCouponId() ? 'Save Changes' : 'Create & Publish Coupon' }}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
 </div>
+

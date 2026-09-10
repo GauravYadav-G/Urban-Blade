@@ -70,9 +70,9 @@ export class AddressService {
     });
   }
 
-  private userKey(): string | null {
+  private userKey(): string {
     const email = this.account.user()?.email?.trim().toLowerCase();
-    return email || null;
+    return email || 'guest';
   }
 
   private normalizeDefault(addresses: SavedAddress[], saved: SavedAddress): SavedAddress[] {

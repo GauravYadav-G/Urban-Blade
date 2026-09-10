@@ -65,7 +65,15 @@
         Subtotal ({{ cart.itemCount() }} {{ cart.itemCount() === 1 ? 'item' : 'items' }})
         <strong>{{ cart.subtotal() | inr }}</strong>
       </p>
-      <p class="cart__ship">FREE delivery on salon retail in Ghaziabad 201009.</p>
+      @if (freeShippingEnabled()) {
+        @if (remainingForFreeShip() === 0) {
+          <p class="cart__ship text-green">✓ Your order qualifies for <strong>FREE Delivery</strong>!</p>
+        } @else {
+          <p class="cart__ship">Add {{ remainingForFreeShip() | inr }} more to unlock <strong>FREE Delivery</strong>.</p>
+        }
+      } @else {
+        <p class="cart__ship">Standard Delivery: {{ ecommerce().standardShippingFee | inr }}</p>
+      }
       <a routerLink="/checkout" class="checkout">Proceed to checkout</a>
       <a routerLink="/shop" class="cart__keep">Continue shopping</a>
     </aside>

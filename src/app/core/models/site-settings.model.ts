@@ -20,8 +20,11 @@ export interface SiteBusiness {
 }
 
 export interface SiteEcommerce {
+  freeShippingEnabled: boolean;
   freeShippingThreshold: number;
   standardShippingFee: number;
+  taxEnabled: boolean;
+  taxInclusive: boolean;
   taxRatePercent: number;
   currency: string;
 }

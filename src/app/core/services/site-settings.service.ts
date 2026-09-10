@@ -26,8 +26,11 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
     mapsUrl: SALON.mapsUrl,
   },
   ecommerce: {
+    freeShippingEnabled: true,
     freeShippingThreshold: 999,
     standardShippingFee: 99,
+    taxEnabled: true,
+    taxInclusive: true,
     taxRatePercent: 18,
     currency: 'INR',
   },

@@ -1,0 +1,398 @@
+<div class="coupons-page">
+  <!-- Page Header -->
+  <div class="page-header">
+    <div>
+      <span class="eyebrow">MARKETING &amp; PROMOTIONS ✦ CONVERSION ENGINE</span>
+      <h1>Coupon Codes &amp; Discounts</h1>
+      <p class="subtitle">
+        Create, schedule fixed duration timelines, auto-disable, and manage promotional discount codes.
+      </p>
+    </div>
+
+    <div class="header-actions">
+      <button type="button" class="btn-primary-glow" (click)="openCreateModal()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>+ Create Coupon</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- KPI Metrics Grid -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <span class="kpi-label">TOTAL COUPONS</span>
+      <span class="kpi-val">{{ totalCouponsCount() }}</span>
+      <span class="kpi-sub">Custom promo codes configured</span>
+    </div>
+
+    <div class="kpi-card tone-emerald">
+      <span class="kpi-label">ACTIVE ON STOREFRONT</span>
+      <span class="kpi-val">{{ activeCouponsCount() }}</span>
+      <span class="kpi-sub">Currently live and claimable</span>
+    </div>
+
+    <div class="kpi-card tone-rose">
+      <span class="kpi-label">AUTO-DISABLED / EXPIRED</span>
+      <span class="kpi-val">{{ expiredCouponsCount() }}</span>
+      <span class="kpi-sub">Past timeline; locked until reactivated</span>
+    </div>
+
+    <div class="kpi-card tone-amber">
+      <span class="kpi-label">PAUSED (MANUAL DRAFTS)</span>
+      <span class="kpi-val">{{ totalCouponsCount() - activeCouponsCount() - expiredCouponsCount() }}</span>
+      <span class="kpi-sub">Manually switched off</span>
+    </div>
+
+    <div class="kpi-card tone-purple">
+      <span class="kpi-label">TOTAL REDEMPTIONS</span>
+      <span class="kpi-val">{{ totalRedemptions() }}</span>
+      <span class="kpi-sub">Total discount checkouts</span>
+    </div>
+  </div>
+
+  <!-- Controls Bar -->
+  <div class="controls-bar">
+    <div class="search-wrap">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input
+        type="text"
+        placeholder="Search coupon code or description..."
+        [ngModel]="searchQuery()"
+        (ngModelChange)="searchQuery.set($event)"
+      />
+    </div>
+
+    <div class="filter-pills">
+      <button
+        type="button"
+        [class.active]="filterStatus() === 'all'"
+        (click)="filterStatus.set('all')"
+      >
+        All ({{ totalCouponsCount() }})
+      </button>
+      <button
+        type="button"
+        [class.active]="filterStatus() === 'active'"
+        (click)="filterStatus.set('active')"
+      >
+        Active ({{ activeCouponsCount() }})
+      </button>
+      <button
+        type="button"
+        [class.active]="filterStatus() === 'expired'"
+        (click)="filterStatus.set('expired')"
+      >
+        Expired ({{ expiredCouponsCount() }})
+      </button>
+      <button
+        type="button"
+        [class.active]="filterStatus() === 'inactive'"
+        (click)="filterStatus.set('inactive')"
+      >
+        Paused ({{ totalCouponsCount() - activeCouponsCount() - expiredCouponsCount() }})
+      </button>
+    </div>
+  </div>
+
+  <!-- Coupons List / Empty State -->
+  @if (filteredCoupons().length === 0) {
+    <div class="empty-state-card">
+      <div class="empty-icon-wrap">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5"/></svg>
+      </div>
+      @if (totalCouponsCount() === 0) {
+        <h3>No Coupon Codes Created Yet</h3>
+        <p>
+          You have full control. Create custom coupon codes with fixed duration timelines that auto-disable after expiry.
+        </p>
+        <button type="button" class="btn-primary-glow" (click)="openCreateModal()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span>Create First Coupon</span>
+        </button>
+      } @else {
+        <h3>No Coupons Found</h3>
+        <p>No coupon codes match your current search or filter criteria.</p>
+        <button type="button" class="btn-ghost-sm" (click)="searchQuery.set(''); filterStatus.set('all')">
+          Reset Filters
+        </button>
+      }
+    </div>
+  } @else {
+    <div class="table-card">
+      <table class="glass-table">
+        <thead>
+          <tr>
+            <th>PROMO CODE</th>
+            <th>DISCOUNT VALUE</th>
+            <th>MIN. SPEND</th>
+            <th>TIMELINE &amp; AUTO-EXPIRATION</th>
+            <th>USAGE</th>
+            <th>STATUS</th>
+            <th class="text-right">ACTIONS</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (c of filteredCoupons(); track c.id) {
+            @let timeline = getTimelineStatus(c);
+            <tr [class.row-paused]="!c.isActive && !timeline.isExpired" [class.row-expired]="timeline.isExpired">
+              <!-- Code -->
+              <td>
+                <div class="code-cell">
+                  <span class="code-badge" (click)="copyCode(c.code)" title="Click to copy code">
+                    <code>{{ c.code }}</code>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </span>
+                  @if (c.description) {
+                    <span class="code-desc">{{ c.description }}</span>
+                  }
+                </div>
+              </td>
+
+              <!-- Discount -->
+              <td>
+                <div class="discount-cell">
+                  <span class="discount-val">
+                    @if (c.discountType === 'percentage') {
+                      {{ c.discountValue }}% OFF
+                    } @else {
+                      ₹{{ c.discountValue }} FLAT OFF
+                    }
+                  </span>
+                  @if (c.discountType === 'percentage' && c.maxDiscountAmount) {
+                    <span class="cap-sub">Max ₹{{ c.maxDiscountAmount }}</span>
+                  }
+                </div>
+              </td>
+
+              <!-- Min Spend -->
+              <td>
+                <span class="spend-val">₹{{ c.minOrderValue }}</span>
+              </td>
+
+              <!-- Timeline & Auto-Expiration Details -->
+              <td>
+                <div class="timeline-cell">
+                  @if (timeline.isExpired) {
+                    <div class="timeline-badge timeline-badge--expired">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                      <span>AUTO-DISABLED</span>
+                    </div>
+                    <span class="timeline-subtext tone-rose">{{ timeline.subtext }}</span>
+                  } @else if (c.expiresAt) {
+                    <div class="timeline-badge" [class.timeline-badge--warning]="timeline.isWarning" [class.timeline-badge--active]="!timeline.isWarning">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      <span>{{ timeline.text }}</span>
+                    </div>
+                    <span class="timeline-subtext">{{ timeline.subtext }}</span>
+                  } @else {
+                    <div class="timeline-badge timeline-badge--indefinite">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>
+                      <span>Indefinite (No Timer)</span>
+                    </div>
+                    <span class="timeline-subtext">Active until manually paused</span>
+                  }
+                </div>
+              </td>
+
+              <!-- Usage -->
+              <td>
+                <span class="usage-val">{{ c.usageCount }} orders</span>
+              </td>
+
+              <!-- Status with Interactive Toggle -->
+              <td>
+                @if (timeline.isExpired) {
+                  <div class="expired-pill-wrapper" (click)="openEditModal(c)" title="Expired. Click to extend timeline and reactivate.">
+                    <span class="status-pill status-pill--expired">EXPIRED</span>
+                    <span class="reactivate-hint">Reactivate ↗</span>
+                  </div>
+                } @else {
+                  <div class="status-toggle-wrapper" (click)="toggleActive(c)" [title]="c.isActive ? 'Click to Pause' : 'Click to Activate'">
+                    <span class="toggle-track" [class.active]="c.isActive">
+                      <span class="toggle-thumb"></span>
+                    </span>
+                    <span class="status-pill" [class.active]="c.isActive">
+                      {{ c.isActive ? 'ACTIVE' : 'PAUSED' }}
+                    </span>
+                  </div>
+                }
+              </td>
+
+              <!-- Actions -->
+              <td class="text-right">
+                <div class="action-buttons">
+                  <button type="button" class="btn-icon" (click)="openEditModal(c)" title="Edit Coupon & Timeline">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  </button>
+                  <button type="button" class="btn-icon btn-icon--danger" (click)="deleteCoupon(c)" title="Delete Coupon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- Modal: Create / Edit Coupon with Duration & Timeline -->
+  @if (showModal()) {
+    <div class="modal-backdrop" (click)="closeModal()">
+      <div class="modal-dialog" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <span class="eyebrow">DURATION &amp; AUTO-DISABLE TIMELINE</span>
+            <h2>{{ editingCouponId() ? 'Edit Coupon & Timeline' : 'Create New Coupon' }}</h2>
+          </div>
+          <button type="button" class="modal-close" (click)="closeModal()">✕</button>
+        </div>
+
+        <form [formGroup]="couponForm" (ngSubmit)="saveCoupon()" class="modal-form">
+          <!-- Row 1: Code & Status -->
+          <div class="form-row form-row--2">
+            <div class="form-field">
+              <label for="cp-code">Coupon Code *</label>
+              <input
+                id="cp-code"
+                type="text"
+                formControlName="code"
+                placeholder="e.g. FESTIVE20"
+                class="code-input"
+                style="text-transform: uppercase;"
+              />
+              <span class="field-hint">Uppercase letters and numbers only.</span>
+            </div>
+
+            <div class="form-field">
+              <label>Initial Status</label>
+              <div class="status-select-wrap">
+                <label class="radio-label">
+                  <input type="radio" [value]="true" formControlName="isActive" />
+                  <span class="radio-text active-tone">Active (Live)</span>
+                </label>
+                <label class="radio-label">
+                  <input type="radio" [value]="false" formControlName="isActive" />
+                  <span class="radio-text paused-tone">Paused (Draft)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Description -->
+          <div class="form-field">
+            <label for="cp-desc">Offer Description</label>
+            <input
+              id="cp-desc"
+              type="text"
+              formControlName="description"
+              placeholder="e.g. 20% off on all grooming products above ₹999"
+            />
+          </div>
+
+          <!-- Row 2: Discount Type & Value -->
+          <div class="form-row form-row--2">
+            <div class="form-field">
+              <label for="cp-type">Discount Type *</label>
+              <select id="cp-type" formControlName="discountType">
+                <option value="percentage">Percentage Discount (%)</option>
+                <option value="fixed">Flat Cash Discount (₹)</option>
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="cp-val">
+                {{ couponForm.get('discountType')?.value === 'percentage' ? 'Discount Percentage (%) *' : 'Discount Amount (₹) *' }}
+              </label>
+              <input
+                id="cp-val"
+                type="number"
+                formControlName="discountValue"
+                min="1"
+                placeholder="e.g. 20"
+              />
+            </div>
+          </div>
+
+          <!-- Row 3: Minimum Order & Max Cap -->
+          <div class="form-row form-row--2">
+            <div class="form-field">
+              <label for="cp-min">Minimum Cart Total Required (₹) *</label>
+              <input
+                id="cp-min"
+                type="number"
+                formControlName="minOrderValue"
+                min="0"
+                placeholder="e.g. 499"
+              />
+              <span class="field-hint">Required order value before coupon can apply.</span>
+            </div>
+
+            <div class="form-field">
+              <label for="cp-cap">Maximum Discount Cap (₹)</label>
+              <input
+                id="cp-cap"
+                type="number"
+                formControlName="maxDiscountAmount"
+                min="1"
+                placeholder="e.g. 300 (leave blank for unlimited)"
+              />
+              <span class="field-hint">Ceiling for percentage discounts.</span>
+            </div>
+          </div>
+
+          <!-- ════ DURATION & AUTO-EXPIRATION TIMELINE SECTION ════ -->
+          <div class="timeline-config-box">
+            <div class="timeline-config-header">
+              <div class="icon-wrap">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div>
+                <h4>Auto-Disable Duration &amp; Timeline</h4>
+                <p>Set how long this coupon stays active. Once the date and time pass, it will automatically disable and stay disabled until you manually reopen it.</p>
+              </div>
+            </div>
+
+            <!-- Quick Duration Presets -->
+            <div class="preset-buttons-wrap">
+              <span class="presets-label">Quick Duration Presets:</span>
+              <div class="presets-grid">
+                <button type="button" class="btn-preset" (click)="setDurationPreset(24)">+24 Hours</button>
+                <button type="button" class="btn-preset" (click)="setDurationPreset(72)">+3 Days</button>
+                <button type="button" class="btn-preset" (click)="setDurationPreset(168)">+7 Days</button>
+                <button type="button" class="btn-preset" (click)="setDurationPreset(720)">+30 Days</button>
+                <button type="button" class="btn-preset btn-preset--clear" (click)="clearExpiry()">No Expiry (Never)</button>
+              </div>
+            </div>
+
+            <!-- Datetime Local Picker -->
+            <div class="form-field" style="margin-top: 0.85rem;">
+              <label for="cp-exp">Exact Expiration Date &amp; Time (Local)</label>
+              <input
+                id="cp-exp"
+                type="datetime-local"
+                formControlName="expiresAt"
+                class="datetime-input"
+              />
+              <span class="field-hint">
+                @if (couponForm.get('expiresAt')?.value) {
+                  ✦ Automatically disables on: <strong>{{ couponForm.get('expiresAt')?.value | date:'medium' }}</strong>
+                } @else {
+                  ✦ No expiration timeline set. Coupon will remain active continuously until you pause it manually.
+                }
+              </span>
+            </div>
+          </div>
+
+          <!-- Modal Actions -->
+          <div class="modal-actions">
+            <button type="button" class="btn-ghost" (click)="closeModal()">Cancel</button>
+            <button type="submit" class="btn-primary-glow" [disabled]="couponForm.invalid">
+              {{ editingCouponId() ? 'Save Changes & Timeline' : 'Create & Schedule Coupon' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+</div>

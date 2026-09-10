@@ -8,6 +8,8 @@ import { ProductSlider } from '@shared/components/product-slider/product-slider'
 import { ImgFallback } from '@shared/directives/img-fallback';
 import { InrPipe } from '@shared/pipes/inr-pipe';
 
+import { SiteSettingsService } from '@core/services/site-settings.service';
+
 @Component({
   selector: 'app-cart-page',
   imports: [RouterLink, InrPipe, ImgFallback, ProductSlider],
@@ -17,6 +19,16 @@ import { InrPipe } from '@shared/pipes/inr-pipe';
 export class CartPage {
   protected readonly cart = inject(CartService);
   private readonly catalog = inject(CatalogService);
+  readonly siteSettings = inject(SiteSettingsService);
+
+  readonly ecommerce = computed(() => this.siteSettings.settings().ecommerce);
+  readonly freeShippingThreshold = computed(() => this.ecommerce().freeShippingThreshold);
+  readonly freeShippingEnabled = computed(() => this.ecommerce().freeShippingEnabled ?? true);
+  readonly remainingForFreeShip = computed(() => {
+    const sub = this.cart.subtotal();
+    const thresh = this.freeShippingThreshold();
+    return sub < thresh ? thresh - sub : 0;
+  });
 
   readonly related = computed(() => {
     const first = this.cart.lines()[0];

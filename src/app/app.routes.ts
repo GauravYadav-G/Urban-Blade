@@ -42,6 +42,11 @@ export const routes: Routes = [
           import('./features/admin/pages/admin-customers/admin-customers').then((m) => m.AdminCustomers),
       },
       {
+        path: 'coupons',
+        loadComponent: () =>
+          import('./features/admin/pages/admin-coupons/admin-coupons').then((m) => m.AdminCoupons),
+      },
+      {
         path: 'website',
         loadComponent: () =>
           import('./features/admin/pages/admin-website/admin-website').then((m) => m.AdminWebsite),

@@ -26,7 +26,7 @@ export class PaymentModal implements OnInit, OnDestroy {
   readonly errorMessage = signal<string>('');
 
   // UPI State
-  readonly upiVpa = signal('gaurav@okaxis');
+  readonly upiVpa = signal('customer@okaxis');
   readonly upiTimeRemaining = signal(300); // 5 minutes
   private timerInterval: any;
 
