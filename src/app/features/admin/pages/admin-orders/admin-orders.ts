@@ -127,6 +127,14 @@ export class AdminOrders implements OnInit {
   }
 
   cancelOrder(order: AdminOrder): void {
+    const s = (order.status || '').toLowerCase().trim();
+    if (s === 'delivered') {
+      this.toast.error('Delivered orders have been fulfilled and cannot be cancelled.');
+      return;
+    }
+    if (s === 'cancelled') {
+      return;
+    }
     if (confirm(`Are you sure you want to cancel Order #${order.id.slice(0, 8)}? Items will be restocked.`)) {
       this.admin.cancelOrder(order.id);
       if (this.selectedOrder()?.id === order.id) {
@@ -249,7 +257,7 @@ export class AdminOrders implements OnInit {
   advanceToStage(order: AdminOrder, targetStage: AdminOrder['status'], event?: Event): void {
     event?.stopPropagation();
     const currentStatus = (order.status || '').toLowerCase().trim();
-    if (currentStatus === targetStage || currentStatus === 'cancelled') return;
+    if (currentStatus === targetStage || currentStatus === 'cancelled' || currentStatus === 'delivered') return;
     const generatedTracking = (targetStage === 'shipped' || targetStage === 'delivered') && !order.tracking_number
       ? `TRK-UB-${order.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
       : order.tracking_number;

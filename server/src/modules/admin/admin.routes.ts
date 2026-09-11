@@ -466,8 +466,16 @@ export async function adminRoutes(app: FastifyInstance) {
       }
 
       try {
-        // 1. If transitioning to cancelled, automatically restock inventory in Neon DB
+        // 1. If transitioning to cancelled, verify order is not already delivered and automatically restock
         if (status === 'cancelled') {
+          const currentRes = await query('SELECT status FROM orders WHERE id::text = $1 OR idempotency_key = $1', [id]);
+          if (currentRes.rows.length > 0 && currentRes.rows[0].status === 'delivered') {
+            return reply.status(400).send({
+              error: 'CANNOT_CANCEL_DELIVERED',
+              message: 'Delivered orders cannot be cancelled once fulfilled.',
+            });
+          }
+
           const itemsRes = await query('SELECT product_id, quantity FROM order_items WHERE order_id::text = $1', [id]);
           for (const item of itemsRes.rows) {
             if (item.product_id) {

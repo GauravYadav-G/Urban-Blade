@@ -1844,6 +1844,26 @@
   }
 }
 
+.modal-fulfilled-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.65rem 1.15rem;
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1.5px solid #a7f3d0;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+
+  .chk {
+    font-weight: 900;
+    color: #059669;
+    font-size: 0.95rem;
+  }
+}
+
 .pos-modal-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;

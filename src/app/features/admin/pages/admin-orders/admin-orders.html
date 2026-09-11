@@ -521,10 +521,15 @@
               </svg>
             </button>
           }
-          @if (o.status !== 'cancelled') {
+          @if (o.status !== 'cancelled' && o.status !== 'delivered') {
             <button class="modal-action-btn cancel-btn" (click)="cancelOrder(o)" title="Cancel order and restock items">
               <span>Cancel Order</span>
             </button>
+          } @else if (o.status === 'delivered') {
+            <div class="modal-fulfilled-pill">
+              <span class="chk">✓</span>
+              <span>Order Fulfilled & Delivered</span>
+            </div>
           }
           <button class="modal-action-btn close" (click)="closeModal()">Close Details</button>
         </div>

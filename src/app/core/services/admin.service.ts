@@ -289,6 +289,10 @@ export class AdminService {
   cancelOrder(orderId: string): void {
     const target = this.orders().find((o) => o.id === orderId);
     if (!target) return;
+    if ((target.status || '').toLowerCase().trim() === 'delivered') {
+      this.toast.error(`Order #${orderId.slice(0, 8)} has already been delivered and cannot be cancelled.`);
+      return;
+    }
 
     this.orders.update((list) =>
       list.map((o) => (o.id === orderId ? { ...o, status: 'cancelled' } : o))
