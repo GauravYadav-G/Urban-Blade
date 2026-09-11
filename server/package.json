@@ -12,7 +12,8 @@
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",
     "benchmark": "tsx scripts/benchmark.ts",
-    "race-test": "tsx scripts/race-condition-test.ts"
+    "race-test": "tsx scripts/race-condition-test.ts",
+    "test:flow": "tsx scripts/test-e2e-complete-flow.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

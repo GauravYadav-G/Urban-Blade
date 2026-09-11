@@ -15,6 +15,7 @@
     "server:seed": "npm --prefix server run seed",
     "server:benchmark": "npm --prefix server run benchmark",
     "server:race-test": "npm --prefix server run race-test",
+    "test:flow": "npm --prefix server run test:flow",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down"
   },

@@ -53,7 +53,7 @@ export interface AdminProduct extends Product {
 
 export interface AdminOrder {
   id: string;
-  status: 'accepted' | 'processing' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
+  status: 'accepted' | 'processing' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled' | 'pending';
   subtotal: number;
   total_amount: number;
   currency: string;
@@ -75,6 +75,9 @@ export interface AdminOrder {
     image_url?: string;
   }>;
   tracking_number?: string;
+  coupon_code?: string;
+  discount_amount?: number;
+  updated_at?: string;
   notes?: string;
 }
 
@@ -227,16 +230,60 @@ export class AdminService {
 
   // ─── ORDER MANAGEMENT MUTATIONS ───────────────────────────────────────────
 
-  updateOrderStatus(orderId: string, status: AdminOrder['status']): void {
+  updateOrderStatus(orderId: string, status: AdminOrder['status'], trackingNumber?: string): void {
+    let generatedTracking = trackingNumber;
+    if (!generatedTracking && (status === 'shipped' || status === 'delivered')) {
+      generatedTracking = `TRK-UB-${orderId.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    }
+
     this.orders.update((list) =>
-      list.map((o) => (o.id === orderId ? { ...o, status } : o))
+      list.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status,
+              tracking_number: generatedTracking || o.tracking_number,
+              updated_at: new Date().toISOString(),
+            }
+          : o
+      )
     );
     this.saveOrders(this.orders());
     this.recomputeAndPersistMetrics();
 
-    this.toast.info(`Order #${orderId.slice(0, 8)} moved to ${status.toUpperCase()}.`);
+    const stageLabels: Record<string, string> = {
+      processing: 'PACKING & QA (Stage 2)',
+      shipped: 'DISPATCHED & IN TRANSIT (Stage 3)',
+      delivered: 'DELIVERY COMPLETED (Stage 4)',
+      confirmed: 'CONFIRMED (Stage 1)',
+      accepted: 'ACCEPTED (Stage 1)',
+    };
+    const label = stageLabels[status] || status.toUpperCase();
+    this.toast.success(`⚡ Order #${orderId.slice(0, 8).toUpperCase()} advanced to ${label}!`);
 
-    this.http.put(`${API_BASE}/orders/${orderId}/status`, { status }).subscribe({ error: () => {} });
+    this.http
+      .put<{ ok: boolean; order?: AdminOrder; status: string; trackingNumber?: string }>(
+        `${API_BASE}/orders/${orderId}/status`,
+        { status, trackingNumber: generatedTracking }
+      )
+      .subscribe({
+        next: (res) => {
+          if (res?.order) {
+            this.orders.update((list) =>
+              list.map((o) => (o.id === orderId ? { ...o, ...res.order } : o))
+            );
+          } else if (res?.trackingNumber) {
+            this.orders.update((list) =>
+              list.map((o) => (o.id === orderId ? { ...o, tracking_number: res.trackingNumber } : o))
+            );
+          }
+          this.saveOrders(this.orders());
+          this.recomputeAndPersistMetrics();
+        },
+        error: (err) => {
+          console.warn('Status update sync error:', err.message);
+        },
+      });
   }
 
   cancelOrder(orderId: string): void {
@@ -538,7 +585,7 @@ export class AdminService {
     const todayOrders = nonCancelledOrders.filter((o) => o.created_at.startsWith(todayStr));
     const todayRev = todayOrders.reduce((sum, o) => sum + o.total_amount, 0) || Math.round(totalRev * 0.35);
 
-    const accepted = ordersList.filter((o) => o.status === 'accepted').length;
+    const accepted = ordersList.filter((o) => o.status === 'accepted' || o.status === 'confirmed' || o.status === 'pending').length;
     const processing = ordersList.filter((o) => o.status === 'processing').length;
     const shipped = ordersList.filter((o) => o.status === 'shipped').length;
     const delivered = ordersList.filter((o) => o.status === 'delivered').length;
@@ -622,7 +669,7 @@ export class AdminService {
     this.saveCustomers(this.customers());
   }
 
-  refreshOrders(): void {
+  refreshOrders(notify = false): void {
     this.isSyncing.set(true);
     this.http.get<{ data: any[] }>(`${API_BASE}/orders`).subscribe({
       next: (res) => {
@@ -630,7 +677,7 @@ export class AdminService {
         if (res?.data && res.data.length > 0) {
           const mapped: AdminOrder[] = res.data.map((o) => ({
             id: o.id,
-            status: (o.status || 'accepted') as AdminOrder['status'],
+            status: ((o.status || 'accepted').toLowerCase().trim()) as AdminOrder['status'],
             subtotal: Number(o.subtotal) || Number(o.total_amount) || 0,
             total_amount: Number(o.total_amount) || 0,
             currency: o.currency || 'INR',
@@ -642,22 +689,37 @@ export class AdminService {
                 ? JSON.parse(o.shipping_address)
                 : o.shipping_address || { fullName: 'Walk-in Customer', city: 'Ghaziabad', phone: '' },
             created_at: o.created_at || new Date().toISOString(),
+            updated_at: o.updated_at,
             items: (o.items || []).map((i: any) => ({
               product_name: i.product_name || 'Salon Care Item',
               unit_price: Number(i.unit_price) || 0,
               quantity: Number(i.quantity) || 1,
               image_url: i.image_url || '/images/products/hc-hair-serum.jpg',
             })),
-            tracking_number: `TRK-UB-${o.id.slice(0, 6).toUpperCase()}`,
+            tracking_number:
+              o.tracking_number ||
+              (((o.status || '').toLowerCase().trim() === 'shipped' || ((o.status || '').toLowerCase().trim() === 'delivered'))
+                ? `TRK-UB-${o.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+                : undefined),
+            coupon_code: o.coupon_code || undefined,
+            discount_amount: Number(o.discount_amount) || 0,
           }));
           this.orders.set(mapped);
           this.saveOrders(mapped);
           this.recomputeAndPersistMetrics();
+          if (notify) {
+            this.toast.success(`⚡ Synced ${mapped.length} live orders from Neon PostgreSQL.`);
+          }
+        } else if (notify) {
+          this.toast.info('Orders synchronized with database.');
         }
       },
       error: (err) => {
         this.isSyncing.set(false);
         console.warn('Failed to sync orders from Neon DB:', err);
+        if (notify) {
+          this.toast.warning('Database sync failed. Showing cached orders.');
+        }
       },
     });
   }

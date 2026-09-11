@@ -3,6 +3,7 @@ import { RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/rou
 import { CommonModule } from '@angular/common';
 import { AdminService } from '@core/services/admin.service';
 import { AccountService } from '@core/services/account.service';
+import { AdminSessionService } from '@core/services/admin-session.service';
 import { ToastService } from '@core/services/toast.service';
 import { ToastContainer } from '@shared/components/toast-container/toast-container';
 
@@ -16,6 +17,7 @@ import { ToastContainer } from '@shared/components/toast-container/toast-contain
 export class AdminLayout {
   readonly admin = inject(AdminService);
   readonly account = inject(AccountService);
+  readonly session = inject(AdminSessionService);
   private readonly router = inject(Router);
   private readonly toast = inject(ToastService);
 

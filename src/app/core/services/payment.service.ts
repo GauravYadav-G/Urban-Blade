@@ -119,6 +119,8 @@ export class PaymentService {
     items: CheckoutItemRequest[];
     shippingAddress: ShippingAddress;
     userId?: string;
+    couponCode?: string;
+    discountAmount?: number;
   }): Observable<RazorpayOrderResponse> {
     this.isProcessing.set(true);
 
@@ -169,6 +171,8 @@ export class PaymentService {
     items: CheckoutItemRequest[];
     shippingAddress: ShippingAddress;
     userId?: string;
+    couponCode?: string;
+    discountAmount?: number;
   }): Observable<PaymentReceipt> {
     this.isProcessing.set(true);
 

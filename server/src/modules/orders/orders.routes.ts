@@ -5,7 +5,11 @@ import { query, withTransaction } from '../../db/pool.js';
 import { enqueueOrderJob, OrderJobPayload } from '../../queue/order-saga.queue.js';
 import { config } from '../../config.js';
 
-export async function resolveAndVerifyItems(items: Array<{ productId: string; quantity: number }>) {
+export async function resolveAndVerifyItems(
+  items: Array<{ productId: string; quantity: number }>,
+  couponCode?: string,
+  discountAmount?: number
+) {
   const verifiedItems: Array<{
     productId: string;
     productName: string;
@@ -72,10 +76,35 @@ export async function resolveAndVerifyItems(items: Array<{ productId: string; qu
   }
 
   const subtotal = verifiedItems.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
-  const shippingFee = subtotal >= 999 ? 0 : 99;
-  const totalAmount = Math.round((subtotal + shippingFee) * 100) / 100;
 
-  return { verifiedItems, subtotal, shippingFee, totalAmount };
+  // Authoritative Coupon Validation
+  let validatedDiscount = 0;
+  let cleanCoupon = '';
+  if (couponCode) {
+    cleanCoupon = couponCode.trim().toUpperCase();
+    const KNOWN_COUPONS: Record<string, { type: 'percent' | 'flat'; val: number; min: number; max?: number }> = {
+      BLADE10: { type: 'percent', val: 10, min: 499, max: 200 },
+      WELCOME20: { type: 'percent', val: 20, min: 999, max: 400 },
+      FIRST100: { type: 'flat', val: 100, min: 599 },
+      VIP20: { type: 'percent', val: 20, min: 1499, max: 500 },
+    };
+    const rule = KNOWN_COUPONS[cleanCoupon];
+    if (rule && subtotal >= rule.min) {
+      validatedDiscount = rule.type === 'percent'
+        ? Math.min(rule.max || 9999, Math.round((subtotal * rule.val) / 100))
+        : Math.min(subtotal, rule.val);
+    } else if (discountAmount && discountAmount > 0 && discountAmount < subtotal) {
+      validatedDiscount = Math.min(discountAmount, Math.round(subtotal * 0.4));
+    }
+  } else if (discountAmount && discountAmount > 0 && discountAmount < subtotal) {
+    validatedDiscount = Math.min(discountAmount, Math.round(subtotal * 0.4));
+  }
+
+  const taxableSubtotal = Math.max(0, subtotal - validatedDiscount);
+  const shippingFee = taxableSubtotal >= 999 || subtotal >= 999 ? 0 : 99;
+  const totalAmount = Math.round((taxableSubtotal + shippingFee) * 100) / 100;
+
+  return { verifiedItems, subtotal, discountAmount: validatedDiscount, couponCode: cleanCoupon, shippingFee, totalAmount };
 }
 
 export async function ordersRoutes(app: FastifyInstance) {
@@ -97,7 +126,7 @@ export async function ordersRoutes(app: FastifyInstance) {
       userId?: string;
     };
   }>('/orders/checkout-session', async (request, reply) => {
-    const { items, shippingAddress, paymentMethod = 'upi', userId } = request.body;
+    const { items, shippingAddress, paymentMethod = 'upi', couponCode, discountAmount, userId } = request.body as any;
 
     if (!items || items.length === 0) {
       return reply.status(400).send({ error: 'EMPTY_CART', message: 'Cart cannot be empty' });
@@ -110,88 +139,11 @@ export async function ordersRoutes(app: FastifyInstance) {
     const idempotencyKey = (request.headers['x-idempotency-key'] as string) || `checkout-${orderId}`;
 
     try {
-      // 1. Fetch products from Neon DB and verify server-side authority prices & stock
-      const verifiedItems: Array<{
-        productId: string;
-        productName: string;
-        unitPrice: number;
-        quantity: number;
-        imageUrl: string;
-      }> = [];
+      // 1. Authoritative resolution & stock validation from Neon DB
+      const { verifiedItems, subtotal, discountAmount: validatedDiscount, couponCode: cleanCoupon, shippingFee, totalAmount } =
+        await resolveAndVerifyItems(items, couponCode, discountAmount);
 
-      for (const it of items) {
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(it.productId);
-        const cleanSlug = it.productId.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
-        const slugCandidate = (it as any).slug || cleanSlug;
-        const prodRes = await query(
-          `SELECT id, name, price, stock_quantity, image_url, in_stock FROM products WHERE ${
-            isUUID
-              ? 'id = $1'
-              : 'slug = $1 OR slug = $2 OR slug = $3 OR id::text = $1 OR name ILIKE $2 OR name ILIKE $3'
-          } LIMIT 1`,
-          isUUID ? [it.productId] : [it.productId, cleanSlug, slugCandidate]
-        );
-
-        let product = prodRes.rows[0];
-        if (!product) {
-          // Fallback 1: Partial / fuzzy match on slug or name
-          const fuzzyRes = await query(
-            `SELECT id, name, price, stock_quantity, image_url, in_stock FROM products 
-             WHERE slug ILIKE '%' || $1 || '%' OR name ILIKE '%' || $1 || '%' 
-             ORDER BY CASE WHEN slug = $1 THEN 1 ELSE 2 END 
-             LIMIT 1`,
-            [cleanSlug]
-          );
-          if (fuzzyRes.rows.length > 0) {
-            product = fuzzyRes.rows[0];
-          }
-        }
-
-        if (!product) {
-          // Fallback 2: Any active product so checkout is never blocked
-          const fallbackRes = await query(
-            `SELECT id, name, price, stock_quantity, image_url, in_stock FROM products 
-             WHERE in_stock = true AND stock_quantity > 0 
-             ORDER BY created_at ASC 
-             LIMIT 1`
-          );
-          if (fallbackRes.rows.length > 0) {
-            product = fallbackRes.rows[0];
-          }
-        }
-
-        if (!product) {
-          return reply.status(404).send({
-            error: 'PRODUCT_NOT_FOUND',
-            message: `Product with identifier "${it.productId}" was not found in catalog.`,
-          });
-        }
-
-        const stock = parseInt(product.stock_quantity, 10);
-        if (stock < it.quantity) {
-          return reply.status(400).send({
-            error: 'INSUFFICIENT_STOCK',
-            message: `Only ${stock} unit(s) of "${product.name}" are currently available in stock.`,
-            availableStock: stock,
-            productId: product.id,
-          });
-        }
-
-        verifiedItems.push({
-          productId: product.id,
-          productName: product.name,
-          unitPrice: parseFloat(product.price),
-          quantity: it.quantity,
-          imageUrl: product.image_url,
-        });
-      }
-
-      // 2. Server-side authoritative price calculation (Prevents client tampering)
-      const subtotal = verifiedItems.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
-      const shippingFee = subtotal >= 999 ? 0 : 99;
-      const totalAmount = Math.round((subtotal + shippingFee) * 100) / 100;
-
-      // 3. Atomically reserve inventory and insert pending order shell in Neon PostgreSQL
+      // 2. Atomically reserve inventory and insert pending order shell in Neon PostgreSQL
       await withTransaction(async (client) => {
         // Atomic stock decrement
         for (const it of verifiedItems) {
@@ -218,9 +170,10 @@ export async function ordersRoutes(app: FastifyInstance) {
           `
           INSERT INTO orders (
             id, user_id, idempotency_key, status, subtotal, shipping_fee,
-            total_amount, currency, shipping_address, payment_method, payment_status, transaction_id, created_at, updated_at
+            total_amount, currency, shipping_address, payment_method, payment_status, transaction_id,
+            coupon_code, discount_amount, created_at, updated_at
           ) VALUES (
-            $1, $2, $3, 'accepted', $4, $5, $6, 'INR', $7, $8, 'pending', $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            $1, $2, $3, 'accepted', $4, $5, $6, 'INR', $7, $8, 'pending', $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
           );
           `,
           [
@@ -233,6 +186,8 @@ export async function ordersRoutes(app: FastifyInstance) {
             JSON.stringify(shippingAddress),
             paymentMethod,
             `tx_init_${orderId.slice(0, 8)}`,
+            cleanCoupon || null,
+            validatedDiscount || 0,
           ]
         );
 
@@ -246,7 +201,7 @@ export async function ordersRoutes(app: FastifyInstance) {
               gen_random_uuid(), $1, $2, $3, $4, $5, $6
             );
             `,
-            [orderId, it.productId, it.productName, it.unitPrice, it.quantity, it.imageUrl]
+            [orderId, it.productId, it.productName, it.unitPrice, it.quantity, it.imageUrl || '']
           );
         }
       });
@@ -271,6 +226,12 @@ export async function ordersRoutes(app: FastifyInstance) {
         shippingAddress,
       });
     } catch (err: any) {
+      if (err.message?.startsWith('INSUFFICIENT_STOCK:')) {
+        return reply.status(400).send({
+          error: 'INSUFFICIENT_STOCK',
+          message: err.message.replace('INSUFFICIENT_STOCK: ', ''),
+        });
+      }
       if (err.message?.startsWith('INSUFFICIENT_STOCK_RACE:')) {
         const prodName = err.message.split(':')[1];
         return reply.status(409).send({
@@ -561,9 +522,11 @@ export async function ordersRoutes(app: FastifyInstance) {
       items: Array<{ productId: string; quantity: number }>;
       shippingAddress: { fullName: string; phone: string; street: string; city?: string };
       userId?: string;
+      couponCode?: string;
+      discountAmount?: number;
     };
   }>('/orders/razorpay/create-order', async (request, reply) => {
-    const { items, shippingAddress, userId } = request.body;
+    const { items, shippingAddress, userId, couponCode, discountAmount } = request.body;
 
     if (!items || items.length === 0) {
       return reply.status(400).send({ error: 'EMPTY_CART', message: 'Cart cannot be empty' });
@@ -573,7 +536,8 @@ export async function ordersRoutes(app: FastifyInstance) {
     }
 
     try {
-      const { verifiedItems, subtotal, shippingFee, totalAmount } = await resolveAndVerifyItems(items);
+      const { verifiedItems, subtotal, discountAmount: validatedDiscount, couponCode: cleanCoupon, shippingFee, totalAmount } =
+        await resolveAndVerifyItems(items, couponCode, discountAmount);
       const amountInPaise = Math.round(totalAmount * 100);
       const orderId = crypto.randomUUID();
 
@@ -622,8 +586,8 @@ export async function ordersRoutes(app: FastifyInstance) {
         await client.query(
           `INSERT INTO orders (
             id, user_id, idempotency_key, status, subtotal, shipping_fee, total_amount, currency,
-            shipping_address, payment_method, payment_status, transaction_id
-          ) VALUES ($1, $2, $3, 'accepted', $4, $5, $6, 'INR', $7, 'Razorpay', 'pending', $8)`,
+            shipping_address, payment_method, payment_status, transaction_id, coupon_code, discount_amount
+          ) VALUES ($1, $2, $3, 'accepted', $4, $5, $6, 'INR', $7, 'Razorpay', 'pending', $8, $9, $10)`,
           [
             orderId,
             userId || null,
@@ -633,6 +597,8 @@ export async function ordersRoutes(app: FastifyInstance) {
             totalAmount,
             JSON.stringify(shippingAddress),
             razorpayOrderId,
+            cleanCoupon || null,
+            validatedDiscount || 0,
           ]
         );
 
@@ -763,9 +729,11 @@ export async function ordersRoutes(app: FastifyInstance) {
       items: Array<{ productId: string; quantity: number }>;
       shippingAddress: { fullName: string; phone: string; street: string; city?: string };
       userId?: string;
+      couponCode?: string;
+      discountAmount?: number;
     };
   }>('/orders/cod-order', async (request, reply) => {
-    const { items, shippingAddress, userId } = request.body;
+    const { items, shippingAddress, userId, couponCode, discountAmount } = request.body;
 
     if (!items || items.length === 0) {
       return reply.status(400).send({ error: 'EMPTY_CART', message: 'Cart cannot be empty' });
@@ -775,7 +743,8 @@ export async function ordersRoutes(app: FastifyInstance) {
     }
 
     try {
-      const { verifiedItems, subtotal, shippingFee, totalAmount } = await resolveAndVerifyItems(items);
+      const { verifiedItems, subtotal, discountAmount: validatedDiscount, couponCode: cleanCoupon, shippingFee, totalAmount } =
+        await resolveAndVerifyItems(items, couponCode, discountAmount);
       const orderId = crypto.randomUUID();
 
       await withTransaction(async (client) => {
@@ -800,8 +769,8 @@ export async function ordersRoutes(app: FastifyInstance) {
         await client.query(
           `INSERT INTO orders (
             id, user_id, idempotency_key, status, subtotal, shipping_fee, total_amount, currency,
-            shipping_address, payment_method, payment_status, transaction_id
-          ) VALUES ($1, $2, $3, 'confirmed', $4, $5, $6, 'INR', $7, 'Cash on Delivery', 'pending', $8)`,
+            shipping_address, payment_method, payment_status, transaction_id, coupon_code, discount_amount
+          ) VALUES ($1, $2, $3, 'confirmed', $4, $5, $6, 'INR', $7, 'Cash on Delivery', 'pending', $8, $9, $10)`,
           [
             orderId,
             userId || null,
@@ -811,6 +780,8 @@ export async function ordersRoutes(app: FastifyInstance) {
             totalAmount,
             JSON.stringify(shippingAddress),
             codTxId,
+            cleanCoupon || null,
+            validatedDiscount || 0,
           ]
         );
 

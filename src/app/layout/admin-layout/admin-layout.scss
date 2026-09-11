@@ -173,6 +173,65 @@
   gap: 0.85rem;
 }
 
+.session-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.75rem;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+  transition: all 0.2s ease;
+
+  svg {
+    color: #64748b;
+  }
+
+  &.warning {
+    background: #fef3c7;
+    border-color: #fcd34d;
+    color: #92400e;
+    animation: sessionPulse 1.5s infinite;
+
+    svg {
+      color: #d97706;
+    }
+  }
+
+  .btn-extend-mini {
+    padding: 0.15rem 0.45rem;
+    background: #d97706;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    &:hover {
+      background: #b45309;
+    }
+  }
+
+  @media (max-width: 900px) {
+    display: none;
+  }
+}
+
+@keyframes sessionPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.15);
+  }
+}
+
 .cluster-status-pill {
   display: inline-flex;
   align-items: center;

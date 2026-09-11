@@ -2,6 +2,7 @@ import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminService, type AdminOrder } from '@core/services/admin.service';
+import { ToastService } from '@core/services/toast.service';
 
 @Component({
   selector: 'app-admin-orders',
@@ -12,18 +13,20 @@ import { AdminService, type AdminOrder } from '@core/services/admin.service';
 })
 export class AdminOrders implements OnInit {
   readonly admin = inject(AdminService);
+  readonly toast = inject(ToastService);
 
   readonly selectedTab = signal<string>('all');
   readonly searchQuery = signal<string>('');
   readonly selectedOrder = signal<AdminOrder | null>(null);
   readonly selectedInvoiceOrder = signal<AdminOrder | null>(null);
+  readonly copiedTrackingId = signal<string | null>(null);
 
   ngOnInit(): void {
     this.admin.refreshOrders();
   }
 
   refreshFromDb(): void {
-    this.admin.refreshOrders();
+    this.admin.refreshOrders(true);
   }
 
   // Manual POS Order Modal State
@@ -42,13 +45,18 @@ export class AdminOrders implements OnInit {
     const q = this.searchQuery().trim().toLowerCase();
 
     if (tab !== 'all') {
-      list = list.filter((o) => o.status === tab);
+      if (tab === 'confirmed' || tab === 'accepted') {
+        list = list.filter((o) => o.status === 'confirmed' || o.status === 'accepted' || o.status === 'pending');
+      } else {
+        list = list.filter((o) => o.status === tab);
+      }
     }
 
     if (q) {
       list = list.filter(
         (o) =>
           o.id.toLowerCase().includes(q) ||
+          (o.tracking_number && o.tracking_number.toLowerCase().includes(q)) ||
           o.shipping_address.fullName.toLowerCase().includes(q) ||
           o.shipping_address.city.toLowerCase().includes(q) ||
           o.shipping_address.phone.includes(q) ||
@@ -160,19 +168,127 @@ export class AdminOrders implements OnInit {
     }, 1000);
   }
 
-  advanceStatus(order: AdminOrder): void {
-    const flow: Record<string, string> = {
-      accepted: 'processing',
-      processing: 'shipped',
-      shipped: 'delivered',
-    };
-    const next = flow[order.status] as AdminOrder['status'] | undefined;
+  getStageIndex(status?: string | null): number {
+    const s = (status || '').toLowerCase().trim();
+    switch (s) {
+      case 'pending':
+      case 'accepted':
+      case 'confirmed':
+        return 0;
+      case 'processing':
+        return 1;
+      case 'shipped':
+        return 2;
+      case 'delivered':
+        return 3;
+      default:
+        return -1;
+    }
+  }
+
+  isStageCompleted(orderStatus?: string | null, stageIndex: number = 0): boolean {
+    const current = this.getStageIndex(orderStatus);
+    return current > stageIndex;
+  }
+
+  isStageCurrent(orderStatus?: string | null, stageIndex: number = 0): boolean {
+    const current = this.getStageIndex(orderStatus);
+    return current === stageIndex;
+  }
+
+  getNextStatus(status?: string | null): AdminOrder['status'] | null {
+    const s = (status || '').toLowerCase().trim();
+    switch (s) {
+      case 'pending':
+      case 'accepted':
+      case 'confirmed':
+        return 'processing';
+      case 'processing':
+        return 'shipped';
+      case 'shipped':
+        return 'delivered';
+      default:
+        return null;
+    }
+  }
+
+  getNextStageAction(order: AdminOrder): { label: string; icon: string; nextStatus: AdminOrder['status'] | null; badgeClass: string } {
+    const s = (order?.status || '').toLowerCase().trim();
+    switch (s) {
+      case 'pending':
+      case 'accepted':
+      case 'confirmed':
+        return { label: 'Pack Order', icon: '⚡', nextStatus: 'processing', badgeClass: 'pack' };
+      case 'processing':
+        return { label: 'Dispatch & Ship', icon: '📦', nextStatus: 'shipped', badgeClass: 'ship' };
+      case 'shipped':
+        return { label: 'Mark Delivered', icon: '✅', nextStatus: 'delivered', badgeClass: 'deliver' };
+      case 'delivered':
+        return { label: 'Delivered', icon: '🎉', nextStatus: null, badgeClass: 'done' };
+      case 'cancelled':
+        return { label: 'Cancelled', icon: '✕', nextStatus: null, badgeClass: 'cancelled' };
+      default:
+        return { label: 'Advance', icon: '➔', nextStatus: null, badgeClass: 'default' };
+    }
+  }
+
+  advanceStatus(order: AdminOrder, event?: Event): void {
+    event?.stopPropagation();
+    const next = this.getNextStatus(order.status);
     if (next) {
-      this.admin.updateOrderStatus(order.id, next);
+      const generatedTracking = (next === 'shipped' || next === 'delivered') && !order.tracking_number
+        ? `TRK-UB-${order.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+        : order.tracking_number;
+      this.admin.updateOrderStatus(order.id, next, generatedTracking);
       if (this.selectedOrder()?.id === order.id) {
-        this.selectedOrder.update((o) => (o ? { ...o, status: next } : null));
+        this.selectedOrder.update((o) => (o ? { ...o, status: next, tracking_number: generatedTracking || o.tracking_number } : null));
       }
     }
+  }
+
+  advanceToStage(order: AdminOrder, targetStage: AdminOrder['status'], event?: Event): void {
+    event?.stopPropagation();
+    const currentStatus = (order.status || '').toLowerCase().trim();
+    if (currentStatus === targetStage || currentStatus === 'cancelled') return;
+    const generatedTracking = (targetStage === 'shipped' || targetStage === 'delivered') && !order.tracking_number
+      ? `TRK-UB-${order.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+      : order.tracking_number;
+    this.admin.updateOrderStatus(order.id, targetStage, generatedTracking);
+    if (this.selectedOrder()?.id === order.id) {
+      this.selectedOrder.update((o) => (o ? { ...o, status: targetStage, tracking_number: generatedTracking || o.tracking_number } : null));
+    }
+  }
+
+  copyTrackingNumber(tracking: string, event?: Event): void {
+    event?.stopPropagation();
+    if (!tracking) return;
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(tracking).then(() => {
+        this.copiedTrackingId.set(tracking);
+        this.toast.success(`📋 Copied tracking code ${tracking} to clipboard!`);
+        setTimeout(() => this.copiedTrackingId.set(null), 2500);
+      });
+    } else {
+      this.toast.info(`Tracking code: ${tracking}`);
+    }
+  }
+
+  editTrackingNumber(order: AdminOrder, event?: Event): void {
+    event?.stopPropagation();
+    const current = order.tracking_number || `TRK-UB-${order.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    const custom = prompt('Enter Courier Tracking Code / Airway Bill (AWB):', current);
+    if (custom && custom.trim() && custom.trim() !== current) {
+      const clean = custom.trim().toUpperCase();
+      this.admin.updateOrderStatus(order.id, order.status, clean);
+      if (this.selectedOrder()?.id === order.id) {
+        this.selectedOrder.update((o) => (o ? { ...o, tracking_number: clean } : null));
+      }
+      this.toast.success(`Tracking number updated to ${clean}`);
+    }
+  }
+
+  getNextStageLabel(order: AdminOrder): string {
+    return this.getNextStageAction(order).label;
   }
 
   exportCSV(): void {

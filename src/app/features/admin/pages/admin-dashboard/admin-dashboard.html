@@ -159,7 +159,7 @@
             </div>
 
             <div class="queue-item__actions">
-              @if (order.status === 'accepted') {
+              @if (order.status === 'accepted' || order.status === 'confirmed' || order.status === 'pending') {
                 <button type="button" class="btn-mini btn-mini--blue" (click)="admin.updateOrderStatus(order.id, 'processing')">
                   Pack Order
                 </button>

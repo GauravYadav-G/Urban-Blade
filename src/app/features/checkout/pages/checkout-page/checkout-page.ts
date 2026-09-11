@@ -317,9 +317,12 @@ export class CheckoutPage implements OnInit {
       });
     }
 
+    const couponCode = this.appliedCoupon()?.code;
+    const discountAmount = this.couponDiscount();
+
     if (val.payment === 'cod') {
       // 1-Click Cash on Delivery
-      this.paymentService.placeCodOrder({ items, shippingAddress }).subscribe({
+      this.paymentService.placeCodOrder({ items, shippingAddress, couponCode, discountAmount }).subscribe({
         next: (receipt) => {
           this.isInitiating.set(false);
           this.toast.success(`🎉 COD Order #${receipt.receiptNumber} confirmed in Neon PostgreSQL!`);
@@ -335,7 +338,7 @@ export class CheckoutPage implements OnInit {
     }
 
     // Official Razorpay Standard Checkout
-    this.paymentService.createRazorpayOrder({ items, shippingAddress }).subscribe({
+    this.paymentService.createRazorpayOrder({ items, shippingAddress, couponCode, discountAmount }).subscribe({
       next: (orderData) => {
         this.isInitiating.set(false);
         this.toast.info('Launching official Razorpay payment gateway...');

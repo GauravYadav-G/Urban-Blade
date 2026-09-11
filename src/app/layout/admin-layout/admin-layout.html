@@ -30,6 +30,19 @@
 
     <!-- Right Controls -->
     <div class="topbar-right">
+      <div class="session-status-pill" [class.warning]="session.isWarning()" title="Session auto-locks after 15m of inactivity">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <span class="session-text">{{ session.formattedRemaining() }}</span>
+        @if (session.isWarning()) {
+          <button type="button" class="btn-extend-mini" (click)="session.extendSession()" title="Extend session">
+            Extend
+          </button>
+        }
+      </div>
+
       <div class="cluster-status-pill" title="Live PostgreSQL 16 & Redis cluster synchronized">
         <span class="radar-pulse"></span>
         <span class="cluster-text">Cluster Synced</span>

@@ -9,6 +9,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import { config } from './config.js';
 import { idempotencyHook, saveIdempotentResponse } from './core/idempotency.middleware.js';
 import { initializeOrderQueue } from './queue/order-saga.queue.js';
+import { startAbandonedCheckoutReaper } from './modules/orders/abandoned-checkout.reaper.js';
 
 // Route modules
 import { healthRoutes } from './modules/health/health.routes.js';
@@ -90,8 +91,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(ordersRoutes, { prefix: '/api' });
   await app.register(adminRoutes, { prefix: '/api' });
 
-  // ─── 7. INITIALIZE BACKGROUND SAGA QUEUES ─────────────────────────────────
+  // ─── 7. INITIALIZE BACKGROUND SAGA QUEUES & CLEANUP TASKS ─────────────────
   initializeOrderQueue();
+  startAbandonedCheckoutReaper();
 
   // Root welcome route
   app.get('/', async () => ({

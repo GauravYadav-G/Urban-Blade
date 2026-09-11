@@ -48,11 +48,11 @@
       </button>
       <button
         class="tab-btn"
-        [class.active]="selectedTab() === 'accepted'"
-        (click)="setTab('accepted')"
+        [class.active]="selectedTab() === 'confirmed' || selectedTab() === 'accepted'"
+        (click)="setTab('confirmed')"
       >
         <span class="dot accepted"></span>
-        <span>Accepted ({{ admin.metrics().orders.accepted }})</span>
+        <span>Confirmed ({{ admin.metrics().orders.accepted }})</span>
       </button>
       <button
         class="tab-btn"
@@ -148,6 +148,11 @@
               </td>
               <td>
                 <span class="amount-cell">₹{{ order.total_amount | number:'1.0-0' }}</span>
+                @if (order.discount_amount && order.discount_amount > 0) {
+                  <span class="discount-pill" [title]="'Coupon Code: ' + (order.coupon_code || 'VIP')">
+                    -₹{{ order.discount_amount | number:'1.0-0' }} OFF
+                  </span>
+                }
               </td>
               <td>
                 <div class="payment-cell">
@@ -162,21 +167,61 @@
                 </div>
               </td>
               <td>
-                <span class="status-pill {{ order.status }}">
-                  {{ order.status | titlecase }}
-                </span>
+                <!-- Modern Segmented Pipeline -->
+                <div class="table-pipeline-wrap">
+                  <div class="pipeline-track">
+                    <span class="p-dot" [class.done]="isStageCompleted(order.status, 0)" [class.curr]="isStageCurrent(order.status, 0)" title="Confirmed"></span>
+                    <span class="p-bar" [class.done]="isStageCompleted(order.status, 0)"></span>
+                    <span class="p-dot" [class.done]="isStageCompleted(order.status, 1)" [class.curr]="isStageCurrent(order.status, 1)" title="Processing"></span>
+                    <span class="p-bar" [class.done]="isStageCompleted(order.status, 1)"></span>
+                    <span class="p-dot" [class.done]="isStageCompleted(order.status, 2)" [class.curr]="isStageCurrent(order.status, 2)" title="Shipped"></span>
+                    <span class="p-bar" [class.done]="isStageCompleted(order.status, 2)"></span>
+                    <span class="p-dot" [class.done]="isStageCompleted(order.status, 3)" [class.curr]="isStageCurrent(order.status, 3)" title="Delivered"></span>
+                  </div>
+                  <div class="pipeline-label-row">
+                    <span class="status-pill {{ order.status }}">
+                      {{ order.status | titlecase }}
+                    </span>
+                    @if (order.tracking_number) {
+                      <button 
+                        type="button" 
+                        class="trk-copy-pill"
+                        (click)="copyTrackingNumber(order.tracking_number, $event)"
+                        [title]="'Click to copy tracking code: ' + order.tracking_number"
+                      >
+                        <span class="trk-icon">🚚</span>
+                        <span class="trk-text">{{ order.tracking_number }}</span>
+                        @if (copiedTrackingId() === order.tracking_number) {
+                          <span class="trk-copied">✓</span>
+                        }
+                      </button>
+                    }
+                  </div>
+                </div>
               </td>
               <td>
                 <div class="actions-cell" (click)="$event.stopPropagation()">
-                  @if (order.status !== 'delivered' && order.status !== 'cancelled') {
-                    <button class="advance-btn" (click)="advanceStatus(order)" title="Advance to next stage">
-                      <span>Advance</span>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  @let action = getNextStageAction(order);
+                  @if (action.nextStatus) {
+                    <button 
+                      type="button" 
+                      class="quick-advance-btn {{ action.badgeClass }}" 
+                      (click)="advanceStatus(order, $event)" 
+                      [title]="'Click to advance order: ' + action.label"
+                    >
+                      <span class="btn-icon">{{ action.icon }}</span>
+                      <span class="btn-text">{{ action.label }}</span>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                         <polyline points="9 18 15 12 9 6"></polyline>
                       </svg>
                     </button>
+                  } @else if (order.status === 'delivered') {
+                    <span class="table-delivered-tag">
+                      <span class="tag-check">✓</span>
+                      <span>Delivered</span>
+                    </span>
                   } @else {
-                    <span class="done-label">Complete</span>
+                    <span class="table-cancelled-tag">Cancelled</span>
                   }
                   <button class="icon-btn" (click)="openInvoice(order, $event)" title="Generate Tax Invoice">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -231,27 +276,142 @@
           </button>
         </div>
 
-        <!-- Saga Stage Flow Tracker -->
-        <div class="saga-stepper">
-          <div class="step-item" [class.done]="o.status === 'accepted' || o.status === 'processing' || o.status === 'shipped' || o.status === 'delivered'">
-            <div class="step-circle">1</div>
-            <span class="step-label">Accepted</span>
+        <!-- Interactive 4-Stage Fulfillment Journey Tracker -->
+        <div class="fulfillment-journey-card">
+          <div class="journey-header">
+            <div class="journey-title-box">
+              <span class="journey-badge">
+                <span class="journey-dot"></span> LIVE FULFILLMENT PIPELINE
+              </span>
+              <span class="journey-hint">Click any stage to advance immediately or follow the automated sequence</span>
+            </div>
+            @if (getNextStatus(o.status); as nextSt) {
+              <button 
+                type="button" 
+                class="btn-fast-advance {{ getNextStageAction(o).badgeClass }}"
+                (click)="advanceStatus(o, $event)"
+              >
+                <span class="adv-icon">{{ getNextStageAction(o).icon }}</span>
+                <span class="adv-label">{{ getNextStageAction(o).label }}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            }
           </div>
-          <div class="step-line" [class.active]="o.status === 'processing' || o.status === 'shipped' || o.status === 'delivered'"></div>
-          <div class="step-item" [class.done]="o.status === 'processing' || o.status === 'shipped' || o.status === 'delivered'">
-            <div class="step-circle">2</div>
-            <span class="step-label">Processing</span>
+
+          <div class="interactive-stepper">
+            <!-- Stage 1: Confirmed -->
+            <div 
+              class="step-card" 
+              [class.completed]="isStageCompleted(o.status, 0)"
+              [class.current]="isStageCurrent(o.status, 0)"
+              (click)="advanceToStage(o, 'confirmed', $event)"
+            >
+              <div class="step-icon-bubble">
+                @if (isStageCompleted(o.status, 0)) { <span class="chk">✓</span> } @else { <span>1</span> }
+              </div>
+              <div class="step-card-text">
+                <span class="step-title">Confirmed</span>
+                <span class="step-sub">Payment Verified</span>
+              </div>
+              <span class="step-state-tag">{{ isStageCompleted(o.status, 0) ? 'Done' : isStageCurrent(o.status, 0) ? 'Current' : 'Queued' }}</span>
+            </div>
+
+            <div class="stepper-connector" [class.active]="isStageCompleted(o.status, 0)"></div>
+
+            <!-- Stage 2: Processing -->
+            <div 
+              class="step-card" 
+              [class.completed]="isStageCompleted(o.status, 1)"
+              [class.current]="isStageCurrent(o.status, 1)"
+              (click)="advanceToStage(o, 'processing', $event)"
+            >
+              <div class="step-icon-bubble">
+                @if (isStageCompleted(o.status, 1)) { <span class="chk">✓</span> } @else { <span>2</span> }
+              </div>
+              <div class="step-card-text">
+                <span class="step-title">Processing</span>
+                <span class="step-sub">Packaging & QA</span>
+              </div>
+              <span class="step-state-tag">{{ isStageCompleted(o.status, 1) ? 'Done' : isStageCurrent(o.status, 1) ? 'Current' : 'Queued' }}</span>
+            </div>
+
+            <div class="stepper-connector" [class.active]="isStageCompleted(o.status, 1)"></div>
+
+            <!-- Stage 3: Shipped -->
+            <div 
+              class="step-card" 
+              [class.completed]="isStageCompleted(o.status, 2)"
+              [class.current]="isStageCurrent(o.status, 2)"
+              (click)="advanceToStage(o, 'shipped', $event)"
+            >
+              <div class="step-icon-bubble">
+                @if (isStageCompleted(o.status, 2)) { <span class="chk">✓</span> } @else { <span>3</span> }
+              </div>
+              <div class="step-card-text">
+                <span class="step-title">Shipped</span>
+                <span class="step-sub">In Transit</span>
+              </div>
+              <span class="step-state-tag">{{ isStageCompleted(o.status, 2) ? 'Done' : isStageCurrent(o.status, 2) ? 'Current' : 'Queued' }}</span>
+            </div>
+
+            <div class="stepper-connector" [class.active]="isStageCompleted(o.status, 2)"></div>
+
+            <!-- Stage 4: Delivered -->
+            <div 
+              class="step-card" 
+              [class.completed]="isStageCompleted(o.status, 3)"
+              [class.current]="isStageCurrent(o.status, 3)"
+              (click)="advanceToStage(o, 'delivered', $event)"
+            >
+              <div class="step-icon-bubble">
+                @if (isStageCompleted(o.status, 3)) { <span class="chk">✓</span> } @else { <span>4</span> }
+              </div>
+              <div class="step-card-text">
+                <span class="step-title">Delivered</span>
+                <span class="step-sub">Doorstep Handover</span>
+              </div>
+              <span class="step-state-tag">{{ isStageCompleted(o.status, 3) ? 'Delivered' : isStageCurrent(o.status, 3) ? 'Current' : 'Pending' }}</span>
+            </div>
           </div>
-          <div class="step-line" [class.active]="o.status === 'shipped' || o.status === 'delivered'"></div>
-          <div class="step-item" [class.done]="o.status === 'shipped' || o.status === 'delivered'">
-            <div class="step-circle">3</div>
-            <span class="step-label">Shipped</span>
-          </div>
-          <div class="step-line" [class.active]="o.status === 'delivered'"></div>
-          <div class="step-item" [class.done]="o.status === 'delivered'">
-            <div class="step-circle">4</div>
-            <span class="step-label">Delivered</span>
-          </div>
+
+          <!-- Tracking Info Bar -->
+          @if (o.tracking_number || o.status === 'shipped' || o.status === 'delivered') {
+            <div class="tracking-action-bar">
+              <div class="tracking-left">
+                <div class="tracking-carrier-icon">🚚</div>
+                <div class="tracking-info-col">
+                  <span class="tracking-carrier-title">Urban Express Logistics • Live Consignment Tracking</span>
+                  <div class="tracking-code-capsule">
+                    <span class="tracking-code-val">{{ o.tracking_number || ('TRK-UB-' + o.id.slice(0, 8).toUpperCase()) }}</span>
+                    <button 
+                      type="button" 
+                      class="btn-copy-chip" 
+                      (click)="copyTrackingNumber(o.tracking_number || ('TRK-UB-' + o.id.slice(0, 8).toUpperCase()), $event)"
+                      title="Copy tracking code"
+                    >
+                      @if (copiedTrackingId() === (o.tracking_number || ('TRK-UB-' + o.id.slice(0, 8).toUpperCase()))) {
+                        <span class="copy-success-text">✓ Copied!</span>
+                      } @else {
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        <span>Copy</span>
+                      }
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="tracking-actions-right">
+                <button 
+                  type="button" 
+                  class="btn-edit-tracking" 
+                  (click)="editTrackingNumber(o, $event)"
+                  title="Assign custom AWB or 3rd-party tracking ID"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  <span>Edit AWB</span>
+                </button>
+              </div>
+            </div>
+          }
         </div>
 
         <!-- Modal Body -->
@@ -328,6 +488,12 @@
                   <span class="label">Subtotal:</span>
                   <span class="val">₹{{ o.subtotal | number:'1.0-0' }}</span>
                 </div>
+                @if (o.discount_amount && o.discount_amount > 0) {
+                  <div class="detail-row discount-row">
+                    <span class="label">Coupon ({{ o.coupon_code || 'PROMO' }}):</span>
+                    <span class="val green">-₹{{ o.discount_amount | number:'1.0-0' }}</span>
+                  </div>
+                }
                 <div class="detail-row total">
                   <span class="label">Total Paid:</span>
                   <span class="val total-val">₹{{ o.total_amount | number:'1.0-0' }}</span>
@@ -346,9 +512,10 @@
             </svg>
             <span>View Tax Invoice</span>
           </button>
-          @if (o.status !== 'delivered' && o.status !== 'cancelled') {
-            <button class="modal-action-btn advance" (click)="advanceStatus(o)">
-              <span>Advance ({{ o.status === 'accepted' ? 'Pack Order' : o.status === 'processing' ? 'Mark In Transit' : 'Mark Delivered' }})</span>
+          @if (getNextStatus(o.status); as nextSt) {
+            <button class="modal-action-btn advance {{ getNextStageAction(o).badgeClass }}" (click)="advanceStatus(o)">
+              <span class="adv-btn-icon">{{ getNextStageAction(o).icon }}</span>
+              <span>{{ getNextStageAction(o).label }} (Move to {{ nextSt | titlecase }})</span>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="9 18 15 12 9 6"></polyline>
               </svg>
