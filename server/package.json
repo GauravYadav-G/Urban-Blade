@@ -13,7 +13,9 @@
     "seed": "tsx src/db/seed.ts",
     "benchmark": "tsx scripts/benchmark.ts",
     "race-test": "tsx scripts/race-condition-test.ts",
-    "test:flow": "tsx scripts/test-e2e-complete-flow.ts"
+    "test:flow": "tsx scripts/test-e2e-complete-flow.ts",
+    "test:sync": "tsx scripts/test-support-realtime-sync.ts",
+    "test:admin": "tsx scripts/test-admin-and-order-fixes.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

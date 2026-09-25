@@ -1,0 +1,289 @@
+<div class="orders-shell">
+  <div class="orders-container">
+    <!-- Header -->
+    <header class="page-header">
+      <div class="header-titles">
+        <span class="eyebrow">LUXURY CLIENT SERVICES ✦ PARCEL TRACKING</span>
+        <h1 class="page-title">Orders & Delivery History</h1>
+        <p class="page-subtitle">Track your salon care shipments, review invoices, and manage past purchases.</p>
+      </div>
+
+      <div class="header-actions">
+        <button type="button" class="btn-refresh" (click)="fetchOrders()" [disabled]="loading()" title="Refresh order status">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" [class.spin]="loading()">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+          <span>{{ loading() ? 'Syncing...' : 'Sync Updates' }}</span>
+        </button>
+
+        <a routerLink="/shop" class="btn-shop">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+          </svg>
+          <span>Explore Catalog</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- Controls & Filter Toolbar -->
+    <div class="toolbar">
+      <div class="filter-pills">
+        <button 
+          type="button" 
+          class="pill" 
+          [class.active]="selectedFilter() === 'all'" 
+          (click)="selectedFilter.set('all')"
+        >
+          All Orders ({{ orders().length }})
+        </button>
+        <button 
+          type="button" 
+          class="pill" 
+          [class.active]="selectedFilter() === 'active'" 
+          (click)="selectedFilter.set('active')"
+        >
+          In Progress
+        </button>
+        <button 
+          type="button" 
+          class="pill" 
+          [class.active]="selectedFilter() === 'delivered'" 
+          (click)="selectedFilter.set('delivered')"
+        >
+          Delivered
+        </button>
+        <button 
+          type="button" 
+          class="pill" 
+          [class.active]="selectedFilter() === 'cancelled'" 
+          (click)="selectedFilter.set('cancelled')"
+        >
+          Cancelled
+        </button>
+      </div>
+
+      <div class="search-box">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input 
+          type="text" 
+          placeholder="Filter by order # or product name..." 
+          [ngModel]="searchQuery()" 
+          (ngModelChange)="searchQuery.set($event)"
+          aria-label="Filter orders"
+        />
+      </div>
+    </div>
+
+    <!-- Orders Feed -->
+    @if (loading() && orders().length === 0) {
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p>Retrieving your order records from database...</p>
+      </div>
+    } @else if (filteredOrders().length === 0) {
+      <div class="empty-state">
+        <div class="empty-icon">🛍️</div>
+        <h2>No Orders Found</h2>
+        <p>
+          @if (searchQuery() || selectedFilter() !== 'all') {
+            No orders match your current filter. Try clearing the search or switching filters.
+          } @else {
+            You haven't placed any retail or salon product orders yet. Browse our curated collection of luxury grooming essentials!
+          }
+        </p>
+        <div class="empty-actions">
+          @if (searchQuery() || selectedFilter() !== 'all') {
+            <button type="button" class="btn-clear" (click)="searchQuery.set(''); selectedFilter.set('all')">Reset Filters</button>
+          }
+          <a routerLink="/shop" class="btn-cta">Start Shopping</a>
+        </div>
+      </div>
+    } @else {
+      <div class="orders-grid">
+        @for (order of filteredOrders(); track order.id) {
+          <article class="order-card" [class.delivered]="order.status === 'delivered'" [class.cancelled]="order.status === 'cancelled'">
+            <!-- Card Header -->
+            <div class="card-header">
+              <div class="header-main">
+                <div class="order-badge-row">
+                  <span class="order-ref">ORDER #{{ order.id.slice(0, 10).toUpperCase() }}</span>
+                  <span class="status-badge status-{{ order.status }}">
+                    <span class="status-dot"></span>
+                    {{ order.status | uppercase }}
+                  </span>
+                </div>
+                <div class="order-date">
+                  Placed on {{ order.created_at | date:'mediumDate' }} at {{ order.created_at | date:'shortTime' }}
+                </div>
+              </div>
+
+              <div class="header-amount">
+                <span class="amount-val">{{ order.total_amount | inr }}</span>
+                <span class="payment-method-tag">{{ order.payment_method | uppercase }}</span>
+              </div>
+            </div>
+
+            <!-- Fulfillment Stepper (when not cancelled) -->
+            @if (order.status !== 'cancelled') {
+              <div class="stepper-wrap">
+                <div class="step" [class.completed]="isStageCompleted(order.status, 0)" [class.active]="isStageCurrent(order.status, 0)">
+                  <div class="step-icon">✓</div>
+                  <span class="step-label">Confirmed</span>
+                </div>
+                <div class="step-line" [class.filled]="isStageCompleted(order.status, 0)"></div>
+
+                <div class="step" [class.completed]="isStageCompleted(order.status, 1)" [class.active]="isStageCurrent(order.status, 1)">
+                  <div class="step-icon">⚡</div>
+                  <span class="step-label">Processing</span>
+                </div>
+                <div class="step-line" [class.filled]="isStageCompleted(order.status, 1)"></div>
+
+                <div class="step" [class.completed]="isStageCompleted(order.status, 2)" [class.active]="isStageCurrent(order.status, 2)">
+                  <div class="step-icon">📦</div>
+                  <span class="step-label">In Transit</span>
+                </div>
+                <div class="step-line" [class.filled]="isStageCompleted(order.status, 2)"></div>
+
+                <div class="step" [class.completed]="isStageCompleted(order.status, 3)" [class.active]="isStageCurrent(order.status, 3)">
+                  <div class="step-icon">🎉</div>
+                  <span class="step-label">Delivered</span>
+                </div>
+              </div>
+            } @else {
+              <div class="cancelled-notice">
+                <span class="cancelled-icon">✕</span>
+                <span>This order was cancelled. Payment refunded to original payment method.</span>
+              </div>
+            }
+
+            <!-- Tracking Bar -->
+            @if (order.tracking_number && order.status !== 'cancelled') {
+              <div class="tracking-pill-bar">
+                <div class="tracking-left">
+                  <span class="trk-label">Courier Airway Bill (AWB):</span>
+                  <span class="trk-code" (click)="copyTracking(order.tracking_number, $event)" title="Click to copy tracking ID">
+                    {{ order.tracking_number }}
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </span>
+                </div>
+                <button type="button" class="btn-ai-track" (click)="trackWithAi(order)">
+                  <span>✨ Track with AI Concierge</span>
+                </button>
+              </div>
+            }
+
+            <!-- Items List -->
+            <div class="items-list">
+              @for (item of order.items; track $index) {
+                <div class="item-row">
+                  <div class="item-thumb">
+                    <img [src]="item.image_url || '/images/products/hc-hair-serum.jpg'" [alt]="item.product_name" loading="lazy" />
+                  </div>
+                  <div class="item-details">
+                    <h3 class="item-name">{{ item.product_name }}</h3>
+                    <div class="item-qty-rate">
+                      <span>Qty: {{ item.quantity }}</span>
+                      <span>•</span>
+                      <span>{{ item.unit_price | inr }} each</span>
+                    </div>
+                  </div>
+                  <div class="item-subtotal">
+                    {{ (item.unit_price * item.quantity) | inr }}
+                  </div>
+                </div>
+              }
+            </div>
+
+            <!-- Footer Meta & Actions -->
+            <div class="card-footer">
+              <div class="shipping-summary">
+                <span class="dest-label">Delivery To:</span>
+                <span class="dest-val">
+                  {{ order.shipping_address?.fullName || 'Customer' }} • 
+                  {{ order.shipping_address?.street ? order.shipping_address?.street + ', ' : '' }}
+                  {{ order.shipping_address?.city || 'Ghaziabad' }}
+                </span>
+              </div>
+
+              <div class="action-buttons">
+                <button type="button" class="btn-reorder" (click)="reorderItems(order)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                  </svg>
+                  <span>Buy Again</span>
+                </button>
+
+                <button type="button" class="btn-ai-small" (click)="trackWithAi(order)">
+                  <span>AI Updates</span>
+                </button>
+              </div>
+            </div>
+          </article>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- AI Parcel Tracking Modal -->
+  @if (trackingModalOpen()) {
+    <div class="modal-backdrop" (click)="closeTrackingModal()">
+      <div class="modal-card" (click)="$event.stopPropagation()">
+        <header class="modal-header">
+          <div class="header-left">
+            <span class="modal-eyebrow">URBAN BLADE AI TELEMETRY</span>
+            <h3>Real-time Parcel Tracking</h3>
+          </div>
+          <button type="button" class="btn-close" (click)="closeTrackingModal()">✕</button>
+        </header>
+
+        <div class="modal-body">
+          @if (activeTrackingOrder(); as ord) {
+            <div class="order-summary-box">
+              <div class="sum-row">
+                <span class="sum-label">Order Reference:</span>
+                <span class="sum-val">#{{ ord.id.slice(0, 10).toUpperCase() }}</span>
+              </div>
+              <div class="sum-row">
+                <span class="sum-label">Status:</span>
+                <span class="sum-badge status-{{ ord.status }}">{{ ord.status | uppercase }}</span>
+              </div>
+              <div class="sum-row">
+                <span class="sum-label">Courier Tracking (AWB):</span>
+                <span class="sum-val bold">{{ ord.tracking_number || 'Generated at Warehouse Dispatch' }}</span>
+              </div>
+              <div class="sum-row">
+                <span class="sum-label">Destination:</span>
+                <span class="sum-val">{{ ord.shipping_address?.city || 'Ghaziabad' }}, India</span>
+              </div>
+            </div>
+
+            <div class="ai-insight-box">
+              <div class="ai-header">
+                <span class="sparkle">✨</span>
+                <strong>AI Concierge Logistics Status</strong>
+              </div>
+              @if (isFetchingAiTrack()) {
+                <div class="ai-loading">
+                  <div class="spinner-mini"></div>
+                  <span>Querying courier gateway & warehouse telemetry...</span>
+                </div>
+              } @else {
+                <div class="ai-text">
+                  {{ aiTrackingInsight() }}
+                </div>
+              }
+            </div>
+          }
+        </div>
+
+        <footer class="modal-footer">
+          <button type="button" class="btn-modal-dismiss" (click)="closeTrackingModal()">Close Window</button>
+        </footer>
+      </div>
+    </div>
+  }
+</div>

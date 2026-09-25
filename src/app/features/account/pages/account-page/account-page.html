@@ -1,226 +1,1282 @@
-<div class="account">
+<div class="user-dashboard-shell">
   @if (account.isSignedIn()) {
-    <section class="profile">
-      <div class="profile__avatar" aria-hidden="true">{{ initials() }}</div>
-      <div class="profile__copy">
-        <p class="profile__kicker">Your account</p>
-        <h1>{{ account.user()?.name }}</h1>
-        <p class="profile__email">{{ account.user()?.email }}</p>
-      </div>
-      <button type="button" class="profile__out" (click)="signOut()">Sign out</button>
-    </section>
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         1. EXECUTIVE VIP PROFILE HERO (OBSIDIAN & CHAMPAGNE GOLD)
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <header class="dashboard-hero">
+      <div class="hero-glow-back"></div>
 
-    <nav class="shortcuts" aria-label="Account shortcuts">
-      <a routerLink="/orders" class="shortcut">
-        <span class="shortcut__icon shortcut__icon--orders" aria-hidden="true"></span>
-        <span class="shortcut__copy">
-          <strong>Your orders</strong>
-          <em>Track salon and store orders</em>
-        </span>
-      </a>
-      <a routerLink="/cart" class="shortcut">
-        <span class="shortcut__icon shortcut__icon--cart" aria-hidden="true"></span>
-        <span class="shortcut__copy">
-          <strong>Your cart</strong>
-          <em>Review items before checkout</em>
-        </span>
-      </a>
+      <div class="hero-left">
+        <div class="user-avatar-wrap">
+          <div class="user-avatar" aria-hidden="true">{{ initials() }}</div>
+          <div class="tier-crown-badge" title="Verified Urban Blade VIP">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M5 16L3 5L8.5 10L12 4L15.5 10L21 5L19 16H5M19 19C19 19.6 18.6 20 18 20H6C5.4 20 5 19.6 5 19V18H19V19Z"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="user-meta">
+          <div class="tier-pill">
+            <span class="sparkle">✦</span>
+            <span>{{ loyaltyTier() }}</span>
+          </div>
+          <h1>{{ account.user()?.name }}</h1>
+          <p class="user-email-line">
+            <span class="u-email">{{ account.user()?.email }}</span>
+            <span class="sep">·</span>
+            <span class="member-since">VIP Client Since 2026</span>
+          </p>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <!-- Urban Credits Wallet -->
+        <div class="wallet-badge" title="Reward credits redeemable towards salon visits and retail orders">
+          <div class="wallet-icon-ring">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+              <line x1="2" y1="10" x2="22" y2="10"></line>
+            </svg>
+          </div>
+          <div class="wallet-text">
+            <span class="w-label">REWARD BALANCE</span>
+            <span class="w-amount">₹{{ walletCredits() | inr }}</span>
+          </div>
+        </div>
+
+        <button type="button" class="btn-signout" (click)="signOut()" title="Sign out of your account">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+          <span>Sign Out</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         2. SEGMENTED CONTROL NAVIGATION (FIGMA / DRIBBLE PILL TABS)
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <nav class="dashboard-nav-tabs" aria-label="Client portal navigation tabs">
+      <button 
+        type="button" 
+        class="dash-tab" 
+        [class.active]="activeTab() === 'overview'"
+        (click)="switchTab('overview')"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="3" y="3" width="7" height="7"></rect>
+          <rect x="14" y="3" width="7" height="7"></rect>
+          <rect x="14" y="14" width="7" height="7"></rect>
+          <rect x="3" y="14" width="7" height="7"></rect>
+        </svg>
+        <span>Overview</span>
+      </button>
+
+      <button 
+        type="button" 
+        class="dash-tab" 
+        [class.active]="activeTab() === 'orders'"
+        (click)="switchTab('orders')"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+          <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+        <span>My Orders</span>
+        @if (orders().length > 0) {
+          <span class="tab-counter">{{ orders().length }}</span>
+        }
+      </button>
+
+      <button 
+        type="button" 
+        class="dash-tab" 
+        [class.active]="activeTab() === 'bookings'"
+        (click)="switchTab('bookings')"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="16" y1="2" x2="16" y2="6"></line>
+          <line x1="8" y1="2" x2="8" y2="6"></line>
+          <line x1="3" y1="10" x2="21" y2="10"></line>
+        </svg>
+        <span>Salon Bookings</span>
+        @if (bookings().length > 0) {
+          <span class="tab-counter">{{ bookings().length }}</span>
+        }
+      </button>
+
+      <button 
+        type="button" 
+        class="dash-tab" 
+        [class.active]="activeTab() === 'addresses'"
+        (click)="switchTab('addresses')"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+          <circle cx="12" cy="10" r="3"></circle>
+        </svg>
+        <span>Saved Addresses</span>
+        <span class="tab-counter">{{ addresses.addresses().length }}</span>
+      </button>
+
+      <button 
+        type="button" 
+        class="dash-tab" 
+        [class.active]="activeTab() === 'profile'"
+        (click)="switchTab('profile')"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+          <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+        <span>VIP Profile & Security</span>
+      </button>
     </nav>
 
-    <section class="panel" aria-labelledby="addresses-heading">
-      <div class="panel__head">
-        <div>
-          <h2 id="addresses-heading">Your addresses</h2>
-          <p>Save a delivery address for faster checkout.</p>
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         TAB 1: EXECUTIVE OVERVIEW
+         ═══════════════════════════════════════════════════════════════════════ -->
+    @if (activeTab() === 'overview') {
+      <div class="overview-grid">
+        
+        <!-- KPI Metrics Strip -->
+        <div class="kpi-strip">
+          <div class="kpi-card" (click)="switchTab('orders')" role="button" tabindex="0">
+            <div class="kpi-icon-pill gold">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <path d="M16 10a4 4 0 0 1-8 0"></path>
+              </svg>
+            </div>
+            <div class="kpi-content">
+              <span class="kpi-title">Total Orders</span>
+              <span class="kpi-number">{{ totalOrdersCount() }}</span>
+              <span class="kpi-hint">Storefront purchases</span>
+            </div>
+          </div>
+
+          <div class="kpi-card active-ship" (click)="switchTab('orders')" role="button" tabindex="0">
+            <div class="kpi-icon-pill amber">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <rect x="1" y="3" width="15" height="13"></rect>
+                <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+                <circle cx="5.5" cy="18.5" r="2.5"></circle>
+                <circle cx="18.5" cy="18.5" r="2.5"></circle>
+              </svg>
+            </div>
+            <div class="kpi-content">
+              <span class="kpi-title">Active Dispatches</span>
+              <span class="kpi-number text-amber">{{ activeOrdersCount() }}</span>
+              <span class="kpi-hint">Express courier in transit</span>
+            </div>
+          </div>
+
+          <div class="kpi-card" (click)="switchTab('bookings')" role="button" tabindex="0">
+            <div class="kpi-icon-pill emerald">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+            </div>
+            <div class="kpi-content">
+              <span class="kpi-title">Salon Bookings</span>
+              <span class="kpi-number text-emerald">{{ upcomingBookingsCount() }}</span>
+              <span class="kpi-hint">Studio appointments</span>
+            </div>
+          </div>
+
+          <div class="kpi-card" (click)="switchTab('addresses')" role="button" tabindex="0">
+            <div class="kpi-icon-pill blue">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+              </svg>
+            </div>
+            <div class="kpi-content">
+              <span class="kpi-title">Saved Addresses</span>
+              <span class="kpi-number">{{ addresses.addresses().length }}</span>
+              <span class="kpi-hint">1-click express delivery</span>
+            </div>
+          </div>
         </div>
-        @if (!showForm()) {
-          <button type="button" class="btn-primary" (click)="startAdd()">Add a new address</button>
-        }
-      </div>
 
-      @if (addresses.addresses().length === 0 && !showForm()) {
-        <div class="empty">
-          <p>No saved address yet.</p>
-          <button type="button" class="btn-primary" (click)="startAdd()">Add your first address</button>
-        </div>
-      }
-
-      @if (addresses.addresses().length > 0) {
-        <ul class="address-list">
-          @for (item of addresses.addresses(); track item.id) {
-            <li class="address-card" [class.address-card--default]="item.isDefault">
-              <div class="address-card__top">
-                <strong>{{ item.fullName }}</strong>
-                @if (item.isDefault) {
-                  <span class="badge">Default</span>
-                }
+        <!-- Active Order Radar Card -->
+        @if (orders().length > 0) {
+          @let latest = orders()[0];
+          <section class="overview-section card active-order-banner">
+            <div class="aob-header">
+              <div class="aob-left">
+                <div class="aob-badge">
+                  <span class="live-dot"></span>
+                  <span>LATEST DISPATCH RADAR</span>
+                </div>
+                <h3>Order #{{ latest.id.slice(0, 8).toUpperCase() }}</h3>
+                <span class="aob-time">
+                  Placed on {{ latest.created_at | date:'mediumDate' }} · Total ₹{{ latest.total_amount | inr }}
+                </span>
               </div>
-              <p>{{ item.house }}</p>
-              <p>{{ item.street }}</p>
-              @if (item.landmark) {
-                <p>Landmark: {{ item.landmark }}</p>
-              }
-              <p>{{ item.city }}, {{ item.state }} {{ item.pinCode }}</p>
-              <p>Mobile: {{ item.mobile }}</p>
-              @if (item.location) {
-                <p class="address-card__pin">Map: {{ item.location.label }}</p>
-              }
-              <div class="address-card__actions">
-                <button type="button" (click)="startEdit(item)">Edit</button>
-                @if (!item.isDefault) {
-                  <button type="button" (click)="addresses.setDefault(item.id)">Make default</button>
-                }
-                <button type="button" class="danger" (click)="removeAddress(item.id)">Remove</button>
+              
+              <div class="aob-right">
+                <span class="status-pill {{ latest.status }}">{{ latest.status | uppercase }}</span>
+                <button type="button" class="btn-track-ai" (click)="trackWithAi(latest)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                  </svg>
+                  <span>Track with AI</span>
+                </button>
               </div>
-            </li>
-          }
-        </ul>
-      }
-
-      @if (showForm()) {
-        <form class="address-form" [formGroup]="form" (ngSubmit)="saveAddress()">
-          <h3>{{ editingId() ? 'Edit address' : 'Add a new address' }}</h3>
-
-          <label>
-            Full name (First and last name)
-            <input type="text" formControlName="fullName" autocomplete="name" placeholder="e.g. Rahul Sharma" />
-            @if (form.controls.fullName.touched && form.controls.fullName.invalid) {
-              <span class="error">Enter your first and last name.</span>
-            }
-          </label>
-
-          <label>
-            Mobile number
-            <input
-              type="tel"
-              formControlName="mobile"
-              inputmode="numeric"
-              maxlength="10"
-              autocomplete="tel"
-              placeholder="10-digit mobile number"
-            />
-            @if (form.controls.mobile.touched && form.controls.mobile.invalid) {
-              <span class="error">Enter a valid 10-digit Indian mobile number.</span>
-            }
-          </label>
-
-          <div class="map-field">
-            <div class="map-field__bar">
-              <button type="button" class="map-btn" (click)="toggleMap()">
-                {{ pinnedLocation() ? 'Change location on map' : 'Add location on map' }}
-              </button>
-              @if (pinnedLocation()) {
-                <button type="button" class="map-btn map-btn--ghost" (click)="clearPin()">Remove pin</button>
-              }
             </div>
 
-            @if (pinnedLocation()) {
-              <p class="map-field__label">{{ pinnedLocation()?.label }}</p>
+            <!-- Shipment Progress Bar (Figma Milestone Stepper) -->
+            <div class="order-progress-stepper">
+              <div class="step-node" [class.done]="latest.status !== 'cancelled'">
+                <div class="node-icon">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                </div>
+                <span class="node-label">Confirmed</span>
+              </div>
+              <div class="step-connector" [class.done]="isStageCompleted(latest.status, 0)"></div>
+              
+              <div class="step-node" [class.done]="isStageCompleted(latest.status, 0)" [class.current]="isStageCurrent(latest.status, 1)">
+                <div class="node-icon">
+                  @if (isStageCurrent(latest.status, 1)) {
+                    <span class="pulse-dot"></span>
+                  } @else if (isStageCompleted(latest.status, 1)) {
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                  } @else {
+                    <span class="pending-circle"></span>
+                  }
+                </div>
+                <span class="node-label">Processing</span>
+              </div>
+              <div class="step-connector" [class.done]="isStageCompleted(latest.status, 1)"></div>
+
+              <div class="step-node" [class.done]="isStageCompleted(latest.status, 1)" [class.current]="isStageCurrent(latest.status, 2)">
+                <div class="node-icon">
+                  @if (isStageCurrent(latest.status, 2)) {
+                    <span class="pulse-dot"></span>
+                  } @else if (isStageCompleted(latest.status, 2)) {
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                  } @else {
+                    <span class="pending-circle"></span>
+                  }
+                </div>
+                <span class="node-label">In Transit</span>
+              </div>
+              <div class="step-connector" [class.done]="isStageCompleted(latest.status, 2)"></div>
+
+              <div class="step-node" [class.done]="isStageCompleted(latest.status, 2)">
+                <div class="node-icon">
+                  @if (latest.status === 'delivered') {
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                  } @else {
+                    <span class="pending-circle"></span>
+                  }
+                </div>
+                <span class="node-label">Delivered</span>
+              </div>
+            </div>
+
+            <div class="aob-footer">
+              <div class="aob-items-summary">
+                <span>{{ latest.items.length }} line item(s)</span>
+                @if (latest.items[0]) {
+                  <span class="aob-first-item">· {{ latest.items[0].product_name }}</span>
+                }
+              </div>
+              <div class="aob-actions">
+                <button type="button" class="btn-ghost-small" (click)="openInvoice(latest, $event)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                  </svg>
+                  <span>Tax Invoice</span>
+                </button>
+                <button type="button" class="btn-link-gold" (click)="switchTab('orders')">
+                  <span>View All Orders ➔</span>
+                </button>
+              </div>
+            </div>
+          </section>
+        }
+
+        <!-- Next Salon Appointment Card -->
+        @if (bookings().length > 0) {
+          @let nextBk = bookings()[0];
+          <section class="overview-section card appointment-preview">
+            <div class="ap-header">
+              <div class="ap-icon-wrap">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M6 3h12l4 6-10 13L2 9z"></path>
+                  <path d="M11 3L8 9l4 13 4-13-3-6"></path>
+                </svg>
+              </div>
+              <div class="ap-details">
+                <span class="ap-kicker">UPCOMING SALON SESSION</span>
+                <h3>{{ nextBk.booking_date }} at {{ nextBk.time_slot }}</h3>
+                <p>Stylist: <strong>{{ nextBk.stylist_name || 'Master Barber Vikram Sharma' }}</strong> · {{ nextBk.stylist_role || 'Director of Styling' }}</p>
+              </div>
+              <span class="status-pill {{ nextBk.status }}">{{ nextBk.status | uppercase }}</span>
+            </div>
+            <div class="ap-footer">
+              <span class="ap-location">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                  <circle cx="12" cy="10" r="3"></circle>
+                </svg>
+                <span>Urban Blade Flagship Studio, Pratap Vihar</span>
+              </span>
+              <a routerLink="/book" class="btn-view-all">Book Another Service ➔</a>
+            </div>
+          </section>
+        }
+
+        <!-- Quick Action Shortcuts -->
+        <div class="shortcuts-grid">
+          <a routerLink="/shop" class="quick-action-box">
+            <div class="qab-icon-circle">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <path d="M16 10a4 4 0 0 1-8 0"></path>
+              </svg>
+            </div>
+            <div class="qab-text">
+              <strong>Shop Products</strong>
+              <span>Curated hair, beard & luxury skin catalog</span>
+            </div>
+          </a>
+
+          <a routerLink="/book" class="quick-action-box">
+            <div class="qab-icon-circle">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+            </div>
+            <div class="qab-text">
+              <strong>Book Stylist</strong>
+              <span>Reserve luxury haircuts & beard treatments</span>
+            </div>
+          </a>
+
+          <a routerLink="/support" class="quick-action-box highlight">
+            <div class="qab-icon-circle gold">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+              </svg>
+            </div>
+            <div class="qab-text">
+              <strong>Urban AI Concierge</strong>
+              <span>Instant order telemetry & grooming advice</span>
+            </div>
+          </a>
+
+          <a routerLink="/help" class="quick-action-box">
+            <div class="qab-icon-circle">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+            </div>
+            <div class="qab-text">
+              <strong>Warranty & Guarantees</strong>
+              <span>Review 7-day doorstep replacement guarantee</span>
+            </div>
+          </a>
+        </div>
+      </div>
+    }
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         TAB 2: CONSOLIDATED MY ORDERS & COURIER DISPATCHES
+         ═══════════════════════════════════════════════════════════════════════ -->
+    @if (activeTab() === 'orders') {
+      <section class="dashboard-section">
+        <div class="sec-header">
+          <div>
+            <h2>Order History & Courier Shipments</h2>
+            <p>Track air express logistics, view itemized receipts, and replenish your favorite grooming essentials.</p>
+          </div>
+          <div class="sec-header-actions">
+            <button type="button" class="btn-refresh" (click)="fetchUserOrders()" title="Refresh orders from database">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+              <span>Sync</span>
+            </button>
+            <a routerLink="/shop" class="btn-primary-small">+ Shop Products</a>
+          </div>
+        </div>
+
+        <!-- Orders Filtering & Instant Search Toolbar -->
+        <div class="orders-toolbar card">
+          <div class="order-filters">
+            <button 
+              type="button" 
+              class="filter-pill" 
+              [class.active]="orderStatusFilter() === 'all'"
+              (click)="orderStatusFilter.set('all')"
+            >
+              All Orders ({{ orders().length }})
+            </button>
+            <button 
+              type="button" 
+              class="filter-pill" 
+              [class.active]="orderStatusFilter() === 'active'"
+              (click)="orderStatusFilter.set('active')"
+            >
+              Active / In Transit
+            </button>
+            <button 
+              type="button" 
+              class="filter-pill" 
+              [class.active]="orderStatusFilter() === 'delivered'"
+              (click)="orderStatusFilter.set('delivered')"
+            >
+              Delivered
+            </button>
+            <button 
+              type="button" 
+              class="filter-pill" 
+              [class.active]="orderStatusFilter() === 'cancelled'"
+              (click)="orderStatusFilter.set('cancelled')"
+            >
+              Cancelled
+            </button>
+          </div>
+
+          <div class="order-search-wrap">
+            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input 
+              type="text" 
+              [ngModel]="orderSearchQuery()" 
+              (ngModelChange)="orderSearchQuery.set($event)"
+              placeholder="Search by order #, product name, or AWB..." 
+            />
+            @if (orderSearchQuery()) {
+              <button type="button" class="btn-clear-search" (click)="orderSearchQuery.set('')">✕</button>
+            }
+          </div>
+        </div>
+
+        @if (loadingOrders()) {
+          <div class="loading-state card">
+            <div class="spin-ring"></div>
+            <span>Connecting to cloud database & retrieving orders...</span>
+          </div>
+        } @else if (filteredOrders().length === 0) {
+          <div class="empty-card card">
+            <div class="empty-icon-wrap">
+              <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <path d="M16 10a4 4 0 0 1-8 0"></path>
+              </svg>
+            </div>
+            @if (orders().length === 0) {
+              <h3>No purchases recorded yet</h3>
+              <p>Explore our master barber formulas, beard serums, and matte clays crafted for Indian hair.</p>
+              <a routerLink="/shop" class="btn-primary">Explore Products</a>
+            } @else {
+              <h3>No orders matching your search</h3>
+              <p>Try searching with another product keyword, tracking code, or resetting your filter.</p>
+              <button type="button" class="btn-secondary" (click)="orderSearchQuery.set(''); orderStatusFilter.set('all')">Clear Filters</button>
+            }
+          </div>
+        } @else {
+          <div class="orders-list">
+            @for (ord of filteredOrders(); track ord.id) {
+              <article class="order-card card">
+                <!-- Order Header -->
+                <div class="order-card-header">
+                  <div class="ord-meta-left">
+                    <div class="ord-id-row">
+                      <span class="ord-id">#{{ ord.id.slice(0, 8).toUpperCase() }}</span>
+                      <span class="ord-date">{{ ord.created_at | date:'mediumDate' }}</span>
+                    </div>
+                    @if (ord.tracking_number) {
+                      <div class="awb-chip" (click)="copyTracking(ord.tracking_number, $event)" title="Click to copy Airway Bill">
+                        <span class="awb-label">AWB:</span>
+                        <strong class="awb-value">{{ ord.tracking_number }}</strong>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                      </div>
+                    }
+                  </div>
+
+                  <div class="ord-meta-right">
+                    <span class="status-pill {{ ord.status }}">
+                      <span class="status-dot"></span>
+                      {{ ord.status | uppercase }}
+                    </span>
+                    <button type="button" class="btn-track-ai-small" (click)="trackWithAi(ord)">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                      </svg>
+                      <span>Track with AI</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 4-Stage Stepper for Active/Shipped/Delivered Orders -->
+                @if (ord.status !== 'cancelled') {
+                  <div class="card-stepper">
+                    <div class="stepper-item" [class.done]="true">
+                      <div class="stepper-dot">✓</div>
+                      <span>Confirmed</span>
+                    </div>
+                    <div class="stepper-line" [class.done]="isStageCompleted(ord.status, 0)"></div>
+
+                    <div class="stepper-item" [class.done]="isStageCompleted(ord.status, 0)" [class.current]="isStageCurrent(ord.status, 1)">
+                      <div class="stepper-dot">
+                        @if (isStageCurrent(ord.status, 1)) {
+                          <span class="pulse-mini"></span>
+                        } @else if (isStageCompleted(ord.status, 0)) {
+                          ✓
+                        }
+                      </div>
+                      <span>Processing</span>
+                    </div>
+                    <div class="stepper-line" [class.done]="isStageCompleted(ord.status, 1)"></div>
+
+                    <div class="stepper-item" [class.done]="isStageCompleted(ord.status, 1)" [class.current]="isStageCurrent(ord.status, 2)">
+                      <div class="stepper-dot">
+                        @if (isStageCurrent(ord.status, 2)) {
+                          <span class="pulse-mini"></span>
+                        } @else if (isStageCompleted(ord.status, 1)) {
+                          ✓
+                        }
+                      </div>
+                      <span>In Transit</span>
+                    </div>
+                    <div class="stepper-line" [class.done]="isStageCompleted(ord.status, 2)"></div>
+
+                    <div class="stepper-item" [class.done]="isStageCompleted(ord.status, 2)">
+                      <div class="stepper-dot">
+                        @if (ord.status === 'delivered') {
+                          ✓
+                        }
+                      </div>
+                      <span>Delivered</span>
+                    </div>
+                  </div>
+                }
+
+                <!-- Order Line Items -->
+                <div class="order-items-scroll">
+                  @for (item of ord.items; track item.product_name) {
+                    <div class="order-line-item">
+                      <div class="item-thumb">
+                        @if (item.image_url) {
+                          <img [src]="item.image_url" [alt]="item.product_name" loading="lazy" />
+                        } @else {
+                          <div class="thumb-fallback">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                              <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                            </svg>
+                          </div>
+                        }
+                      </div>
+                      <div class="item-copy">
+                        <span class="item-name">{{ item.product_name }}</span>
+                        <span class="item-qty">Qty: {{ item.quantity }} × ₹{{ item.unit_price | inr }}</span>
+                      </div>
+                      <div class="item-total">
+                        ₹{{ (item.quantity * item.unit_price) | inr }}
+                      </div>
+                    </div>
+                  }
+                </div>
+
+                <!-- Order Card Footer -->
+                <div class="order-card-footer">
+                  <div class="ocf-left">
+                    <span class="pay-method">
+                      Method: <strong>{{ ord.payment_method | uppercase }}</strong>
+                      <span class="pay-tag {{ ord.payment_status }}">{{ ord.payment_status }}</span>
+                    </span>
+                    @if (ord.shipping_address) {
+                      <span class="dest-city">
+                        Destination: {{ ord.shipping_address.city || 'Ghaziabad' }}, {{ ord.shipping_address.state || 'UP' }}
+                      </span>
+                    }
+                  </div>
+
+                  <div class="ocf-right">
+                    <div class="total-wrap">
+                      <span class="total-label">Total Amount</span>
+                      <span class="total-amount">₹{{ ord.total_amount | inr }}</span>
+                    </div>
+
+                    <div class="order-button-group">
+                      <button type="button" class="btn-invoice" (click)="openInvoice(ord, $event)" title="View & print official GST tax invoice">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                          <polyline points="14 2 14 8 20 8"></polyline>
+                          <line x1="16" y1="13" x2="8" y2="13"></line>
+                          <line x1="16" y1="17" x2="8" y2="17"></line>
+                        </svg>
+                        <span>Tax Invoice</span>
+                      </button>
+
+                      <button type="button" class="btn-reorder" (click)="reorderItems(ord, $event)" title="Replenish these items to your cart">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="1 4 1 10 7 10"></polyline>
+                          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                        </svg>
+                        <span>Buy Again</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            }
+          </div>
+        }
+      </section>
+    }
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         TAB 3: SALON FLOOR APPOINTMENTS
+         ═══════════════════════════════════════════════════════════════════════ -->
+    @if (activeTab() === 'bookings') {
+      <section class="dashboard-section">
+        <div class="sec-header">
+          <div>
+            <h2>Salon Floor Appointments</h2>
+            <p>Confirmed master barber cuts, hot towel shaves, and executive scalp recovery treatments.</p>
+          </div>
+          <a routerLink="/book" class="btn-primary-small">+ Book New Session</a>
+        </div>
+
+        @if (loadingBookings()) {
+          <div class="loading-state card">
+            <div class="spin-ring"></div>
+            <span>Retrieving chair reservations...</span>
+          </div>
+        } @else if (bookings().length === 0) {
+          <div class="empty-card card">
+            <div class="empty-icon-wrap">
+              <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+            </div>
+            <h3>No active reservations</h3>
+            <p>Experience precision styling, beard shaping, and scalp treatments at our flagship studio.</p>
+            <a routerLink="/book" class="btn-primary">Book an Appointment</a>
+          </div>
+        } @else {
+          <div class="bookings-list">
+            @for (bk of bookings(); track bk.id) {
+              <div class="booking-card card">
+                <div class="bk-card-header">
+                  <div class="bch-left">
+                    <span class="bk-date-slot">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                      </svg>
+                      {{ bk.booking_date }} at {{ bk.time_slot }}
+                    </span>
+                    <span class="bk-id">Ref #{{ bk.id.slice(0, 8).toUpperCase() }}</span>
+                  </div>
+                  <span class="status-pill {{ bk.status }}">{{ bk.status | uppercase }}</span>
+                </div>
+
+                <div class="bk-card-body">
+                  <div class="bk-stylist-row">
+                    <div class="stylist-avatar-circle">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                      </svg>
+                    </div>
+                    <div class="stylist-info">
+                      <h4>{{ bk.stylist_name || 'Master Barber Vikram Sharma' }}</h4>
+                      <span>{{ bk.stylist_role || 'Director of Styling' }}</span>
+                    </div>
+                  </div>
+                  @if (bk.notes) {
+                    <p class="bk-notes">Special Requirements: {{ bk.notes }}</p>
+                  }
+                </div>
+
+                <div class="bk-card-footer">
+                  <span class="bk-venue">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                      <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                    <span>Urban Blade Flagship Studio · Pratap Vihar</span>
+                  </span>
+                  <div class="bk-price">₹{{ bk.total_price | inr }}</div>
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </section>
+    }
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         TAB 4: SAVED DELIVERY ADDRESSES & GPS MAP LOCATOR
+         ═══════════════════════════════════════════════════════════════════════ -->
+    @if (activeTab() === 'addresses') {
+      <section class="dashboard-section">
+        <div class="sec-header">
+          <div>
+            <h2>Saved Delivery Addresses</h2>
+            <p>Manage your doorstep shipping locations with GPS pinpoint accuracy for rapid 1-click checkout.</p>
+          </div>
+          @if (!showForm()) {
+            <button type="button" class="btn-primary-small" (click)="startAdd()">+ Add New Address</button>
+          }
+        </div>
+
+        @if (addresses.addresses().length === 0 && !showForm()) {
+          <div class="empty-card card">
+            <div class="empty-icon-wrap">
+              <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+              </svg>
+            </div>
+            <h3>No delivery addresses registered</h3>
+            <p>Save your home, office, or studio location for seamless 1-click delivery.</p>
+            <button type="button" class="btn-primary" (click)="startAdd()">Add Your First Address</button>
+          </div>
+        }
+
+        @if (addresses.addresses().length > 0) {
+          <div class="addresses-grid">
+            @for (item of addresses.addresses(); track item.id) {
+              <div class="address-box card" [class.default]="item.isDefault">
+                <div class="ab-header">
+                  <div class="ab-recipient">
+                    <strong>{{ item.fullName }}</strong>
+                    @if (item.isDefault) {
+                      <span class="default-badge">DEFAULT ADDRESS</span>
+                    }
+                  </div>
+                  <span class="ab-phone">{{ item.mobile }}</span>
+                </div>
+
+                <p class="ab-line">{{ item.house }}, {{ item.street }}</p>
+                @if (item.landmark) {
+                  <p class="ab-landmark">Landmark: {{ item.landmark }}</p>
+                }
+                <p class="ab-city">{{ item.city }}, {{ item.state }} - {{ item.pinCode }}</p>
+
+                <div class="ab-actions">
+                  <button type="button" class="btn-link" (click)="startEdit(item)">Edit Details</button>
+                  @if (!item.isDefault) {
+                    <button type="button" class="btn-link" (click)="addresses.setDefault(item.id)">Make Default</button>
+                  }
+                  <button type="button" class="btn-link danger" (click)="removeAddress(item.id)">Remove</button>
+                </div>
+              </div>
+            }
+          </div>
+        }
+
+        @if (showForm()) {
+          <div class="form-container card">
+            <div class="form-title-bar">
+              <h3>{{ editingId() ? 'Edit Delivery Address' : 'Add New Delivery Address' }}</h3>
+              <span class="form-subtitle">Pinpoint delivery location with GPS coordinates or enter manually</span>
+            </div>
+
+            <!-- GPS / OpenStreetMap Locator Tool -->
+            <div class="gps-locator-strip">
+              <div class="gps-search-input-wrap">
+                <input 
+                  type="text" 
+                  [ngModel]="locationQuery()" 
+                  (ngModelChange)="locationQuery.set($event)"
+                  placeholder="Search locality, sector, or landmark (e.g. Indirapuram, Ghaziabad)..." 
+                  (keyup.enter)="searchLocation()"
+                />
+                <button type="button" class="btn-geo-search" (click)="searchLocation()" [disabled]="mapStatus() === 'searching'">
+                  {{ mapStatus() === 'searching' ? 'Searching...' : 'Search' }}
+                </button>
+              </div>
+
+              <button type="button" class="btn-use-gps" (click)="useCurrentLocation()" [disabled]="mapStatus() === 'locating'">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+                </svg>
+                <span>{{ mapStatus() === 'locating' ? 'Locating...' : 'Use Current GPS' }}</span>
+              </button>
+            </div>
+
+            @if (mapMessage()) {
+              <div class="gps-status-notice">
+                <span>📍 {{ mapMessage() }}</span>
+              </div>
             }
 
             @if (mapOpen()) {
-              <div class="map-picker">
-                <div class="map-picker__tools">
-                  <input
-                    type="search"
-                    [value]="locationQuery()"
-                    (input)="onLocationInput($event)"
-                    (keydown.enter)="$event.preventDefault(); searchLocation()"
-                    placeholder="Search area, landmark, or city"
-                    aria-label="Search location on map"
-                  />
-                  <button type="button" (click)="searchLocation()" [disabled]="mapStatus() === 'searching'">
-                    {{ mapStatus() === 'searching' ? 'Searching…' : 'Search' }}
-                  </button>
-                  <button type="button" (click)="useCurrentLocation()" [disabled]="mapStatus() === 'locating'">
-                    {{ mapStatus() === 'locating' ? 'Locating…' : 'Use current location' }}
-                  </button>
-                </div>
-                <iframe title="Address location map" [src]="mapEmbedUrl()" loading="lazy"></iframe>
-                @if (mapMessage()) {
-                  <p class="map-picker__note">{{ mapMessage() }}</p>
+              <div class="map-embed-wrapper">
+                <iframe 
+                  [src]="mapEmbedUrl()" 
+                  title="Delivery Pinpoint Map" 
+                  loading="lazy"
+                  class="osm-iframe"
+                ></iframe>
+                @if (pinnedLocation()) {
+                  <div class="map-pinned-label">
+                    <span>📌 Pinned: {{ pinnedLocation()?.label }}</span>
+                  </div>
                 }
               </div>
             }
+
+            <form [formGroup]="form" (ngSubmit)="saveAddress()" class="address-edit-form">
+              <div class="form-row-2">
+                <label>
+                  Full Name *
+                  <input type="text" formControlName="fullName" placeholder="e.g. Vikram Sharma" />
+                </label>
+                <label>
+                  Mobile Number *
+                  <input type="tel" formControlName="mobile" placeholder="10-digit mobile number" maxlength="10" />
+                </label>
+              </div>
+
+              <div class="form-row-2">
+                <label>
+                  Flat, House no., Building *
+                  <input type="text" formControlName="house" placeholder="e.g. Penthouse 801, Tower B" />
+                </label>
+                <label>
+                  Area, Street, Sector *
+                  <input type="text" formControlName="street" placeholder="e.g. Sector 12, Pratap Vihar" />
+                </label>
+              </div>
+
+              <div class="form-row-3">
+                <label>
+                  City *
+                  <input type="text" formControlName="city" placeholder="e.g. Ghaziabad" />
+                </label>
+                <label>
+                  State *
+                  <select formControlName="state">
+                    <option value="">Select State</option>
+                    @for (st of states; track st) {
+                      <option [value]="st">{{ st }}</option>
+                    }
+                  </select>
+                </label>
+                <label>
+                  PIN Code *
+                  <input type="text" formControlName="pinCode" placeholder="6-digit PIN" maxlength="6" />
+                </label>
+              </div>
+
+              <label class="full-row">
+                Landmark (Optional)
+                <input type="text" formControlName="landmark" placeholder="e.g. Near DPS Indirapuram" />
+              </label>
+
+              <div class="checkbox-row">
+                <label class="custom-checkbox">
+                  <input type="checkbox" formControlName="isDefault" />
+                  <span>Set as my default shipping address</span>
+                </label>
+              </div>
+
+              <div class="form-actions">
+                <button type="button" class="btn-secondary" (click)="cancelForm()">Cancel</button>
+                <button type="submit" class="btn-primary" [disabled]="form.invalid">Save Delivery Address</button>
+              </div>
+            </form>
+          </div>
+        }
+      </section>
+    }
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         TAB 5: VIP PROFILE & SECURITY
+         ═══════════════════════════════════════════════════════════════════════ -->
+    @if (activeTab() === 'profile') {
+      <section class="dashboard-section">
+        <div class="sec-header">
+          <div>
+            <h2>VIP Profile & Security Credentials</h2>
+            <p>Manage contact information, VIP tier privileges, and password authentication.</p>
+          </div>
+        </div>
+
+        <div class="profile-cards-grid">
+          <!-- Profile Information Card -->
+          <div class="card profile-info-card">
+            <div class="pic-header">
+              <h3>Personal Profile Details</h3>
+              <span class="pic-subtitle">Used for delivery notices, billing receipts, and SMS updates</span>
+            </div>
+
+            <form (ngSubmit)="saveProfile()" class="profile-form">
+              <label>
+                Full Name
+                <input 
+                  type="text" 
+                  [ngModel]="profileName()" 
+                  (ngModelChange)="profileName.set($event)" 
+                  name="profileName" 
+                  placeholder="Your Full Name" 
+                  required 
+                />
+              </label>
+
+              <label>
+                Primary Email Address
+                <input type="email" [value]="account.user()?.email" disabled class="input-disabled" />
+                <span class="hint">Registered email is linked to your order history and cannot be changed.</span>
+              </label>
+
+              <label>
+                Contact Phone
+                <input 
+                  type="tel" 
+                  [ngModel]="profilePhone()" 
+                  (ngModelChange)="profilePhone.set($event)" 
+                  name="profilePhone" 
+                  placeholder="10-digit mobile number" 
+                />
+                <span class="hint">Used for carrier OTP verification and appointment reminders.</span>
+              </label>
+
+              @if (profileSavedMessage()) {
+                <div class="profile-saved-notice">
+                  <span>✓ {{ profileSavedMessage() }}</span>
+                </div>
+              }
+
+              <div class="profile-actions">
+                <button type="submit" class="btn-primary" [disabled]="isSavingProfile()">
+                  {{ isSavingProfile() ? 'Saving Changes...' : 'Save Profile Details' }}
+                </button>
+              </div>
+            </form>
           </div>
 
-          <label>
-            Flat, House no., Building, Company, Apartment
-            <input type="text" formControlName="house" autocomplete="address-line1" placeholder="Flat / house / company" />
-            @if (form.controls.house.touched && form.controls.house.invalid) {
-              <span class="error">Enter your flat, house no., company, or apartment.</span>
-            }
-          </label>
+          <!-- Loyalty Tier Benefits Card -->
+          <div class="card vip-tier-card">
+            <div class="vtc-badge">
+              <span class="sparkle">✦</span>
+              <span>{{ loyaltyTier() | uppercase }}</span>
+            </div>
+            <h3>Membership Privileges</h3>
+            <p class="vtc-sub">Your active account perks as an Urban Blade client:</p>
 
-          <label>
-            Area, Street, Sector, Village
-            <input type="text" formControlName="street" autocomplete="address-line2" placeholder="Area, street, sector, village" />
-            @if (form.controls.street.touched && form.controls.street.invalid) {
-              <span class="error">Enter your area, street, sector, or village.</span>
-            }
-          </label>
+            <!-- Tier Progress Bar -->
+            <div class="tier-progress-box">
+              <div class="tpb-labels">
+                <span>Tier Milestone Progress</span>
+                <strong>{{ tierProgressPercent() | number:'1.0-0' }}%</strong>
+              </div>
+              <div class="tpb-track">
+                <div class="tpb-fill" [style.width.%]="tierProgressPercent()"></div>
+              </div>
+              <span class="tpb-hint">{{ nextTierRequirement() }}</span>
+            </div>
 
-          <label>
-            Landmark
-            <input type="text" formControlName="landmark" placeholder="Nearby landmark (optional)" />
-          </label>
-
-          <div class="row">
-            <label>
-              Pin code
-              <input
-                type="text"
-                formControlName="pinCode"
-                inputmode="numeric"
-                maxlength="6"
-                autocomplete="postal-code"
-                placeholder="6-digit pin code"
-              />
-              @if (form.controls.pinCode.touched && form.controls.pinCode.invalid) {
-                <span class="error">Enter a 6-digit pin code.</span>
-              }
-            </label>
-
-            <label>
-              Town / City
-              <input type="text" formControlName="city" autocomplete="address-level2" placeholder="Town or city" />
-              @if (form.controls.city.touched && form.controls.city.invalid) {
-                <span class="error">Enter your town or city.</span>
-              }
-            </label>
+            <ul class="vip-perks-list">
+              <li>
+                <span class="perk-check">✓</span>
+                <span><strong>5% Lifetime Reward Credits</strong> automatically credited on every grooming order.</span>
+              </li>
+              <li>
+                <span class="perk-check">✓</span>
+                <span><strong>Priority Chair Access:</strong> Guaranteed booking slots with Director Barbers.</span>
+              </li>
+              <li>
+                <span class="perk-check">✓</span>
+                <span><strong>Complimentary Scalp Diagnostic:</strong> Included with every haircut appointment.</span>
+              </li>
+              <li>
+                <span class="perk-check">✓</span>
+                <span><strong>7-Day Doorstep Replacement:</strong> Zero-hassle warranty on clippers and blades.</span>
+              </li>
+            </ul>
           </div>
+        </div>
+      </section>
+    }
 
-          <label>
-            State
-            <select formControlName="state" autocomplete="address-level1">
-              <option value="" disabled>Select state</option>
-              @for (state of states; track state) {
-                <option [value]="state">{{ state }}</option>
-              }
-            </select>
-            @if (form.controls.state.touched && form.controls.state.invalid) {
-              <span class="error">Select your state.</span>
-            }
-          </label>
-
-          <label class="check">
-            <input type="checkbox" formControlName="isDefault" />
-            Make this my default address
-          </label>
-
-          <div class="form-actions">
-            <button type="submit" class="btn-primary">{{ editingId() ? 'Update address' : 'Save address' }}</button>
-            <button type="button" class="btn-ghost" (click)="cancelForm()">Cancel</button>
-          </div>
-        </form>
-      }
-    </section>
   } @else {
-    <section class="guest">
-      <p class="profile__kicker">Your account</p>
-      <h1>Hello, sign in</h1>
-      <p>Sign in to manage orders, your cart, and saved addresses.</p>
-      <a class="btn-primary" routerLink="/auth/login">Sign in</a>
-    </section>
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         GUEST / SIGNED-OUT STATE
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <div class="signed-out-card card">
+      <div class="so-icon-wrap">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <h2>Please Sign In to Access Your Client Portal</h2>
+      <p>Sign in to view your orders, live courier shipments, salon chair bookings, saved addresses, and VIP reward credits.</p>
+      <div class="so-actions">
+        <a routerLink="/login" class="btn-primary">Sign In to Urban Blade</a>
+        <a routerLink="/shop" class="btn-secondary">Explore Catalog</a>
+      </div>
+    </div>
   }
 </div>
+
+<!-- ═════════════════════════════════════════════════════════════════════════
+     1-CLICK AI LOGISTICS CONCIERGE TRACKING MODAL
+     ═════════════════════════════════════════════════════════════════════════ -->
+@if (trackingModalOpen() && activeTrackingOrder()) {
+  @let trkOrder = activeTrackingOrder()!;
+  <div class="ai-tracking-backdrop" (click)="closeTrackingModal()">
+    <div class="ai-tracking-modal card" (click)="$event.stopPropagation()">
+      <div class="atm-header">
+        <div class="atm-title-group">
+          <div class="atm-badge">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span>LIVE CARRIER RADAR</span>
+          </div>
+          <h3>Order #{{ trkOrder.id.slice(0, 8).toUpperCase() }}</h3>
+        </div>
+        <button type="button" class="btn-close-modal" (click)="closeTrackingModal()" title="Close tracking window">✕</button>
+      </div>
+
+      <div class="atm-body">
+        <div class="atm-status-strip">
+          <span class="atm-status {{ trkOrder.status }}">{{ trkOrder.status | uppercase }}</span>
+          <span class="atm-carrier">Carrier: <strong>Delhivery Air Express</strong></span>
+        </div>
+
+        <div class="atm-carrier-card">
+          <div class="acc-row">
+            <span>Tracking AWB:</span>
+            <strong class="awb-code" (click)="copyTracking(trkOrder.tracking_number, $event)" title="Click to copy">
+              {{ trkOrder.tracking_number || 'TRK-UB-EXPRESS' }}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </strong>
+          </div>
+          <div class="acc-row">
+            <span>Estimated Handover:</span>
+            <strong>Tomorrow by 6:00 PM</strong>
+          </div>
+          <div class="acc-row">
+            <span>Delivery Destination:</span>
+            <span>{{ trkOrder.shipping_address?.city || 'Ghaziabad' }}, {{ trkOrder.shipping_address?.state || 'Uttar Pradesh' }}</span>
+          </div>
+        </div>
+
+        <div class="atm-ai-insight">
+          <div class="ai-badge-row">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <strong>Urban AI Concierge Checkpoint:</strong>
+          </div>
+          @if (isFetchingAiTrack()) {
+            <div class="ai-pulse-loading">
+              <span class="spin-mini"></span>
+              <span>Syncing live transit telemetry from carrier hub...</span>
+            </div>
+          } @else {
+            <p>{{ aiTrackingInsight() }}</p>
+          }
+        </div>
+      </div>
+
+      <div class="atm-footer">
+        <button type="button" class="btn-primary" (click)="closeTrackingModal()">Close Radar</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═════════════════════════════════════════════════════════════════════════
+     PRINTABLE OFFICIAL GST TAX INVOICE MODAL
+     ═════════════════════════════════════════════════════════════════════════ -->
+@if (selectedInvoiceOrder()) {
+  @let inv = selectedInvoiceOrder()!;
+  <div class="invoice-modal-backdrop" (click)="closeInvoice()">
+    <div class="invoice-container" (click)="$event.stopPropagation()">
+      
+      <!-- Sticky Actions Bar -->
+      <div class="invoice-actions-bar">
+        <div class="inv-title">
+          <span>TAX INVOICE / CASH MEMORANDUM</span>
+        </div>
+        <div class="inv-btns">
+          <button type="button" class="inv-print-btn" (click)="printInvoice()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+            <span>Print Tax Invoice</span>
+          </button>
+          <button type="button" class="inv-close-btn" (click)="closeInvoice()" title="Close invoice">✕</button>
+        </div>
+      </div>
+
+      <!-- Printable Area adhering to src/styles/_invoice.scss -->
+      <div id="printable-area" class="printable-invoice">
+        <div class="inv-header">
+          <div class="seller-info">
+            <h2 class="salon-name">URBAN BLADE LUXURY GROOMING STUDIO</h2>
+            <p class="salon-sub">Master Barbers, Precision Blades & Luxury Male Grooming</p>
+            <p class="salon-address">Flagship Studio: Sector 12, Pratap Vihar, Ghaziabad, UP - 201009</p>
+            <p class="salon-gstin"><strong>GSTIN:</strong> 09AAEFU1234F1Z5 · <strong>PAN:</strong> AAEFU1234F</p>
+            <p class="salon-contact">support&#64;urbanblade.in · +91 90156 18265</p>
+          </div>
+          <div class="inv-badge-col">
+            <div class="original-stamp">ORIGINAL FOR RECIPIENT</div>
+            <div class="inv-number-block">
+              <span class="inv-num-label">INVOICE NO:</span>
+              <strong class="inv-num">UB-INV-{{ inv.id.slice(0, 8).toUpperCase() }}</strong>
+              <span class="inv-date">Date: {{ inv.created_at | date:'dd MMM yyyy, hh:mm a' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="inv-meta-grid">
+          <div class="meta-col">
+            <span class="meta-label">BILLED & SHIPPED TO:</span>
+            <strong class="buyer-name">{{ inv.shipping_address?.fullName || account.user()?.name }}</strong>
+            <p class="buyer-address">
+              {{ inv.shipping_address?.street || 'Sector 12, Pratap Vihar' }}<br/>
+              {{ inv.shipping_address?.city || 'Ghaziabad' }}, {{ inv.shipping_address?.state || 'Uttar Pradesh' }} - {{ inv.shipping_address?.pinCode || '201009' }}
+            </p>
+            <p class="buyer-contact">Phone: {{ inv.shipping_address?.phone || profilePhone() }} · Email: {{ inv.shipping_address?.email || account.user()?.email }}</p>
+          </div>
+
+          <div class="meta-col">
+            <span class="meta-label">TRANSACTION & LOGISTICS:</span>
+            <p><strong>Order ID:</strong> #{{ inv.id.toUpperCase() }}</p>
+            <p><strong>Payment Mode:</strong> {{ inv.payment_method | uppercase }} ({{ inv.payment_status }})</p>
+            <p><strong>Carrier:</strong> Delhivery Air Express</p>
+            <p><strong>AWB Code:</strong> {{ inv.tracking_number || 'TRK-UB-EXPRESS' }}</p>
+            <p><strong>Place of Supply:</strong> {{ inv.shipping_address?.state || 'Uttar Pradesh (09)' }}</p>
+          </div>
+        </div>
+
+        <table class="inv-table">
+          <thead>
+            <tr>
+              <th class="col-sr">#</th>
+              <th class="col-desc">Description of Goods</th>
+              <th class="col-hsn">HSN/SAC</th>
+              <th class="col-qty">Qty</th>
+              <th class="col-rate">Unit Price</th>
+              <th class="col-taxable">Taxable Val</th>
+              <th class="col-gst">GST (18%)</th>
+              <th class="col-total">Total (INR)</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (line of inv.items; track line.product_name; let i = $index) {
+              @let itemTaxable = (line.unit_price * line.quantity) / 1.18;
+              @let itemGst = (line.unit_price * line.quantity) - itemTaxable;
+              <tr>
+                <td class="col-sr">{{ i + 1 }}</td>
+                <td class="col-desc">
+                  <strong>{{ line.product_name }}</strong>
+                </td>
+                <td class="col-hsn">33059040</td>
+                <td class="col-qty">{{ line.quantity }}</td>
+                <td class="col-rate">₹{{ (line.unit_price / 1.18) | inr }}</td>
+                <td class="col-taxable">₹{{ itemTaxable | inr }}</td>
+                <td class="col-gst">₹{{ itemGst | inr }}</td>
+                <td class="col-total">₹{{ (line.unit_price * line.quantity) | inr }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+
+        <!-- Totals & Taxes Summary -->
+        <div class="inv-totals-wrap">
+          <div class="inv-words-col">
+            <span class="words-label">Amount in Words:</span>
+            <p class="words-text">Indian Rupees {{ inv.total_amount | inr }} Only</p>
+            <div class="tax-declaration">
+              <span>Tax is payable on reverse charge: <strong>NO</strong></span>
+              <p>This is a computer generated tax invoice issued under Rule 48 of the CGST Rules, 2017.</p>
+            </div>
+          </div>
+
+          <div class="inv-summary-col">
+            <div class="sum-row">
+              <span>Taxable Value:</span>
+              <strong>₹{{ (inv.total_amount / 1.18) | inr }}</strong>
+            </div>
+            <div class="sum-row">
+              <span>CGST (9%):</span>
+              <span>₹{{ ((inv.total_amount - (inv.total_amount / 1.18)) / 2) | inr }}</span>
+            </div>
+            <div class="sum-row">
+              <span>SGST (9%):</span>
+              <span>₹{{ ((inv.total_amount - (inv.total_amount / 1.18)) / 2) | inr }}</span>
+            </div>
+            @if (inv.discount_amount && inv.discount_amount > 0) {
+              <div class="sum-row text-discount">
+                <span>VIP Coupon Discount ({{ inv.coupon_code }}):</span>
+                <span>-₹{{ inv.discount_amount | inr }}</span>
+              </div>
+            }
+            <div class="sum-row sum-grand-total">
+              <span>Grand Total (Incl. GST):</span>
+              <strong>₹{{ inv.total_amount | inr }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="inv-footer">
+          <div class="inv-sign-block">
+            <div class="digital-seal">URBAN BLADE VERIFIED STAMP</div>
+            <span class="sign-label">For URBAN BLADE LUXURY GROOMING STUDIO</span>
+            <span class="sign-sub">Authorized Signatory</span>
+          </div>
+          <div class="inv-terms">
+            <strong>Terms & Conditions:</strong>
+            <p>1. Goods once sold are covered under 7-day doorstep replacement guarantee.</p>
+            <p>2. Any dispute is subject to Ghaziabad / Delhi NCR jurisdiction only.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+}

@@ -70,29 +70,36 @@ export async function bookingsRoutes(app: FastifyInstance) {
   // ─── BOOK APPOINTMENT WITH DISTRIBUTED REDIS LOCK ──────────────────────────
   app.post<{
     Body: {
-      customerName: string;
-      customerEmail: string;
-      customerPhone: string;
-      stylistId: string;
+      customerName?: string;
+      customer_name?: string;
+      customerEmail?: string;
+      customer_email?: string;
+      customerPhone?: string;
+      customer_phone?: string;
+      stylistId?: string;
+      stylist_id?: string;
       serviceId?: string;
+      service_id?: string;
       serviceName?: string;
-      bookingDate: string;
-      timeSlot: string;
+      bookingDate?: string;
+      booking_date?: string;
+      timeSlot?: string;
+      time_slot?: string;
       totalPrice?: number;
+      total_price?: number;
       notes?: string;
     };
   }>('/bookings', async (request, reply) => {
-    const {
-      customerName,
-      customerEmail,
-      customerPhone,
-      stylistId,
-      serviceId,
-      bookingDate,
-      timeSlot,
-      totalPrice = 499,
-      notes,
-    } = request.body;
+    const b = request.body || {};
+    const customerName = b.customerName || b.customer_name || 'Salon Guest';
+    const customerEmail = b.customerEmail || b.customer_email || 'client@urbanblade.in';
+    const customerPhone = b.customerPhone || b.customer_phone || '9015618265';
+    const stylistId = b.stylistId || b.stylist_id || (b as any).stylistName || (b as any).stylist_name || 'stylist-vikram';
+    const serviceId = b.serviceId || b.service_id;
+    const bookingDate = b.bookingDate || b.booking_date || new Date().toISOString().split('T')[0];
+    const timeSlot = b.timeSlot || b.time_slot || '11:00 AM';
+    const totalPrice = Number(b.totalPrice ?? b.total_price ?? 499);
+    const notes = b.notes || b.serviceName || (b as any).service_name || 'Salon Service';
 
     // Resolve Stylist UUID if slug/mock ID was provided
     let resolvedStylistId = stylistId;
@@ -187,6 +194,41 @@ export async function bookingsRoutes(app: FastifyInstance) {
     } finally {
       // Always release distributed lock
       await releaseLock(lock.lockKey, lock.lockToken);
+    }
+  });
+
+  // ─── GET USER BOOKINGS HISTORY ────────────────────────────────────────────
+  app.get<{ Querystring: { email?: string } }>('/bookings', async (request, reply) => {
+    const { email } = request.query || {};
+    try {
+      let sql = `
+        SELECT 
+          b.id,
+          b.customer_name,
+          b.customer_email,
+          b.customer_phone,
+          b.booking_date,
+          b.time_slot,
+          b.status,
+          b.total_price::numeric,
+          b.notes,
+          b.created_at,
+          COALESCE(s.name, 'Master Barber') as stylist_name,
+          COALESCE(s.role, 'Senior Barber') as stylist_role
+        FROM bookings b
+        LEFT JOIN stylists s ON s.id = b.stylist_id
+      `;
+      const params: any[] = [];
+      if (email) {
+        sql += ` WHERE b.customer_email ILIKE $1 `;
+        params.push(`%${email.trim()}%`);
+      }
+      sql += ` ORDER BY b.booking_date DESC, b.created_at DESC LIMIT 50; `;
+      const res = await query(sql, params);
+      return reply.send(res.rows);
+    } catch (err: any) {
+      request.log.error(err, 'Failed to fetch user bookings');
+      return reply.send([]);
     }
   });
 }

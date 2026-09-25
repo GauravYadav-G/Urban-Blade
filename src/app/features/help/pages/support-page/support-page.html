@@ -1,30 +1,636 @@
-<section class="support">
-  <header class="support__intro">
-    <p class="kicker">Client support</p>
-    <h1>Product support for your order</h1>
-    <p class="lede">
-      Help with Urban Blade hair care, beard, skin, tools, and gift cards — missing items, damaged
-      packs, checkout codes, delivery, and returns.
+<section class="support-page-shell">
+  <!-- Hero Intro -->
+  <header class="support-hero">
+    <div class="kicker-pill">
+      <span class="sparkle">✦</span>
+      <span>24/7 CLIENT CARE & INTELLIGENCE</span>
+    </div>
+    <h1>Urban Blade Client Support & AI Concierge</h1>
+    <p class="hero-lede">
+      Instant delivery tracking, personalized hair & beard grooming protocols, salon appointments, and 7-day guarantee resolutions powered by the Urban AI Concierge.
     </p>
   </header>
 
-  <div class="topics">
-    @for (topic of topics; track topic.title) {
-      <article>
-        <h2>{{ topic.title }}</h2>
-        <p>{{ topic.body }}</p>
-        <a [routerLink]="topic.route" [queryParams]="topic.query">{{ topic.link }}</a>
-      </article>
-    }
+  <!-- ═════════════════════════════════════════════════════════════════════════
+       INTERACTIVE AI CONCIERGE & CHATBOT SECTION
+       ═════════════════════════════════════════════════════════════════════════ -->
+  <div class="ai-support-container">
+    <div class="chat-console-card">
+      <!-- Chat Header -->
+      <div class="console-header">
+        <div class="agent-identity">
+          <div class="agent-avatar-wrap">
+            <svg class="agent-avatar-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3>Urban Blade Support</h3>
+            <span class="agent-status">
+              <span class="live-dot"></span>
+              <span>Online</span>
+            </span>
+          </div>
+        </div>
+
+        <button type="button" class="btn-raise-ticket" (click)="openTicketModal()">
+          <span>🎫 Raise Priority Ticket</span>
+        </button>
+      </div>
+
+      <!-- Quick Action Prompts Bar -->
+      <div class="quick-prompts-bar">
+        <span class="qp-label">Fast Questions:</span>
+        <div class="qp-chips">
+          @for (qp of quickPrompts; track qp.label) {
+            <button type="button" class="qp-chip" (click)="sendChatMessage(qp.query)">
+              {{ qp.label }}
+            </button>
+          }
+        </div>
+      </div>
+
+      <!-- Chat Messages Thread -->
+      <div class="messages-viewport">
+        @for (msg of chatMessages(); track msg.id) {
+          <div class="msg-row {{ msg.sender }}">
+            @if (msg.sender === 'ai') {
+              <div class="avatar-tag ai-tag">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                </svg>
+              </div>
+            }
+
+            <div class="msg-bubble {{ msg.sender }}">
+              <div class="bubble-header">
+                <span class="sender-name">{{ msg.sender === 'ai' ? 'Support' : 'You' }}</span>
+                <span class="msg-time">{{ msg.timestamp | date:'shortTime' }}</span>
+              </div>
+              <div class="bubble-body">{{ msg.text }}</div>
+
+              <!-- ── OPERATION CARD 1: ORDER TRACKING CARD ── -->
+              @if (msg.operation?.type === 'order_tracking' && msg.operation?.order; as ord) {
+                <div class="chat-op-card tracking-card">
+                  <div class="op-card-header">
+                    <div class="carrier-badge">
+                      <span class="carrier-dot"></span>
+                      <strong>{{ ord.carrier || 'Delhivery Air' }}</strong>
+                    </div>
+                    <span class="status-pill {{ ord.status }}">
+                      {{ ord.raw_status || ord.status | uppercase }}
+                    </span>
+                  </div>
+
+                  <div class="op-card-body">
+                    <div class="op-metric-row">
+                      <span class="metric-lbl">Tracking AWB:</span>
+                      <span class="metric-val font-mono">{{ ord.tracking_number }}</span>
+                    </div>
+                    <div class="op-metric-row">
+                      <span class="metric-lbl">Live Checkpoint:</span>
+                      <span class="metric-val">{{ ord.current_location || 'Regional Dispatch Hub, Delhi NCR' }}</span>
+                    </div>
+                    <div class="op-metric-row">
+                      <span class="metric-lbl">Order Value:</span>
+                      <span class="metric-val price">₹{{ ord.total_amount | number:'1.0-0' }}</span>
+                    </div>
+
+                    @if (ord.items && ord.items.length > 0) {
+                      <div class="op-items-summary">
+                        <span class="items-title">Package Contents:</span>
+                        <div class="items-pills">
+                          @for (item of ord.items; track item.product_name) {
+                            <span class="item-pill">{{ item.quantity }}x {{ item.product_name }}</span>
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+
+                  <div class="op-card-footer">
+                    @if (ord.portal_url) {
+                      <button type="button" class="btn-op primary" (click)="openCarrierUrl(ord.portal_url)">
+                        <span>Live Scans on {{ ord.carrier }} Portal ↗</span>
+                      </button>
+                    }
+                    @if (ord.can_cancel) {
+                      <button type="button" class="btn-op danger" (click)="cancelOrder(ord.id)">
+                        <span>🚫 1-Click Cancel & Instant Refund</span>
+                      </button>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- ── OPERATION CARD 2: ORDER CANCELLED CONFIRMATION ── -->
+              @if (msg.operation?.type === 'order_cancelled' && msg.operation?.order; as cord) {
+                <div class="chat-op-card cancelled-card">
+                  <div class="cancelled-header">
+                    <div class="cancel-icon">✓</div>
+                    <div class="cancel-copy">
+                      <strong>Cancellation & Refund Processed</strong>
+                      <span>Order #{{ cord.id.slice(0, 8) | uppercase }} has been stopped.</span>
+                    </div>
+                  </div>
+                  <div class="cancelled-details">
+                    <span>Full reversal to original payment mode initiated. Items safely restocked to studio inventory.</span>
+                  </div>
+                </div>
+              }
+
+              <!-- ── OPERATION CARD 3: PRODUCT RECOMMENDATIONS WITH 1-CLICK ADD TO CART ── -->
+              @if (msg.operation?.type === 'product_recommendations' && msg.operation?.products && msg.operation?.products!.length > 0) {
+                <div class="chat-op-card products-carousel">
+                  <div class="products-grid">
+                    @for (prod of msg.operation?.products; track prod.id) {
+                      <div class="op-product-card">
+                        <div class="op-prod-img-wrap" (click)="viewProduct(prod.slug)">
+                          <img [src]="prod.image_url" [alt]="prod.name" loading="lazy" />
+                          @if (prod.badge) {
+                            <span class="prod-badge {{ prod.badge }}">{{ prod.badge | uppercase }}</span>
+                          }
+                        </div>
+
+                        <div class="op-prod-details">
+                          <h5 class="op-prod-name" (click)="viewProduct(prod.slug)">{{ prod.name }}</h5>
+                          <div class="op-prod-rating">
+                            <span class="star">★</span>
+                            <span>{{ prod.rating | number:'1.1-1' }}</span>
+                            <span class="category-tag">{{ prod.category }}</span>
+                          </div>
+
+                          <div class="op-prod-price-row">
+                            <span class="curr-price">₹{{ prod.price | number:'1.0-0' }}</span>
+                            @if (prod.compare_at_price && prod.compare_at_price > prod.price) {
+                              <span class="comp-price">₹{{ prod.compare_at_price | number:'1.0-0' }}</span>
+                            }
+                          </div>
+
+                          <button 
+                            type="button" 
+                            class="btn-add-cart" 
+                            [class.added]="addedProductIds().has(prod.id)"
+                            (click)="addToCart(prod)"
+                          >
+                            @if (addedProductIds().has(prod.id)) {
+                              <span>✓ Added to Cart</span>
+                            } @else {
+                              <span>🛒 Add to Cart</span>
+                            }
+                          </button>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- ── OPERATION CARD 4: SALON CHAIR BOOKING (IN-CHAT INTERACTIVE WIZARD) ── -->
+              @if (msg.operation?.type === 'salon_booking' && msg.operation?.booking; as bk) {
+                @let form = getBookingState(msg.id, bk);
+
+                @if (confirmedBookings()[msg.id]; as ticket) {
+                  <!-- VIP Boarding Pass Ticket (Post-Confirmation) -->
+                  <div class="chat-op-card booking-pass-ticket">
+                    <div class="ticket-header">
+                      <div class="ticket-brand">
+                        <span class="t-scissor">✂</span>
+                        <div class="t-titles">
+                          <span class="t-kicker">OFFICIAL STUDIO BOARDING PASS</span>
+                          <span class="t-main">VIP Chair Confirmed</span>
+                        </div>
+                      </div>
+                      <span class="ticket-ref">#UB-{{ ticket.bookingId.slice(0, 8) | uppercase }}</span>
+                    </div>
+
+                    <div class="ticket-body">
+                      <div class="ticket-grid">
+                        <div class="t-col">
+                          <span class="t-lbl">SERVICE & FEE</span>
+                          <span class="t-val highlight">{{ ticket.serviceName }} (₹{{ ticket.price }})</span>
+                        </div>
+                        <div class="t-col">
+                          <span class="t-lbl">MASTER BARBER</span>
+                          <span class="t-val">{{ ticket.stylistName }}</span>
+                        </div>
+                        <div class="t-col">
+                          <span class="t-lbl">DATE & TIME</span>
+                          <span class="t-val time-val">{{ ticket.dateStr }} · {{ ticket.timeSlot }}</span>
+                        </div>
+                        <div class="t-col">
+                          <span class="t-lbl">CLIENT GUEST</span>
+                          <span class="t-val">{{ ticket.customerName }}</span>
+                        </div>
+                      </div>
+
+                      <div class="ticket-venue">
+                        <span class="t-venue-lbl">📍 Flagship Venue:</span>
+                        <span class="t-venue-val">{{ ticket.venue }}</span>
+                        <span class="t-landmark">Near Noida Sector 62 Metro · Valet Parking Available</span>
+                      </div>
+                    </div>
+
+                    <div class="ticket-footer">
+                      <button type="button" class="btn-ticket-act primary" (click)="navigateToBookings()">
+                        <span>📍 View in My Account Bookings ➔</span>
+                      </button>
+                      <a [href]="'tel:' + ticket.hotline" class="btn-ticket-act outline">
+                        <span>📞 Studio Desk</span>
+                      </a>
+                    </div>
+                  </div>
+                } @else {
+                  <!-- Interactive Chair Booking Wizard Card -->
+                  <div class="chat-op-card booking-wizard-card">
+                    <div class="wizard-header">
+                      <div class="wz-title-wrap">
+                        <span class="wz-icon">💈</span>
+                        <div>
+                          <strong>Select Service & Reserve Chair</strong>
+                          <span>Direct in-chat booking · 100% Guaranteed Slot</span>
+                        </div>
+                      </div>
+                      <span class="wz-venue-pill">Sector 63 Studio</span>
+                    </div>
+
+                    <!-- Step 1: Select Service -->
+                    @if (bk.services && bk.services.length > 0) {
+                      <div class="wz-step">
+                        <label class="wz-step-title">1. Signature Salon Service:</label>
+                        <div class="wz-service-pills">
+                          @for (svc of bk.services; track svc.id) {
+                            <button 
+                              type="button" 
+                              class="wz-svc-pill" 
+                              [class.active]="form.serviceId === svc.id"
+                              (click)="setBookingService(msg.id, svc)"
+                            >
+                              <span class="svc-name">{{ svc.name }}</span>
+                              <span class="svc-price">₹{{ svc.price }}</span>
+                            </button>
+                          }
+                        </div>
+                      </div>
+                    }
+
+                    <!-- Step 2: Select Master Barber -->
+                    @if (bk.stylists && bk.stylists.length > 0) {
+                      <div class="wz-step">
+                        <label class="wz-step-title">2. Select Master Barber / Specialist:</label>
+                        <div class="wz-stylist-grid">
+                          @for (st of bk.stylists; track st.id) {
+                            <button 
+                              type="button" 
+                              class="wz-stylist-card" 
+                              [class.active]="form.stylistId === st.id"
+                              (click)="setBookingStylist(msg.id, st)"
+                            >
+                              <div class="st-avatar-wrap">
+                                <img [src]="st.avatar_url" [alt]="st.name" loading="lazy" />
+                                @if (form.stylistId === st.id) {
+                                  <span class="st-check">✓</span>
+                                }
+                              </div>
+                              <div class="st-info">
+                                <span class="st-name">{{ st.name }}</span>
+                                <span class="st-role">{{ st.role }}</span>
+                                <span class="st-rating">★ {{ st.rating }}</span>
+                              </div>
+                            </button>
+                          }
+                        </div>
+                      </div>
+                    }
+
+                    <!-- Step 3: Date & Slot Selection -->
+                    <div class="wz-step">
+                      <label class="wz-step-title">3. Choose Appointment Date:</label>
+                      <div class="wz-dates-row">
+                        @for (d of dateOptions(); track d.dateStr) {
+                          <button 
+                            type="button" 
+                            class="wz-date-pill" 
+                            [class.active]="form.dateStr === d.dateStr"
+                            (click)="setBookingDate(msg.id, d.dateStr)"
+                          >
+                            <span class="d-day">{{ d.dayName }}</span>
+                            <span class="d-date">{{ d.dateStr.slice(5) }}</span>
+                          </button>
+                        }
+                      </div>
+
+                      <label class="wz-step-title slot-margin">4. Convenient Floor Time Slot:</label>
+                      <div class="wz-slots-grid">
+                        @for (slot of slotOptions(); track slot) {
+                          <button 
+                            type="button" 
+                            class="wz-slot-pill" 
+                            [class.active]="form.timeSlot === slot"
+                            (click)="setBookingSlot(msg.id, slot)"
+                          >
+                            <span>{{ slot }}</span>
+                          </button>
+                        }
+                      </div>
+                    </div>
+
+                    <!-- Step 4: Guest Contact Details -->
+                    <div class="wz-step contact-step">
+                      <label class="wz-step-title">5. Client Contact Information:</label>
+                      <div class="wz-contact-inputs">
+                        <input 
+                          type="text" 
+                          [value]="form.customerName" 
+                          (input)="updateBookingCustomer(msg.id, 'name', $any($event.target).value)" 
+                          placeholder="Your Full Name" 
+                        />
+                        <input 
+                          type="tel" 
+                          [value]="form.customerPhone" 
+                          (input)="updateBookingCustomer(msg.id, 'phone', $any($event.target).value)" 
+                          placeholder="Mobile Number (e.g. 98123 45678)" 
+                        />
+                      </div>
+                    </div>
+
+                    @if (bookingError()[msg.id]; as err) {
+                      <div class="wz-error-alert">
+                        <span>⚠️ {{ err }}</span>
+                      </div>
+                    }
+
+                    <!-- Step 5: Instant Booking Submission CTA -->
+                    <div class="wz-submit-bar">
+                      <button 
+                        type="button" 
+                        class="btn-confirm-chair" 
+                        [disabled]="isSubmittingBooking()[msg.id]"
+                        (click)="submitInChatBooking(msg.id, bk.venue, bk.hotline)"
+                      >
+                        @if (isSubmittingBooking()[msg.id]) {
+                          <span class="spinner-dot"></span>
+                          <span>Securing Barber Chair...</span>
+                        } @else {
+                          <span>✂️ Confirm Chair Reservation · ₹{{ form.price }}</span>
+                        }
+                      </button>
+                      <span class="wz-guarantee-note">🔒 Instant Slot Lock · Zero Advance Cancellation Fee</span>
+                    </div>
+                  </div>
+                }
+              }
+
+              <!-- ── OPERATION CARD 4B: CONFIRMED BOOKING RECEIPT ── -->
+              @if (msg.operation?.type === 'salon_booking_confirmed' && msg.operation?.bookingConfirmed; as bc) {
+                <div class="chat-op-card booking-pass-ticket">
+                  <div class="ticket-header">
+                    <div class="ticket-brand">
+                      <span class="t-scissor">✂</span>
+                      <div class="t-titles">
+                        <span class="t-kicker">OFFICIAL STUDIO BOARDING PASS</span>
+                        <span class="t-main">VIP Chair Confirmed</span>
+                      </div>
+                    </div>
+                    <span class="ticket-ref">#UB-{{ bc.id.slice(0, 8) | uppercase }}</span>
+                  </div>
+
+                  <div class="ticket-body">
+                    <div class="ticket-grid">
+                      <div class="t-col">
+                        <span class="t-lbl">SERVICE</span>
+                        <span class="t-val highlight">{{ bc.serviceName }} (₹{{ bc.totalPrice }})</span>
+                      </div>
+                      <div class="t-col">
+                        <span class="t-lbl">MASTER BARBER</span>
+                        <span class="t-val">{{ bc.stylistName }}</span>
+                      </div>
+                      <div class="t-col">
+                        <span class="t-lbl">SCHEDULE</span>
+                        <span class="t-val time-val">{{ bc.bookingDate }} · {{ bc.timeSlot }}</span>
+                      </div>
+                      <div class="t-col">
+                        <span class="t-lbl">GUEST</span>
+                        <span class="t-val">{{ bc.customerName }}</span>
+                      </div>
+                    </div>
+
+                    <div class="ticket-venue">
+                      <span class="t-venue-lbl">📍 Flagship Venue:</span>
+                      <span class="t-venue-val">{{ bc.venue }}</span>
+                      <span class="t-landmark">Near Noida Sector 62 Metro · Valet Parking Available</span>
+                    </div>
+                  </div>
+
+                  <div class="ticket-footer">
+                    <button type="button" class="btn-ticket-act primary" (click)="navigateToBookings()">
+                      <span>📍 View in My Account Bookings ➔</span>
+                    </button>
+                    <a [href]="'tel:' + bc.hotline" class="btn-ticket-act outline">
+                      <span>📞 Studio Desk</span>
+                    </a>
+                  </div>
+                </div>
+              }
+
+              <!-- ── OPERATION CARD 5: ESCALATION / HUMAN SUPPORT ── -->
+              @if (msg.operation?.type === 'escalation' && msg.operation?.contact; as esc) {
+                <div class="chat-op-card escalation-card">
+                  <div class="esc-header">
+                    <span class="esc-badge">HIGH PRIORITY QUEUE</span>
+                    <strong>Senior Operations Desk Assigned</strong>
+                  </div>
+                  <div class="esc-channels">
+                    <a [href]="'tel:' + esc.phone" class="btn-channel phone">
+                      <span>📞 Call {{ esc.phone }}</span>
+                    </a>
+                    <a [href]="'https://wa.me/' + esc.whatsapp" target="_blank" class="btn-channel whatsapp">
+                      <span>💬 WhatsApp Concierge</span>
+                    </a>
+                  </div>
+                  <span class="esc-note">Average connect response time: &lt; 2 minutes</span>
+                </div>
+              }
+
+              <!-- ── DYNAMIC ACTION CHIPS (UNDER MESSAGE BUBBLE) ── -->
+              @if (msg.actionChips && msg.actionChips.length > 0) {
+                <div class="msg-action-chips">
+                  @for (chip of msg.actionChips; track chip.label) {
+                    <button type="button" class="msg-action-chip" (click)="onPromptClick(chip)">
+                      <span>{{ chip.label }}</span>
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+
+            @if (msg.sender === 'user') {
+              <div class="avatar-tag user-tag">YOU</div>
+            }
+          </div>
+        }
+
+        @if (isGenerating()) {
+          <div class="msg-row ai">
+            <div class="avatar-tag ai-tag">UB AI</div>
+            <div class="msg-bubble ai typing">
+              <span>AI Concierge is analyzing your request</span>
+              <div class="dots"><span>.</span><span>.</span><span>.</span></div>
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- Chat Input Footer -->
+      <form class="chat-input-bar" (ngSubmit)="sendChatMessage()">
+        <input 
+          type="text" 
+          [ngModel]="userInput()" 
+          (ngModelChange)="userInput.set($event)" 
+          name="userQuery"
+          placeholder="Ask a question, enter your Order ID, or inquire about beard care..." 
+          [disabled]="isGenerating()"
+        />
+        <button type="submit" class="btn-send-chat" [disabled]="!userInput().trim() || isGenerating()">
+          <span>Send</span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </form>
+    </div>
   </div>
 
-  <section class="contact" aria-labelledby="contact-heading">
-    <h2 id="contact-heading">Talk to product support</h2>
-    <p>Have the product name and order ID ready. We reply on email and phone.</p>
-    <ul>
-      <li>Email <a [href]="'mailto:' + salon.email">{{ salon.email }}</a></li>
-      <li>Call <a [href]="'tel:' + salon.phoneTel">{{ salon.phoneDisplay }}</a></li>
-    </ul>
-    <a class="cta" routerLink="/help">Product how-to guides</a>
+  <!-- ═════════════════════════════════════════════════════════════════════════
+       HELP TOPIC CARDS GRID
+       ═════════════════════════════════════════════════════════════════════════ -->
+  <section class="topics-section">
+    <div class="topics-header">
+      <h2>Browse Support Categories</h2>
+      <p>Self-service guides and catalog links for every product category.</p>
+    </div>
+
+    <div class="topics-grid">
+      @for (topic of topics; track topic.title) {
+        <article class="topic-card">
+          <h3>{{ topic.title }}</h3>
+          <p>{{ topic.body }}</p>
+          <a [routerLink]="topic.route" [queryParams]="topic.query" class="topic-link">
+            <span>{{ topic.link }}</span>
+            <span class="arr">➔</span>
+          </a>
+        </article>
+      }
+    </div>
   </section>
+
+  <!-- Contact & Studio Telemetry -->
+  <section class="contact-section">
+    <div class="contact-card">
+      <div class="contact-icon">📞</div>
+      <div>
+        <h3>Speak with Client Concierge</h3>
+        <p>Available Mon - Sun, 9:00 AM to 9:00 PM IST</p>
+        <div class="contact-links">
+          <a [href]="'tel:' + salon.phoneTel" class="contact-pill">
+            <span>Call: {{ salon.phoneDisplay }}</span>
+          </a>
+          <a [href]="'mailto:' + salon.email" class="contact-pill">
+            <span>Email: {{ salon.email }}</span>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="contact-card studio">
+      <div class="contact-icon">💈</div>
+      <div>
+        <h3>Flagship Studio Address</h3>
+        <p>{{ salon.address }}, {{ salon.city }} - {{ salon.pin }}</p>
+        <a routerLink="/book" class="contact-pill gold">
+          <span>Book In-Salon Barber Visit ➔</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════════
+       OFFICIAL PRIORITY TICKET MODAL
+       ═════════════════════════════════════════════════════════════════════════ -->
+  @if (ticketModalOpen()) {
+    <div class="modal-backdrop" (click)="closeTicketModal()">
+      <div class="modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <span class="m-kicker">PRIORITY ESCALATION</span>
+            <h3>Submit Official Support Inquiry</h3>
+          </div>
+          <button type="button" class="btn-close" (click)="closeTicketModal()">✕</button>
+        </div>
+
+        @if (ticketSuccessMessage()) {
+          <div class="ticket-success">
+            <span class="s-icon">✅</span>
+            <h4>Inquiry Dispatched</h4>
+            <p>{{ ticketSuccessMessage() }}</p>
+          </div>
+        } @else {
+          <form [formGroup]="ticketForm" (ngSubmit)="submitTicket()" class="ticket-form">
+            <div class="form-row-2">
+              <label>
+                Your Name *
+                <input type="text" formControlName="userName" placeholder="e.g. Rahul Sharma" />
+              </label>
+
+              <label>
+                Email Address *
+                <input type="email" formControlName="userEmail" placeholder="e.g. rahul@example.com" />
+              </label>
+            </div>
+
+            <div class="form-row-2">
+              <label>
+                Subject / Issue Type *
+                <input type="text" formControlName="subject" placeholder="e.g. Damaged serum bottle in delivery" />
+              </label>
+
+              <label>
+                Order ID (Optional)
+                <input type="text" formControlName="orderId" placeholder="e.g. ORD-6F31B23E" />
+              </label>
+            </div>
+
+            <div class="form-row-2">
+              <label>
+                Priority Level
+                <select formControlName="priority">
+                  <option value="low">Standard / Question</option>
+                  <option value="medium">Medium / Order Issue</option>
+                  <option value="high">Urgent / Damaged Product</option>
+                </select>
+              </label>
+
+              <label>
+                Vendor Partner (Optional)
+                <input type="text" formControlName="vendorName" placeholder="e.g. Urban Blade Lab" />
+              </label>
+            </div>
+
+            <label class="full-field">
+              Description & Details *
+              <textarea formControlName="message" rows="3" placeholder="Provide full context for our specialist team..."></textarea>
+            </label>
+
+            <div class="modal-footer">
+              <button type="button" class="btn-secondary" (click)="closeTicketModal()">Cancel</button>
+              <button type="submit" class="btn-primary" [disabled]="isSubmittingTicket()">
+                {{ isSubmittingTicket() ? 'Dispatching...' : 'Submit Support Ticket' }}
+              </button>
+            </div>
+          </form>
+        }
+      </div>
+    </div>
+  }
 </section>

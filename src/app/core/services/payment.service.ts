@@ -15,6 +15,7 @@ export interface ShippingAddress {
   street: string;
   city?: string;
   postalCode?: string;
+  email?: string;
 }
 
 export interface RazorpayOrderResponse {
@@ -190,7 +191,9 @@ export class PaymentService {
             const p = this.catalog.byId(it.productId) || this.catalog.byId(it.productId.replace(/^(hc|bd|sk|tl|gf|sv)-/, ''));
             return acc + (p ? p.price : 899) * it.quantity;
           }, 0);
-          const totalAmount = subtotal + (subtotal >= 999 ? 0 : 99);
+          const discount = Math.max(0, Number(payload.discountAmount) || 0);
+          const discountedSubtotal = Math.max(0, subtotal - discount);
+          const totalAmount = discountedSubtotal + (discountedSubtotal >= 999 ? 0 : 99);
           const orderId = `ub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
           const fallbackReceipt: PaymentReceipt = {
             success: true,
@@ -311,6 +314,8 @@ export class PaymentService {
   private createFallbackRazorpayOrder(payload: {
     items: CheckoutItemRequest[];
     shippingAddress: ShippingAddress;
+    couponCode?: string;
+    discountAmount?: number;
   }): RazorpayOrderResponse {
     const verifiedItems = payload.items.map((it) => {
       const cleanSlug = it.productId.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
@@ -325,8 +330,10 @@ export class PaymentService {
     });
 
     const subtotal = verifiedItems.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
-    const shippingFee = subtotal >= 999 ? 0 : 99;
-    const totalAmount = subtotal + shippingFee;
+    const discount = Math.max(0, Number(payload.discountAmount) || 0);
+    const discountedSubtotal = Math.max(0, subtotal - discount);
+    const shippingFee = discountedSubtotal >= 999 ? 0 : 99;
+    const totalAmount = discountedSubtotal + shippingFee;
     const orderId = `ub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const razorpayOrderId = `order_fallback_${Math.random().toString(36).slice(2, 12)}`;
 

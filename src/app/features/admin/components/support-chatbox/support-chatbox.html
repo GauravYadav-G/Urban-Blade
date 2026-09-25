@@ -1,0 +1,488 @@
+<div class="support-backdrop" (click)="onClose()">
+  <div class="support-modal-container" (click)="$event.stopPropagation()">
+    
+    <!-- Top Header -->
+    <header class="support-header">
+      <div class="header-info">
+        <div class="brand-pill">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          <span>Urban AI Concierge & Master Live Desk</span>
+          <span class="live-sync-indicator" title="Connected to PostgreSQL live support engine">
+            <span class="live-beacon"></span>
+            <span>LIVE SYNC</span>
+          </span>
+        </div>
+        <h2>Customer Inquiries & Live Support Hub</h2>
+        <p>Real-time bidirectional synchronization with storefront "Ask Urban AI", carrier logistics, and customer orders.</p>
+      </div>
+
+      <div class="header-actions">
+        <button 
+          type="button" 
+          class="btn-action-hub refresh" 
+          (click)="refreshLiveInquiries()" 
+          [disabled]="isRefreshing()"
+          title="Force refresh inquiries from PostgreSQL"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" [class.spin]="isRefreshing()">
+            <path d="M23 4v6h-6"></path>
+            <path d="M1 20v-6h6"></path>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+          <span>Refresh</span>
+        </button>
+
+        <button 
+          type="button" 
+          class="btn-action-hub new-ticket" 
+          (click)="isNewTicketModalOpen.set(true)"
+          title="Create a new customer or vendor support ticket"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>New Ticket</span>
+        </button>
+
+        <label class="toggle-autopilot" title="Toggle AI Auto-Pilot for incoming customer inquiries">
+          <input type="checkbox" [checked]="aiAutoPilot()" (change)="aiAutoPilot.set(!aiAutoPilot())" />
+          <span class="slider"></span>
+          <span class="label-text">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span>AI Auto-Pilot: <strong>{{ aiAutoPilot() ? 'ON' : 'OFF' }}</strong></span>
+          </span>
+        </label>
+
+        <button type="button" class="btn-close-hub" (click)="onClose()" title="Close Support Hub">✕</button>
+      </div>
+    </header>
+
+    <!-- Main Dual Pane Body -->
+    <div class="support-body">
+      
+      <!-- Left Sidebar: Inquiries List & Search -->
+      <aside class="inquiries-sidebar">
+        <!-- Search Bar -->
+        <div class="sidebar-search-box">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input 
+            type="text" 
+            [ngModel]="searchQuery()" 
+            (ngModelChange)="searchQuery.set($event)"
+            placeholder="Search name, email, order ID..." 
+          />
+          @if (searchQuery()) {
+            <button type="button" class="btn-clear-search" (click)="searchQuery.set('')">✕</button>
+          }
+        </div>
+
+        <!-- Filter Tabs -->
+        <div class="sidebar-filters">
+          <button 
+            type="button" 
+            class="filter-tab" 
+            [class.active]="filterStatus() === 'all'"
+            (click)="filterStatus.set('all')"
+          >
+            All ({{ admin.supportInquiries().length }})
+          </button>
+          <button 
+            type="button" 
+            class="filter-tab" 
+            [class.active]="filterStatus() === 'open'"
+            (click)="filterStatus.set('open')"
+          >
+            Open
+          </button>
+          <button 
+            type="button" 
+            class="filter-tab escalated" 
+            [class.active]="filterStatus() === 'escalated'"
+            (click)="filterStatus.set('escalated')"
+          >
+            Escalated @if (unreadEscalatedCount() > 0) { <span class="badge">{{ unreadEscalatedCount() }}</span> }
+          </button>
+          <button 
+            type="button" 
+            class="filter-tab" 
+            [class.active]="filterStatus() === 'ai_resolved'"
+            (click)="filterStatus.set('ai_resolved')"
+          >
+            AI Resolved
+          </button>
+          <button 
+            type="button" 
+            class="filter-tab" 
+            [class.active]="filterStatus() === 'closed'"
+            (click)="filterStatus.set('closed')"
+          >
+            Closed
+          </button>
+        </div>
+
+        <!-- Inquiries List -->
+        <div class="inquiries-list">
+          @for (inquiry of filteredInquiries(); track inquiry.id) {
+            <div 
+              class="inquiry-item" 
+              [class.active]="selectedInquiry()?.id === inquiry.id"
+              (click)="selectInquiry(inquiry.id)"
+            >
+              <div class="inq-item-top">
+                <span class="user-name">{{ inquiry.user_name }}</span>
+                <span class="priority-tag {{ inquiry.priority }}">{{ inquiry.priority | uppercase }}</span>
+              </div>
+              
+              <div class="inq-subject">{{ inquiry.subject }}</div>
+
+              <div class="inq-item-footer">
+                @if (inquiry.order_id) {
+                  <span class="ord-tag">#{{ inquiry.order_id.slice(0, 8).toUpperCase() }}</span>
+                }
+                @if (inquiry.vendor_name) {
+                  <span class="vendor-tag">{{ inquiry.vendor_name }}</span>
+                }
+                <span class="status-pill {{ inquiry.status }}">{{ inquiry.status.replace('_', ' ') | titlecase }}</span>
+              </div>
+            </div>
+          } @empty {
+            <div class="empty-inquiries">
+              <div class="ei-icon-wrap">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                </svg>
+              </div>
+              <p>No customer inquiries found.</p>
+            </div>
+          }
+        </div>
+      </aside>
+
+      <!-- Right Main: Active Inquiry Conversation -->
+      <main class="chat-thread-container">
+        @if (selectedInquiry(); as currentInquiry) {
+          <!-- Thread Top Bar -->
+          <div class="thread-header">
+            <div class="thread-user-meta">
+              <div class="user-avatar">
+                {{ currentInquiry.user_name.slice(0, 2).toUpperCase() }}
+              </div>
+              <div class="user-text">
+                <div class="name-row">
+                  <h3>{{ currentInquiry.user_name }}</h3>
+                  <span class="inquiry-id-tag">{{ currentInquiry.id }}</span>
+                </div>
+                <span class="user-email">{{ currentInquiry.user_email }}</span>
+              </div>
+            </div>
+
+            <div class="thread-context-meta">
+              @if (currentInquiry.order_id) {
+                <div class="meta-chip order-chip">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                  </svg>
+                  <span>Order: <strong>#{{ currentInquiry.order_id.slice(0, 8).toUpperCase() }}</strong></span>
+                </div>
+              }
+              @if (currentInquiry.vendor_name) {
+                <div class="meta-chip">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                    <line x1="7" y1="7" x2="7.01" y2="7"></line>
+                  </svg>
+                  <span>Vendor: <strong>{{ currentInquiry.vendor_name }}</strong></span>
+                </div>
+              }
+
+              <!-- Status Dropdown -->
+              <div class="status-selector">
+                <label>Status:</label>
+                <select 
+                  [value]="currentInquiry.status" 
+                  (change)="changeStatus(currentInquiry.id, $any($event.target).value)"
+                  class="select-status {{ currentInquiry.status }}"
+                >
+                  <option value="open">Open</option>
+                  <option value="ai_resolved">AI Resolved</option>
+                  <option value="escalated">Escalated</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </div>
+
+              <!-- Delete Button -->
+              <button 
+                type="button" 
+                class="btn-delete-inquiry" 
+                (click)="deleteInquiry(currentInquiry.id)"
+                title="Delete inquiry record from PostgreSQL"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Action Assistant Prompts -->
+          <div class="quick-actions-bar">
+            <span class="qa-label">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+              </svg>
+              <span>AI Fast Assist:</span>
+            </span>
+            <button type="button" class="btn-qa" (click)="quickAction('track')" [disabled]="isGeneratingAi()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              </svg>
+              <span>Live Tracking</span>
+            </button>
+            <button type="button" class="btn-qa" (click)="quickAction('policy')" [disabled]="isGeneratingAi()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+              <span>Warranty & Policy</span>
+            </button>
+            <button type="button" class="btn-qa" (click)="quickAction('stylist')" [disabled]="isGeneratingAi()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="6" cy="6" r="3"></circle>
+                <circle cx="6" cy="18" r="3"></circle>
+                <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+                <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+                <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+              </svg>
+              <span>Salon Booking</span>
+            </button>
+            <button type="button" class="btn-qa ai-sparkle-btn" (click)="draftAiReply()" [disabled]="isGeneratingAi()">
+              @if (isGeneratingAi()) {
+                <span class="spin">⟳</span>
+                <span>Synthesizing...</span>
+              } @else {
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                <span>Draft with AI</span>
+              }
+            </button>
+          </div>
+
+          <!-- Messages Scrollable Body -->
+          <div class="messages-viewport" #messagesViewport>
+            <!-- Initial Inquiry Banner -->
+            <div class="inquiry-subject-banner">
+              <span class="banner-title">Subject: {{ currentInquiry.subject }}</span>
+              <span class="banner-time">{{ currentInquiry.created_at | date:'medium' }}</span>
+            </div>
+
+            @for (msg of currentInquiry.messages; track msg.id) {
+              <div class="message-row {{ msg.sender }}">
+                @if (msg.sender === 'ai') {
+                  <div class="msg-avatar ai-avatar">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                  </div>
+                } @else if (msg.sender === 'user') {
+                  <div class="msg-avatar user-avatar-small">{{ currentInquiry.user_name.slice(0, 1) }}</div>
+                }
+
+                <div class="message-bubble {{ msg.sender }}">
+                  <div class="bubble-header">
+                    @if (msg.sender === 'ai') {
+                      <span class="sender-label ai-label">Urban AI Concierge</span>
+                    } @else if (msg.sender === 'user') {
+                      <span class="sender-label user-label">{{ currentInquiry.user_name }}</span>
+                    } @else {
+                      <span class="sender-label admin-label">Master Support Specialist</span>
+                    }
+                    <span class="bubble-time">{{ msg.timestamp | date:'shortTime' }}</span>
+                  </div>
+                  <div class="bubble-content">{{ msg.text }}</div>
+                </div>
+
+                @if (msg.sender === 'admin') {
+                  <div class="msg-avatar admin-avatar">UB</div>
+                }
+              </div>
+            }
+
+            @if (isGeneratingAi()) {
+              <div class="message-row ai">
+                <div class="msg-avatar ai-avatar">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                  </svg>
+                </div>
+                <div class="message-bubble ai typing-indicator">
+                  <span>AI Concierge is analyzing context & orders</span>
+                  <div class="typing-dots">
+                    <span>.</span><span>.</span><span>.</span>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+
+          <!-- Bottom Reply Input Bar -->
+          <footer class="thread-reply-footer">
+            <div class="reply-input-wrapper">
+              <textarea 
+                rows="2" 
+                [ngModel]="replyText()" 
+                (ngModelChange)="replyText.set($event)"
+                placeholder="Type response to customer or click 'Draft with AI'..."
+                (keydown.enter)="handleEnterKey($event)"
+              ></textarea>
+            </div>
+
+            <div class="reply-actions">
+              <button 
+                type="button" 
+                class="btn-trigger-ai"
+                (click)="triggerAiReply()"
+                [disabled]="isGeneratingAi()"
+                title="Let AI synthesize and auto-send answer to customer"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                <span>Auto-Respond via AI</span>
+              </button>
+
+              <button 
+                type="button" 
+                class="btn-send-admin"
+                (click)="sendAdminMessage()"
+                [disabled]="!replyText().trim()"
+              >
+                <span>Send as Specialist</span>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </button>
+            </div>
+          </footer>
+        } @else {
+          <div class="no-selection-state">
+            <div class="ns-icon-wrap">
+              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </div>
+            <h3>No Inquiry Selected</h3>
+            <p>Select an inquiry from the left panel or click "New Ticket" to start a live thread.</p>
+          </div>
+        }
+      </main>
+
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Create New Ticket -->
+@if (isNewTicketModalOpen()) {
+  <div class="sub-modal-backdrop" (click)="isNewTicketModalOpen.set(false)">
+    <div class="sub-modal-card" (click)="$event.stopPropagation()">
+      <div class="sub-modal-header">
+        <div class="smh-title">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <h3>Open Master Support Ticket</h3>
+        </div>
+        <button type="button" class="btn-close-sub" (click)="isNewTicketModalOpen.set(false)">✕</button>
+      </div>
+
+      <form (ngSubmit)="submitNewTicket()" class="sub-modal-form">
+        <div class="form-row">
+          <label>Customer / Contact Name *</label>
+          <input 
+            type="text" 
+            [ngModel]="newUserName()" 
+            (ngModelChange)="newUserName.set($event)" 
+            name="newUserName" 
+            placeholder="e.g. Vikram Sharma" 
+            required 
+          />
+        </div>
+
+        <div class="form-row">
+          <label>Customer Email *</label>
+          <input 
+            type="email" 
+            [ngModel]="newUserEmail()" 
+            (ngModelChange)="newUserEmail.set($event)" 
+            name="newUserEmail" 
+            placeholder="customer@example.com" 
+            required 
+          />
+        </div>
+
+        <div class="form-row">
+          <label>Subject / Problem Statement *</label>
+          <input 
+            type="text" 
+            [ngModel]="newSubject()" 
+            (ngModelChange)="newSubject.set($event)" 
+            name="newSubject" 
+            placeholder="e.g. Tracking inquiry for dispatched order" 
+            required 
+          />
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-row">
+            <label>Associated Order ID (optional)</label>
+            <input 
+              type="text" 
+              [ngModel]="newOrderId()" 
+              (ngModelChange)="newOrderId.set($event)" 
+              name="newOrderId" 
+              placeholder="e.g. ord-ub-98214" 
+            />
+          </div>
+
+          <div class="form-row">
+            <label>Priority</label>
+            <select [ngModel]="newPriority()" (ngModelChange)="newPriority.set($event)" name="newPriority">
+              <option value="low">Low Priority</option>
+              <option value="medium">Medium Priority</option>
+              <option value="high">High Priority (Urgent)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label>Initial Message / Admin Note</label>
+          <textarea 
+            rows="3" 
+            [ngModel]="newInitialMessage()" 
+            (ngModelChange)="newInitialMessage.set($event)" 
+            name="newInitialMessage" 
+            placeholder="Describe the inquiry or write the first message..."
+          ></textarea>
+        </div>
+
+        <div class="sub-modal-actions">
+          <button type="button" class="btn-cancel" (click)="isNewTicketModalOpen.set(false)">Cancel</button>
+          <button type="submit" class="btn-create-submit" [disabled]="!newUserName().trim() || !newUserEmail().trim() || !newSubject().trim()">
+            Create Ticket & Sync
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+}

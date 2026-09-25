@@ -1,4 +1,17 @@
 <div class="admin-shell">
+  <!-- Vendor Impersonation Top Banner -->
+  @if (account.isImpersonatingVendor()) {
+    <div class="vendor-impersonation-banner">
+      <div class="banner-content">
+        <span class="banner-badge">👁️ VENDOR PORTAL PREVIEW</span>
+        <span class="banner-text">Viewing restricted merchant environment as: <strong>{{ account.activeVendorName() }}</strong></span>
+      </div>
+      <button type="button" class="btn-exit-preview" (click)="account.exitVendorPreview()">
+        Exit Preview & Return to Master Admin ✕
+      </button>
+    </div>
+  }
+
   <!-- Top Command Bar -->
   <header class="admin-topbar">
     <div class="topbar-left">
@@ -6,7 +19,7 @@
         <div class="crest-emblem">UB</div>
         <div class="crest-details">
           <span class="crest-text">URBAN BLADE</span>
-          <span class="crest-tag">STUDIO OS</span>
+          <span class="crest-tag">{{ account.isVendor() ? (account.activeVendorName() || 'VENDOR OS') : 'STUDIO OS' }}</span>
         </div>
       </a>
 
@@ -14,7 +27,7 @@
         <span class="bc-sep">/</span>
         <span class="bc-root">Console</span>
         <span class="bc-sep">/</span>
-        <span class="bc-active">Operations</span>
+        <span class="bc-active">{{ account.isVendor() ? 'Vendor Portal' : 'Master Operations' }}</span>
       </div>
     </div>
 
@@ -24,12 +37,34 @@
         <circle cx="11" cy="11" r="8"/>
         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      <input type="text" placeholder="Search orders, catalog, bookings, clients..." aria-label="Global admin search" />
-      <kbd class="shortcut-key">⌘K</kbd>
+      <input
+        #searchInput
+        type="text"
+        placeholder="Search orders, catalog, tasks, inquiries..."
+        aria-label="Global admin search"
+        [ngModel]="globalSearchQuery()"
+        (ngModelChange)="globalSearchQuery.set($event)"
+        (keyup.enter)="onGlobalSearch()"
+      />
+      <kbd class="shortcut-key" (click)="searchInput.focus()">⌘K</kbd>
     </div>
 
     <!-- Right Controls -->
     <div class="topbar-right">
+      <!-- AI Support Desk Trigger Button -->
+      <button 
+        type="button" 
+        class="btn-support-desk" 
+        (click)="isSupportChatOpen.set(true)" 
+        title="Open Support Desk & AI Concierge"
+      >
+        <span class="sparkle-icon">✨</span>
+        <span class="desk-label">AI Support Desk</span>
+        @if (supportInquiryCount() > 0) {
+          <span class="support-unread-pill">{{ supportInquiryCount() }}</span>
+        }
+      </button>
+
       <div class="session-status-pill" [class.warning]="session.isWarning()" title="Session auto-locks after 15m of inactivity">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
           <circle cx="12" cy="12" r="10"></circle>
@@ -48,13 +83,15 @@
         <span class="cluster-text">Cluster Synced</span>
       </div>
 
-      <button type="button" class="btn-flush" (click)="admin.flushCache()" [disabled]="admin.isSyncing()" title="Purge Redis L2 cache">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" [class.spin]="admin.isSyncing()">
-          <path d="M23 4v6h-6M1 20v-6h6"/>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-        </svg>
-        <span>{{ admin.isSyncing() ? 'Flushing...' : 'Purge Cache' }}</span>
-      </button>
+      @if (!account.isVendor()) {
+        <button type="button" class="btn-flush" (click)="admin.flushCache()" [disabled]="admin.isSyncing()" title="Purge Redis L2 cache">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" [class.spin]="admin.isSyncing()">
+            <path d="M23 4v6h-6M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          <span>{{ admin.isSyncing() ? 'Flushing...' : 'Purge Cache' }}</span>
+        </button>
+      }
 
       <a routerLink="/shop" class="btn-storefront" target="_blank" title="View live storefront">
         <span>Storefront</span>
@@ -69,17 +106,17 @@
           <span class="online-dot"></span>
         </div>
         <div class="profile-copy">
-          <span class="profile-name">{{ account.user()?.name || 'Administrator' }}</span>
-          <span class="profile-role">Master Admin</span>
+          <span class="profile-name">{{ account.user()?.name || (account.isVendor() ? account.activeVendorName() : 'Administrator') }}</span>
+          <span class="profile-role">{{ account.isVendor() ? 'Vendor Merchant' : 'Master Admin' }}</span>
         </div>
       </div>
 
-      <button type="button" class="btn-lock" (click)="onSignOut()" title="Lock console and sign out">
+      <button type="button" class="btn-lock" (click)="onSignOut()" [title]="account.isImpersonatingVendor() ? 'Exit preview' : 'Lock console and sign out'">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
           <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
-        <span>Lock</span>
+        <span>{{ account.isImpersonatingVendor() ? 'Exit' : 'Lock' }}</span>
       </button>
     </div>
   </header>
@@ -89,16 +126,16 @@
     <!-- Left Sidebar -->
     <aside class="admin-sidebar">
       <div class="studio-selector">
-        <div class="studio-icon">💈</div>
+        <div class="studio-icon">{{ account.isVendor() ? '🏢' : '💈' }}</div>
         <div class="studio-info">
-          <span class="studio-title">Urban Blade Studio</span>
-          <span class="studio-branch">Ghaziabad · Main Studio</span>
+          <span class="studio-title">{{ account.isVendor() ? (account.activeVendorName() || 'Vendor Merchant') : 'Urban Blade Studio' }}</span>
+          <span class="studio-branch">{{ account.isVendor() ? 'Authorized Vendor Account' : 'Ghaziabad · Main Studio' }}</span>
         </div>
-        <span class="studio-badge">PRO</span>
+        <span class="studio-badge">{{ account.isVendor() ? 'VENDOR' : 'PRO' }}</span>
       </div>
 
       <nav class="sidebar-nav-groups">
-        @for (sec of navSections; track sec.title) {
+        @for (sec of visibleNavSections(); track sec.title) {
           <div class="sidebar-group">
             <div class="sidebar-section-title">{{ sec.title }}</div>
             <div class="sidebar-group-items">
@@ -139,6 +176,11 @@
       </div>
     </main>
   </div>
+
+  <!-- AI Support Chatbox Hub Modal -->
+  @if (isSupportChatOpen()) {
+    <app-support-chatbox (close)="isSupportChatOpen.set(false)" />
+  }
 
   <app-toast-container />
 </div>

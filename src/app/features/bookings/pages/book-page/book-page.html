@@ -1,24 +1,208 @@
-<h1>Book a visit</h1>
-<p class="lede">{{ settings().business.address }} · {{ settings().business.hours }} · {{ settings().business.phoneDisplay }}</p>
+<div class="book-page-shell">
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       HERO HEADER (CENTERED)
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <header class="book-hero">
+    <div class="kicker-pill">
+      <span class="sparkle">✦</span>
+      <span>MASTER BARBER SERVICES & RESERVATIONS</span>
+    </div>
+    <h1>Book a Studio Visit</h1>
+    <p class="lede">
+      Experience precision skin-fades, beard sculpting, and executive scalp therapies at our flagship studio.
+    </p>
+  </header>
 
-@if (submitted) {
-  <section class="card">
-    <h2>Request sent</h2>
-    <p>The Urban Blade team will call to lock your slot. For same-day, call {{ settings().business.phoneDisplay }}.</p>
-  </section>
-} @else {
-  <form class="card" [formGroup]="form" (ngSubmit)="submit()">
-    <label>Name <input formControlName="name" /></label>
-    <label>Mobile <input formControlName="phone" /></label>
-    <label>
-      Service
-      <select formControlName="service">
-        @for (svc of services; track svc.id) {
-          <option [value]="svc.name">{{ svc.name }} — in salon</option>
-        }
-      </select>
-    </label>
-    <label>Preferred date <input type="date" formControlName="date" /></label>
-    <button type="submit">Send booking request</button>
-  </form>
-}
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       TWO-COLUMN BALANCED BOOKING LAYOUT
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="book-grid">
+    <!-- Left Column: Venue & Concierge Details -->
+    <aside class="venue-card card">
+      <div class="venue-header">
+        <div class="venue-emblem">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6 3h12l4 6-10 13L2 9z"></path>
+            <path d="M11 3L8 9l4 13 4-13-3-6"></path>
+          </svg>
+        </div>
+        <div>
+          <span class="venue-kicker">FLAGSHIP SALON STUDIO</span>
+          <h3>Urban Blade Grooming Studio</h3>
+        </div>
+      </div>
+
+      <div class="venue-details-list">
+        <div class="venue-detail-item">
+          <div class="vdi-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+              <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+          </div>
+          <div class="vdi-text">
+            <strong>Studio Location</strong>
+            <p>{{ settings().business.address }}</p>
+          </div>
+        </div>
+
+        <div class="venue-detail-item">
+          <div class="vdi-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+          <div class="vdi-text">
+            <strong>Operating Hours</strong>
+            <p>{{ settings().business.hours }}</p>
+          </div>
+        </div>
+
+        <div class="venue-detail-item">
+          <div class="vdi-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+            </svg>
+          </div>
+          <div class="vdi-text">
+            <strong>Concierge Direct Desk</strong>
+            <p>{{ settings().business.phoneDisplay }}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="venue-perks">
+        <h4>Studio Privileges:</h4>
+        <ul>
+          <li>✓ Certified Master Barbers with 10+ years craft experience</li>
+          <li>✓ Japanese steel clippers sterilized in medical autoclaves</li>
+          <li>✓ Complimentary espresso & scalp diagnostic session</li>
+          <li>✓ Guaranteed chair timing with zero waiting buffer</li>
+        </ul>
+      </div>
+
+      <div class="urgent-call-box">
+        <span>Need a same-day appointment?</span>
+        <a [href]="'tel:' + settings().business.phoneTel" class="btn-call-desk">
+          Call Studio Desk: {{ settings().business.phoneDisplay }}
+        </a>
+      </div>
+    </aside>
+
+    <!-- Right Column: Booking Form or Confirmation -->
+    <main class="booking-main">
+      @if (submitted) {
+        <section class="card success-card">
+          <div class="success-icon-wrap">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+
+          <h2>Booking Request Dispatched!</h2>
+          <p class="success-sub">
+            Thank you, <strong>{{ lastBooking?.customer_name }}</strong>. Your reservation request for 
+            <strong>{{ lastBooking?.notes }}</strong> has been registered in our studio queue.
+          </p>
+
+          <div class="booking-summary-pill">
+            <div class="bsp-item">
+              <span class="bsp-label">Date</span>
+              <strong>{{ lastBooking?.booking_date }}</strong>
+            </div>
+            <div class="bsp-item">
+              <span class="bsp-label">Slot</span>
+              <strong>{{ lastBooking?.time_slot }}</strong>
+            </div>
+            <div class="bsp-item">
+              <span class="bsp-label">Stylist</span>
+              <strong>{{ lastBooking?.stylist_name }}</strong>
+            </div>
+          </div>
+
+          <p class="confirmation-hint">
+            The studio concierge will call <strong>{{ lastBooking?.customer_phone }}</strong> within 15 minutes to lock in your slot.
+          </p>
+
+          <div class="success-actions">
+            <a routerLink="/account" [queryParams]="{ tab: 'bookings' }" class="btn-primary">
+              View In Client Portal
+            </a>
+            <button type="button" class="btn-secondary" (click)="reset()">
+              Book Another Service
+            </button>
+          </div>
+        </section>
+      } @else {
+        <section class="card form-card">
+          <div class="form-header">
+            <h2>Reserve Your Chair</h2>
+            <p>Select your styling service and preferred date. We will hold your spot.</p>
+          </div>
+
+          <form [formGroup]="form" (ngSubmit)="submit()" class="booking-form">
+            <div class="form-group">
+              <label for="client-name">Full Name *</label>
+              <input 
+                id="client-name" 
+                type="text" 
+                formControlName="name" 
+                placeholder="e.g. Rahul Sharma" 
+              />
+              @if (form.controls.name.invalid && form.controls.name.touched) {
+                <span class="field-error">Please enter your full name.</span>
+              }
+            </div>
+
+            <div class="form-group">
+              <label for="client-phone">Mobile Phone (10 digits) *</label>
+              <input 
+                id="client-phone" 
+                type="tel" 
+                formControlName="phone" 
+                placeholder="e.g. 9876543210" 
+                maxlength="10" 
+              />
+              @if (form.controls.phone.invalid && form.controls.phone.touched) {
+                <span class="field-error">Valid 10-digit mobile number required for SMS verification.</span>
+              }
+            </div>
+
+            <div class="form-group">
+              <label for="service-select">Select Salon Service *</label>
+              <select id="service-select" formControlName="service">
+                @for (svc of services; track svc.id) {
+                  <option [value]="svc.name">{{ svc.name }} — ₹{{ svc.price }} (In Salon)</option>
+                }
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="service-date">Preferred Date *</label>
+              <input 
+                id="service-date" 
+                type="date" 
+                formControlName="date" 
+              />
+              @if (form.controls.date.invalid && form.controls.date.touched) {
+                <span class="field-error">Please select your preferred visit date.</span>
+              }
+            </div>
+
+            <div class="form-footer">
+              <button type="submit" class="btn-submit" [disabled]="form.invalid">
+                <span>Confirm Booking Request</span>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </button>
+              <span class="form-privacy-note">🔒 Zero payment required upfront. Settle in studio after service.</span>
+            </div>
+          </form>
+        </section>
+      }
+    </main>
+  </div>
+</div>

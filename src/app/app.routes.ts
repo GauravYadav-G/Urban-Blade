@@ -1,4 +1,5 @@
-import { Routes } from '@angular/router';
+import { inject } from '@angular/core';
+import { Router, Routes } from '@angular/router';
 import { authGuard } from '@core/guards/auth.guard';
 import { guestGuard } from '@core/guards/guest.guard';
 import { adminGuard } from '@core/guards/admin.guard';
@@ -25,6 +26,11 @@ export const routes: Routes = [
         path: 'products',
         loadComponent: () =>
           import('./features/admin/pages/admin-products/admin-products').then((m) => m.AdminProducts),
+      },
+      {
+        path: 'vendors',
+        loadComponent: () =>
+          import('./features/admin/pages/admin-vendors/admin-vendors').then((m) => m.AdminVendors),
       },
       {
         path: 'orders',
@@ -113,6 +119,11 @@ export const routes: Routes = [
           import('./features/account/pages/account-page/account-page').then((m) => m.AccountPage),
       },
       {
+        path: 'dashboard',
+        redirectTo: 'account',
+        pathMatch: 'full',
+      },
+      {
         path: 'lists',
         loadComponent: () =>
           import('./features/account/pages/list-page/list-page').then((m) => m.ListPage),
@@ -129,9 +140,12 @@ export const routes: Routes = [
       },
       {
         path: 'orders',
-        canActivate: [authGuard],
+        canActivate: [() => {
+          const router = inject(Router);
+          return router.createUrlTree(['/account'], { queryParams: { tab: 'orders' } });
+        }],
         loadComponent: () =>
-          import('./features/orders/pages/orders-page/orders-page').then((m) => m.OrdersPage),
+          import('./features/account/pages/account-page/account-page').then((m) => m.AccountPage),
       },
       {
         path: 'book',

@@ -288,6 +288,10 @@ export class CheckoutPage implements OnInit {
     const val = this.form.getRawValue();
     const cleanPhone = val.phone.replace(/\D/g, '').slice(-10);
 
+    const currentUser = this.account.user();
+    const customerEmail = currentUser?.email || 'customer@urbanblade.in';
+    const userId = currentUser?.email || undefined;
+
     const items = this.cart.lines().map((line) => ({
       productId: line.productId,
       slug: (line as any).slug || line.productId.replace(/^(hc|bd|sk|tl|gf|sv)-/, ''),
@@ -299,6 +303,7 @@ export class CheckoutPage implements OnInit {
       phone: cleanPhone,
       street: val.address,
       city: val.city || 'Ghaziabad',
+      email: customerEmail,
     };
 
     // Save custom address to profile if requested
@@ -322,7 +327,7 @@ export class CheckoutPage implements OnInit {
 
     if (val.payment === 'cod') {
       // 1-Click Cash on Delivery
-      this.paymentService.placeCodOrder({ items, shippingAddress, couponCode, discountAmount }).subscribe({
+      this.paymentService.placeCodOrder({ items, shippingAddress, userId, couponCode, discountAmount }).subscribe({
         next: (receipt) => {
           this.isInitiating.set(false);
           this.toast.success(`🎉 COD Order #${receipt.receiptNumber} confirmed in Neon PostgreSQL!`);
@@ -338,7 +343,7 @@ export class CheckoutPage implements OnInit {
     }
 
     // Official Razorpay Standard Checkout
-    this.paymentService.createRazorpayOrder({ items, shippingAddress, couponCode, discountAmount }).subscribe({
+    this.paymentService.createRazorpayOrder({ items, shippingAddress, userId, couponCode, discountAmount }).subscribe({
       next: (orderData) => {
         this.isInitiating.set(false);
         this.toast.info('Launching official Razorpay payment gateway...');
@@ -441,6 +446,7 @@ export class CheckoutPage implements OnInit {
         phone: receipt.shippingAddress.phone,
         city: receipt.shippingAddress.city || 'Ghaziabad',
         street: receipt.shippingAddress.street,
+        email: receipt.shippingAddress.email || this.account.user()?.email || 'customer@urbanblade.in',
       },
       created_at: receipt.confirmedAt,
       items: receipt.items.map((i) => ({

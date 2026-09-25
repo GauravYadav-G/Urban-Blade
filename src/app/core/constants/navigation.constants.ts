@@ -33,7 +33,7 @@ export const DEPARTMENT_SECTIONS: DrawerSection[] = [
     title: 'Help & settings',
     items: [
       { label: 'Your account', route: '/account' },
-      { label: 'Your orders', route: '/orders' },
+      { label: 'Your orders', route: '/account', query: { tab: 'orders' } },
       { label: 'Your basket', route: '/cart' },
       { label: 'Customer service', route: '/help' },
     ],

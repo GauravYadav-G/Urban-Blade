@@ -5,6 +5,27 @@ import { query, withTransaction } from '../../db/pool.js';
 import { enqueueOrderJob, OrderJobPayload } from '../../queue/order-saga.queue.js';
 import { config } from '../../config.js';
 
+function toValidUuidOrNull(val?: string | null): string | null {
+  if (!val || typeof val !== 'string') return null;
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+  return isUuid ? val.trim() : null;
+}
+
+async function resolveUserId(userId?: string | null, email?: string | null): Promise<string | null> {
+  const directUuid = toValidUuidOrNull(userId);
+  if (directUuid) return directUuid;
+  const targetEmail = (email || (userId && userId.includes('@') ? userId : null))?.trim().toLowerCase();
+  if (targetEmail) {
+    try {
+      const uRes = await query('SELECT id FROM users WHERE email ILIKE $1 LIMIT 1', [targetEmail]);
+      if (uRes.rows[0]?.id) return uRes.rows[0].id;
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
 export async function resolveAndVerifyItems(
   items: Array<{ productId: string; quantity: number }>,
   couponCode?: string,
@@ -165,6 +186,12 @@ export async function ordersRoutes(app: FastifyInstance) {
           }
         }
 
+        const effectiveAddress = {
+          ...shippingAddress,
+          email: (shippingAddress as any)?.email || (request.body as any)?.userEmail || 'customer@urbanblade.in',
+        };
+        const resolvedUserUuid = await resolveUserId(userId, effectiveAddress.email);
+
         // Insert order record
         await client.query(
           `
@@ -178,12 +205,12 @@ export async function ordersRoutes(app: FastifyInstance) {
           `,
           [
             orderId,
-            userId || null,
+            resolvedUserUuid,
             idempotencyKey,
             subtotal,
             shippingFee,
             totalAmount,
-            JSON.stringify(shippingAddress),
+            JSON.stringify(effectiveAddress),
             paymentMethod,
             `tx_init_${orderId.slice(0, 8)}`,
             cleanCoupon || null,
@@ -582,6 +609,12 @@ export async function ordersRoutes(app: FastifyInstance) {
           }
         }
 
+        const effectiveAddress = {
+          ...shippingAddress,
+          email: (shippingAddress as any).email || (request.body as any).userEmail || 'customer@urbanblade.in',
+        };
+        const resolvedUserUuid = await resolveUserId(userId, effectiveAddress.email);
+
         // Insert pending order
         await client.query(
           `INSERT INTO orders (
@@ -590,12 +623,12 @@ export async function ordersRoutes(app: FastifyInstance) {
           ) VALUES ($1, $2, $3, 'accepted', $4, $5, $6, 'INR', $7, 'Razorpay', 'pending', $8, $9, $10)`,
           [
             orderId,
-            userId || null,
+            resolvedUserUuid,
             razorpayOrderId,
             subtotal,
             shippingFee,
             totalAmount,
-            JSON.stringify(shippingAddress),
+            JSON.stringify(effectiveAddress),
             razorpayOrderId,
             cleanCoupon || null,
             validatedDiscount || 0,
@@ -765,6 +798,11 @@ export async function ordersRoutes(app: FastifyInstance) {
           }
         }
 
+        const effectiveAddress = {
+          ...shippingAddress,
+          email: (shippingAddress as any).email || (request.body as any).userEmail || 'customer@urbanblade.in',
+        };
+        const resolvedUserUuid = await resolveUserId(userId, effectiveAddress.email);
         const codTxId = `pay_cod_${orderId.slice(0, 8)}`;
         await client.query(
           `INSERT INTO orders (
@@ -773,12 +811,12 @@ export async function ordersRoutes(app: FastifyInstance) {
           ) VALUES ($1, $2, $3, 'confirmed', $4, $5, $6, 'INR', $7, 'Cash on Delivery', 'pending', $8, $9, $10)`,
           [
             orderId,
-            userId || null,
+            resolvedUserUuid,
             `cod-${orderId}`,
             subtotal,
             shippingFee,
             totalAmount,
-            JSON.stringify(shippingAddress),
+            JSON.stringify(effectiveAddress),
             codTxId,
             cleanCoupon || null,
             validatedDiscount || 0,
@@ -855,11 +893,65 @@ export async function ordersRoutes(app: FastifyInstance) {
   });
 
   // ─── GET USER ORDERS HISTORY ──────────────────────────────────────────────
-  app.get('/orders', async (request, reply) => {
+  app.get<{ Querystring: { email?: string; userId?: string } }>('/orders', async (request, reply) => {
+    const { email, userId } = request.query || {};
     try {
-      const res = await query('SELECT * FROM orders ORDER BY created_at DESC LIMIT 20');
-      return reply.send(res.rows);
-    } catch {
+      let sql = `
+        SELECT 
+          o.id, 
+          o.user_id,
+          o.status, 
+          o.subtotal::numeric, 
+          o.total_amount::numeric, 
+          o.discount_amount::numeric,
+          o.coupon_code,
+          o.tracking_number,
+          o.currency,
+          o.payment_method, 
+          o.payment_status, 
+          o.transaction_id,
+          o.shipping_address, 
+          o.created_at,
+          o.updated_at,
+          COALESCE(
+            json_agg(
+              json_build_object(
+                'id', oi.id,
+                'product_id', oi.product_id,
+                'product_name', oi.product_name,
+                'unit_price', oi.unit_price::numeric,
+                'quantity', oi.quantity,
+                'image_url', oi.image_url
+              )
+            ) FILTER (WHERE oi.id IS NOT NULL), '[]'
+          ) as items
+        FROM orders o
+        LEFT JOIN order_items oi ON oi.order_id = o.id
+      `;
+
+      const params: any[] = [];
+      if (email || userId) {
+        if (userId) {
+          params.push(userId);
+          sql += ` WHERE (o.user_id::text = $1 OR o.shipping_address::text ILIKE '%' || $1 || '%') `;
+        } else if (email) {
+          params.push(`%${email.trim()}%`);
+          sql += ` WHERE (o.shipping_address::text ILIKE $1 OR o.user_id::text ILIKE $1) `;
+        }
+      }
+
+      sql += ` GROUP BY o.id ORDER BY o.created_at DESC LIMIT 50; `;
+      const res = await query(sql, params);
+      const mapped = res.rows.map((r) => ({
+        ...r,
+        subtotal: Number(r.subtotal),
+        total_amount: Number(r.total_amount),
+        discount_amount: Number(r.discount_amount || 0),
+        shipping_address: typeof r.shipping_address === 'string' ? JSON.parse(r.shipping_address) : r.shipping_address,
+      }));
+      return reply.send(mapped);
+    } catch (err: any) {
+      request.log.error(err, 'Failed to fetch user orders');
       return reply.send([]);
     }
   });

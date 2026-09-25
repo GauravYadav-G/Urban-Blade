@@ -3,10 +3,12 @@ import { RouterOutlet } from '@angular/router';
 import { CartToast } from '../components/cart-toast/cart-toast';
 import { StoreFooter } from '../components/store-footer/store-footer';
 import { StoreHeader } from '../components/store-header/store-header';
+import { FloatingAiChatComponent } from '../../shared/components/floating-ai-chat/floating-ai-chat';
 
 @Component({
   selector: 'app-main-layout',
-  imports: [RouterOutlet, StoreHeader, StoreFooter, CartToast],
+  standalone: true,
+  imports: [RouterOutlet, StoreHeader, StoreFooter, CartToast, FloatingAiChatComponent],
   template: `
     <div class="shell" id="top">
       <app-store-header />
@@ -15,6 +17,9 @@ import { StoreHeader } from '../components/store-header/store-header';
       </main>
       <app-store-footer />
       <app-cart-toast />
+
+      <!-- Floating Real-Time AI Concierge Popup Window & Launcher -->
+      <app-floating-ai-chat />
     </div>
   `,
   styles: `
@@ -23,6 +28,7 @@ import { StoreHeader } from '../components/store-header/store-header';
       display: flex;
       flex-direction: column;
       width: 100%;
+      position: relative;
     }
     .shell__main {
       flex: 1;

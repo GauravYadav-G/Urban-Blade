@@ -1,4 +1,5 @@
 import { Component, inject } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { CatalogService } from '@core/services/catalog.service';
 import { AdminService, type AdminBooking } from '@core/services/admin.service';
@@ -7,7 +8,8 @@ import { SALON } from '@core/constants/salon.constants';
 
 @Component({
   selector: 'app-book-page',
-  imports: [ReactiveFormsModule],
+  standalone: true,
+  imports: [ReactiveFormsModule, RouterLink],
   templateUrl: './book-page.html',
   styleUrl: './book-page.scss',
 })
@@ -21,6 +23,7 @@ export class BookPage {
   readonly settings = this.siteSettings.settings;
   readonly services = this.catalog.byCategory('services');
   submitted = false;
+  lastBooking: AdminBooking | null = null;
 
   readonly form = this.fb.nonNullable.group({
     name: ['', Validators.required],
@@ -36,7 +39,7 @@ export class BookPage {
     }
 
     const val = this.form.getRawValue();
-    const serviceMatch = this.services.find((s) => s.name === val.service);
+    const serviceMatch = this.services.find((s: any) => s.name === val.service);
 
     const booking: AdminBooking = {
       id: `bk-ub-${Date.now().toString().slice(-5)}`,
@@ -52,6 +55,18 @@ export class BookPage {
     };
 
     this.admin.addBooking(booking);
+    this.lastBooking = booking;
     this.submitted = true;
+  }
+
+  reset(): void {
+    this.submitted = false;
+    this.lastBooking = null;
+    this.form.reset({
+      name: '',
+      phone: '',
+      service: this.services[0]?.name ?? 'Skin-Fade Haircut & Beard Trim',
+      date: '',
+    });
   }
 }

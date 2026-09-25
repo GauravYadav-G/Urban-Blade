@@ -123,6 +123,13 @@
   }
 }
 
+.filters-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .filter-pills {
   display: flex;
   gap: 0.35rem;
@@ -152,6 +159,60 @@
       font-weight: 700;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
     }
+  }
+}
+
+.stock-pills {
+  display: flex;
+  gap: 0.35rem;
+  background: #f8fafc;
+  padding: 0.25rem;
+  border-radius: 9999px;
+  border: 1px solid #e2e8f0;
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: transparent;
+    border: none;
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.32rem 0.75rem;
+    border-radius: 9999px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    .sp-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    &:hover {
+      color: #0f172a;
+    }
+
+    &.active {
+      background: #ffffff;
+      color: #0f172a;
+      font-weight: 700;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+  }
+
+  .sp-instock .sp-dot {
+    background: #10b981;
+  }
+
+  .sp-low .sp-dot {
+    background: #f59e0b;
+  }
+
+  .sp-out .sp-dot {
+    background: #ef4444;
   }
 }
 
@@ -268,8 +329,9 @@
 
 .price-cell {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.4rem;
+  flex-wrap: wrap;
 }
 
 .price-now {
@@ -281,6 +343,17 @@
   font-size: 0.75rem;
   color: #64748b;
   text-decoration: line-through;
+}
+
+.discount-badge-table {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #dc2626;
+  background: #fef2f2;
+  border: 1px solid #fee2e2;
+  padding: 0.12rem 0.38rem;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
 }
 
 // ─── STOCK STEPPER ──────────────────────────────────────────────────────────

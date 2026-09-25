@@ -13,6 +13,49 @@ const seedProducts: any[] = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, '../../db/products.seed.json'), 'utf-8')
 );
 
+function formatProduct(p: any) {
+  const stockQty = Number(p.stock_quantity ?? p.stockQuantity ?? 100);
+  const inStockVal = Boolean(p.in_stock ?? p.inStock ?? (stockQty > 0));
+  const compareAt = p.compare_at_price != null ? Number(p.compare_at_price) : (p.compareAtPrice != null ? Number(p.compareAtPrice) : null);
+  const img = p.image_url || p.imageUrl || '/images/products/hc-shampoo.jpg';
+  const freeDel = p.free_delivery ?? p.freeDelivery ?? true;
+  const reviews = Number(p.review_count ?? p.reviewCount ?? 0);
+  const rate = Number(p.rating ?? 5.0);
+
+  return {
+    ...p,
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
+    description: p.description,
+    longDescription: p.long_description || p.longDescription || p.description || '',
+    long_description: p.long_description || p.longDescription || p.description || '',
+    highlights: Array.isArray(p.highlights)
+      ? p.highlights
+      : (typeof p.highlights === 'string' ? JSON.parse(p.highlights) : ['Salon Grade', 'Premium Formula']),
+    price: Number(p.price),
+    compareAtPrice: compareAt,
+    compare_at_price: compareAt,
+    currency: p.currency || 'INR',
+    imageUrl: img,
+    image_url: img,
+    category: p.category || 'hair',
+    kind: p.kind || 'retail',
+    vendor: p.vendor || 'Urban Blade Lab',
+    audience: p.audience || 'unisex',
+    freeDelivery: freeDel,
+    free_delivery: freeDel,
+    rating: rate,
+    reviewCount: reviews,
+    review_count: reviews,
+    badge: p.badge,
+    inStock: inStockVal,
+    in_stock: inStockVal,
+    stockQuantity: stockQty,
+    stock_quantity: stockQty,
+  };
+}
+
 export async function productsRoutes(app: FastifyInstance) {
   // ─── GET ALL PRODUCTS (FILTERED, PAGINATED, CACHED) ────────────────────────
   app.get<{
@@ -82,7 +125,7 @@ export async function productsRoutes(app: FastifyInstance) {
           const res = await query(sql, values);
           if (res.rows.length > 0) {
             return {
-              data: res.rows,
+              data: res.rows.map(formatProduct),
               page: pageNum,
               limit: limitNum,
               source: 'postgres-cache-ahead',
@@ -95,7 +138,7 @@ export async function productsRoutes(app: FastifyInstance) {
         // Memory Fallback Filter
         let list = [...seedProducts];
         if (cat && cat !== 'all') list = list.filter((p) => p.category === cat);
-        if (deals === 'true') list = list.filter((p) => p.compareAtPrice && p.compareAtPrice > p.price);
+        if (deals === 'true') list = list.filter((p) => (p.compare_at_price || p.compareAtPrice) && (p.compare_at_price || p.compareAtPrice) > p.price);
         if (audience && audience !== 'all') list = list.filter((p) => p.audience === audience || p.audience === 'unisex');
         if (q && q.trim()) {
           const lower = q.toLowerCase();
@@ -103,7 +146,7 @@ export async function productsRoutes(app: FastifyInstance) {
         }
 
         return {
-          data: list.slice(0, 30),
+          data: list.slice(0, 30).map(formatProduct),
           page: 1,
           limit: 30,
           source: 'seed-memory-fallback',
@@ -126,9 +169,9 @@ export async function productsRoutes(app: FastifyInstance) {
           const res = await query(
             `SELECT * FROM products WHERE compare_at_price > price ORDER BY (compare_at_price - price) DESC LIMIT 12`
           );
-          if (res.rows.length > 0) return res.rows;
+          if (res.rows.length > 0) return res.rows.map(formatProduct);
         } catch {}
-        return seedProducts.filter((p) => p.compareAtPrice && p.compareAtPrice > p.price).slice(0, 12);
+        return seedProducts.filter((p) => (p.compare_at_price || p.compareAtPrice) && (p.compare_at_price || p.compareAtPrice) > p.price).slice(0, 12).map(formatProduct);
       },
       { ttlSeconds: 300 }
     );
@@ -143,9 +186,9 @@ export async function productsRoutes(app: FastifyInstance) {
       async () => {
         try {
           const res = await query(`SELECT * FROM products ORDER BY review_count DESC LIMIT 12`);
-          if (res.rows.length > 0) return res.rows;
+          if (res.rows.length > 0) return res.rows.map(formatProduct);
         } catch {}
-        return [...seedProducts].sort((a, b) => b.reviewCount - a.reviewCount).slice(0, 12);
+        return [...seedProducts].sort((a, b) => (b.review_count || b.reviewCount || 0) - (a.review_count || a.reviewCount || 0)).slice(0, 12).map(formatProduct);
       },
       { ttlSeconds: 300 }
     );
@@ -166,9 +209,10 @@ export async function productsRoutes(app: FastifyInstance) {
             `SELECT * FROM products WHERE slug = $1 OR id::text = $1 LIMIT 1`,
             [idOrSlug]
           );
-          if (res.rows.length > 0) return res.rows[0];
+          if (res.rows.length > 0) return formatProduct(res.rows[0]);
         } catch {}
-        return seedProducts.find((p) => p.id === idOrSlug || p.slug === idOrSlug) || null;
+        const match = seedProducts.find((p) => p.id === idOrSlug || p.slug === idOrSlug);
+        return match ? formatProduct(match) : null;
       },
       { ttlSeconds: 600 }
     );

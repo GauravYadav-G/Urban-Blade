@@ -1,34 +1,91 @@
-<section class="help">
-  <header class="help__intro">
-    <p class="kicker">Help</p>
-    <h1>Help with Urban Blade products</h1>
+<div class="help-page-shell">
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       HERO HEADER (CENTERED)
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <header class="help-hero">
+    <div class="kicker-pill">
+      <span class="sparkle">✦</span>
+      <span>CLIENT ASSISTANCE & USAGE GUIDES</span>
+    </div>
+    <h1>Help with Urban Blade Products</h1>
     <p class="lede">
-      {{ salon.name }} is a salon store in {{ salon.city }}. We sell the hair, beard, skin, and
-      tools used on the floor, plus gift cards and chair services at {{ salon.address }}.
+      {{ salon.name }} is a luxury salon studio in {{ salon.city }}. We offer professional-grade formulas,
+      hair styling tools, gift cards, and precision chair services at {{ salon.address }}.
     </p>
   </header>
 
-  <section class="block" aria-labelledby="shop-heading">
-    <h2 id="shop-heading">Shop by product</h2>
-    <div class="departments">
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       AI CONCIERGE & PORTAL SHORTCUTS BANNER
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="concierge-strip card">
+    <div class="cs-left">
+      <div class="cs-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+      </div>
+      <div class="cs-text">
+        <strong>Looking for Order Tracking or Immediate Support?</strong>
+        <p>Chat directly with our 24/7 AI Concierge or check your live dispatches in the Client Portal.</p>
+      </div>
+    </div>
+    <div class="cs-actions">
+      <a routerLink="/support" class="btn-primary">Launch AI Support</a>
+      <a routerLink="/account" [queryParams]="{ tab: 'orders' }" class="btn-secondary">My Orders</a>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       SHOP BY PRODUCT CATEGORY
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <section class="help-section" aria-labelledby="shop-heading">
+    <div class="section-title-wrap">
+      <h2 id="shop-heading">Product Catalog Departments</h2>
+      <p>Browse our in-salon formulated hair, beard, skin, and grooming instruments.</p>
+    </div>
+
+    <div class="departments-grid">
       @for (item of departments; track item.title) {
-        <a class="dept" [routerLink]="item.route" [queryParams]="item.query">
-          <strong>{{ item.title }}</strong>
-          <span>{{ item.body }}</span>
+        <a class="dept-card card" [routerLink]="item.route" [queryParams]="item.query">
+          <div class="dept-header">
+            <h3>{{ item.title }}</h3>
+            <span class="dept-arrow">➔</span>
+          </div>
+          <p class="dept-body">{{ item.body }}</p>
         </a>
       }
     </div>
   </section>
 
-  <section class="block" aria-labelledby="guides-heading">
-    <h2 id="guides-heading">Using our products</h2>
-    <div class="guides">
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       PRODUCT APPLICATION GUIDES
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <section class="help-section" aria-labelledby="guides-heading">
+    <div class="section-title-wrap">
+      <h2 id="guides-heading">Product Routine & Instructions</h2>
+      <p>Master barber recommendations for achieving salon-grade hold and nourishment at home.</p>
+    </div>
+
+    <div class="guides-grid">
       @for (guide of guides; track guide.title) {
-        <article>
-          <h3>{{ guide.title }}</h3>
-          <ul>
+        <article class="guide-card card">
+          <div class="guide-header">
+            <div class="guide-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+              </svg>
+            </div>
+            <h3>{{ guide.title }}</h3>
+          </div>
+          <ul class="guide-steps">
             @for (line of guide.items; track line) {
-              <li>{{ line }}</li>
+              <li>
+                <span class="step-bullet">✦</span>
+                <span>{{ line }}</span>
+              </li>
             }
           </ul>
         </article>
@@ -36,16 +93,29 @@
     </div>
   </section>
 
-  <section class="block" aria-labelledby="order-heading">
-    <h2 id="order-heading">Orders and store help</h2>
-    <div class="topics">
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       ORDERS, RETURNS & STORE POLICIES
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <section class="help-section" aria-labelledby="order-heading">
+    <div class="section-title-wrap">
+      <h2 id="order-heading">Orders & Store Policies</h2>
+      <p>Delivery timelines, hygienic return rules, and voucher redemption.</p>
+    </div>
+
+    <div class="policies-grid">
       @for (topic of policies; track topic.title) {
-        <article>
-          <h3>{{ topic.title }}</h3>
+        <article class="policy-card card">
+          <div class="policy-header">
+            <div class="policy-badge">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+            </div>
+            <h3>{{ topic.title }}</h3>
+          </div>
           <p>{{ topic.body }}</p>
         </article>
       }
     </div>
   </section>
-
-</section>
+</div>

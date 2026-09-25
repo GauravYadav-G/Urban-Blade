@@ -19,6 +19,7 @@ import { cartRoutes } from './modules/cart/cart.routes.js';
 import { bookingsRoutes } from './modules/bookings/bookings.routes.js';
 import { ordersRoutes } from './modules/orders/orders.routes.js';
 import { adminRoutes } from './modules/admin/admin.routes.js';
+import { supportRoutes } from './modules/support/support.routes.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = fastify({
@@ -90,6 +91,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(bookingsRoutes, { prefix: '/api' });
   await app.register(ordersRoutes, { prefix: '/api' });
   await app.register(adminRoutes, { prefix: '/api' });
+  await app.register(supportRoutes, { prefix: '/api' });
 
   // ─── 7. INITIALIZE BACKGROUND SAGA QUEUES & CLEANUP TASKS ─────────────────
   initializeOrderQueue();

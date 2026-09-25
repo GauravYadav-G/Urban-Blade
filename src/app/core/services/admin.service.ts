@@ -1,9 +1,11 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { of, Observable } from 'rxjs';
+import { of, Observable, tap } from 'rxjs';
 import { CatalogService } from './catalog.service';
 import { ToastService } from './toast.service';
 import type { Product } from '@core/models/product.model';
+import type { VendorAccount } from '@core/models/vendor.model';
+import type { SupportInquiry, AdminTask, AiChatResponse } from '@core/models/support.model';
 import {
   SEED_ADMIN_ORDERS,
   SEED_ADMIN_BOOKINGS,
@@ -66,6 +68,7 @@ export interface AdminOrder {
     city: string;
     phone: string;
     street?: string;
+    email?: string;
   };
   created_at: string;
   items: Array<{
@@ -73,8 +76,10 @@ export interface AdminOrder {
     unit_price: number;
     quantity: number;
     image_url?: string;
+    vendor?: string;
   }>;
   tracking_number?: string;
+  carrier?: string;
   coupon_code?: string;
   discount_amount?: number;
   updated_at?: string;
@@ -131,6 +136,9 @@ const STORAGE_KEY_ORDERS = 'urban-blade-admin-orders';
 const STORAGE_KEY_BOOKINGS = 'urban-blade-admin-bookings';
 const STORAGE_KEY_CUSTOMERS = 'urban-blade-admin-customers';
 const STORAGE_KEY_PRODUCTS = 'urban-blade-admin-products';
+const STORAGE_KEY_VENDORS = 'urban-blade-admin-vendors';
+const STORAGE_KEY_TASKS = 'urban-blade-admin-tasks';
+const STORAGE_KEY_INQUIRIES = 'urban-blade-admin-inquiries';
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.port === '4200'
@@ -150,6 +158,12 @@ export class AdminService {
   readonly bookings = signal<AdminBooking[]>(this.loadStoredBookings());
   readonly customers = signal<AdminCustomer[]>(this.loadStoredCustomers());
   readonly products = signal<AdminProduct[]>(this.loadStoredProducts());
+  readonly vendors = signal<VendorAccount[]>(this.loadStoredVendors());
+  readonly adminTasks = signal<AdminTask[]>(this.loadStoredTasks());
+  readonly supportInquiries = signal<SupportInquiry[]>(this.loadStoredInquiries());
+  readonly activeSupportInquiryId = signal<string | null>(null);
+  readonly isAiAutoPilot = signal<boolean>(true);
+  readonly isChatDrawerOpen = signal<boolean>(false);
   readonly dailyMetrics = signal<DailyMetric[]>(SEED_DAILY_METRICS);
 
   // Dynamic Calculated KPI Metrics
@@ -286,6 +300,74 @@ export class AdminService {
       });
   }
 
+  updateOrderDetails(orderId: string, updates: Partial<AdminOrder>): void {
+    this.orders.update((list) =>
+      list.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              ...updates,
+              updated_at: new Date().toISOString(),
+            }
+          : o
+      )
+    );
+    this.saveOrders(this.orders());
+    this.recomputeAndPersistMetrics();
+
+    const order = this.orders().find((o) => o.id === orderId);
+    if (order && (updates.status || updates.tracking_number || updates.notes)) {
+      this.http
+        .put(`${API_BASE}/orders/${orderId}/status`, {
+          status: order.status,
+          trackingNumber: order.tracking_number,
+          notes: order.notes,
+        })
+        .subscribe({ error: () => {} });
+    }
+  }
+
+  fetchCarrierWebsiteStatus(orderIdOrNumber: string, carrier?: string): Observable<{ ok: boolean; order?: AdminOrder; websiteData: any }> {
+    return this.http
+      .post<{ ok: boolean; order?: AdminOrder; websiteData: any }>(
+        `${API_BASE}/orders/fetch-carrier-website`,
+        { orderIdOrNumber, carrier }
+      )
+      .pipe(
+        tap((res) => {
+          if (res.ok && res.order) {
+            this.orders.update((list) =>
+              list.map((o) => (o.id === res.order!.id ? { ...o, ...res.order } : o))
+            );
+            this.saveOrders(this.orders());
+            this.recomputeAndPersistMetrics();
+          }
+        })
+      );
+  }
+
+  bulkFetchCarrierWebsites(orderIds: string[], carrier?: string): Observable<{ ok: boolean; updatedCount: number; results: any[] }> {
+    return this.http
+      .post<{ ok: boolean; updatedCount: number; results: any[] }>(
+        `${API_BASE}/orders/bulk-fetch-carrier-websites`,
+        { orderIds, carrier }
+      )
+      .pipe(
+        tap((res) => {
+          if (res.ok && Array.isArray(res.results)) {
+            this.orders.update((list) =>
+              list.map((o) => {
+                const hit = res.results.find((r) => r.id === o.id);
+                return hit && hit.order ? { ...o, ...hit.order } : o;
+              })
+            );
+            this.saveOrders(this.orders());
+            this.recomputeAndPersistMetrics();
+          }
+        })
+      );
+  }
+
   cancelOrder(orderId: string): void {
     const target = this.orders().find((o) => o.id === orderId);
     if (!target) return;
@@ -378,6 +460,7 @@ export class AdminService {
     this.http
       .put(`${API_BASE}/products/${productId}`, {
         stockQuantity: nextQty,
+        stock_quantity: nextQty,
         inStock,
       })
       .subscribe({ error: () => {} });
@@ -404,7 +487,7 @@ export class AdminService {
     this.toast.info(`Availability toggled: ${current.name} is now ${next ? 'In Stock' : 'Out of Stock'}.`);
 
     this.http
-      .put(`${API_BASE}/products/${productId}`, { inStock: next })
+      .put(`${API_BASE}/products/${productId}`, { inStock: next, in_stock: next })
       .subscribe({ error: () => {} });
   }
 
@@ -453,10 +536,20 @@ export class AdminService {
     this.recomputeAndPersistMetrics();
     this.toast.success(`Product "${completeProduct.name}" saved and synced to storefront.`);
 
+    const payload = {
+      ...completeProduct,
+      stockQuantity: completeProduct.stock_quantity,
+      stock_quantity: completeProduct.stock_quantity,
+      compareAtPrice: completeProduct.compareAtPrice,
+      compare_at_price: completeProduct.compareAtPrice,
+      imageUrl: completeProduct.imageUrl,
+      image_url: completeProduct.imageUrl,
+    };
+
     if (item.id) {
-      this.http.put(`${API_BASE}/products/${item.id}`, item).subscribe({ error: () => {} });
+      this.http.put(`${API_BASE}/products/${item.id}`, payload).subscribe({ error: () => {} });
     } else {
-      this.http.post(`${API_BASE}/products`, completeProduct).subscribe({ error: () => {} });
+      this.http.post(`${API_BASE}/products`, payload).subscribe({ error: () => {} });
     }
   }
 
@@ -501,20 +594,20 @@ export class AdminService {
     const customer = this.customers().find((c) => c.id === id);
     const orders = this.orders().filter(
       (o) =>
-        o.shipping_address.fullName.toLowerCase() === customer?.name.toLowerCase() ||
-        o.shipping_address.phone === customer?.email
+        (o.shipping_address?.fullName || '').toLowerCase() === (customer?.name || '').toLowerCase() ||
+        o.shipping_address?.phone === customer?.email
     );
     const bookings = this.bookings().filter(
       (b) =>
         b.customer_email === customer?.email ||
-        b.customer_name.toLowerCase() === customer?.name.toLowerCase()
+        (b.customer_name || '').toLowerCase() === (customer?.name || '').toLowerCase()
     );
 
     return of({
       user: customer || { name: 'Customer', email: 'guest@urbanblade.in', role: 'customer' },
       orders: orders.map((o) => ({
         ...o,
-        item_names: o.items.map((i) => i.product_name),
+        item_names: (o.items || []).map((i) => i.product_name),
       })),
       bookings,
     });
@@ -728,8 +821,48 @@ export class AdminService {
     });
   }
 
+  refreshProducts(notify = false): void {
+    this.http.get<{ data: any[] }>(`${API_BASE}/products`).subscribe({
+      next: (res) => {
+        if (res?.data && res.data.length > 0) {
+          const mapped: AdminProduct[] = res.data.map((p) => ({
+            id: p.id,
+            name: p.name,
+            slug: p.slug,
+            description: p.description,
+            longDescription: p.longDescription || p.long_description || p.description,
+            highlights: p.highlights || [],
+            price: Number(p.price),
+            compareAtPrice: p.compareAtPrice != null ? Number(p.compareAtPrice) : (p.compare_at_price != null ? Number(p.compare_at_price) : undefined),
+            currency: p.currency || 'INR',
+            imageUrl: p.imageUrl || p.image_url || '/images/products/hc-shampoo.jpg',
+            category: p.category,
+            kind: p.kind,
+            vendor: p.vendor,
+            audience: p.audience,
+            freeDelivery: p.freeDelivery ?? p.free_delivery ?? true,
+            rating: Number(p.rating || 5),
+            reviewCount: Number(p.reviewCount ?? p.review_count ?? 1),
+            badge: p.badge,
+            inStock: Boolean(p.inStock ?? p.in_stock ?? true),
+            stock_quantity: Number(p.stock_quantity ?? p.stockQuantity ?? 100),
+          }));
+          this.products.set(mapped);
+          this.saveProducts(mapped);
+          mapped.forEach((prod) => this.catalog.upsertProduct(prod));
+          this.recomputeAndPersistMetrics();
+          if (notify) {
+            this.toast.success(`⚡ Synced ${mapped.length} catalog products from database.`);
+          }
+        }
+      },
+      error: () => {},
+    });
+  }
+
   private syncWithBackend(): void {
     this.refreshOrders();
+    this.refreshProducts();
 
     this.http.get<AdminMetrics>(`${API_BASE}/metrics`).subscribe({
       next: (m) => this.metrics.set(m),
@@ -763,6 +896,10 @@ export class AdminService {
       },
       error: () => {},
     });
+
+    // Real-time live synchronization for Customer Support Inquiries
+    this.refreshInquiries();
+    this.startInquiriesLivePolling();
   }
 
   private loadStoredOrders(): AdminOrder[] {
@@ -826,6 +963,472 @@ export class AdminService {
   private saveProducts(products: AdminProduct[]): void {
     try {
       localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(products));
+    } catch {}
+  }
+
+  // ─── MULTI-VENDOR METHODS ─────────────────────────────────────────────────
+  refreshVendors(notify = false): void {
+    this.http.get<{ data: VendorAccount[] }>(`${API_BASE}/vendors`).subscribe({
+      next: (res) => {
+        if (res?.data && res.data.length > 0) {
+          this.vendors.set(res.data);
+          this.saveVendors(res.data);
+          if (notify) this.toast.success(`⚡ Synced ${res.data.length} vendor business accounts.`);
+        }
+      },
+      error: () => {},
+    });
+  }
+
+  addVendor(vendorData: Partial<VendorAccount>): void {
+    const slug = (vendorData.name || 'vendor').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const newVendor: VendorAccount = {
+      id: `vnd-${slug}`,
+      name: vendorData.name || 'Partner Vendor',
+      slug,
+      email: vendorData.email || `${slug}@urbanblade.in`,
+      password: vendorData.password || 'Vendor@2026',
+      contact_person: vendorData.contact_person || 'Operations Lead',
+      phone: vendorData.phone || '9015618265',
+      commission_rate: vendorData.commission_rate ?? 12,
+      status: 'active',
+      payout_account: vendorData.payout_account || {
+        bank: 'HDFC Bank',
+        accountNo: 'XXXXXX1234',
+        ifsc: 'HDFC0001234',
+        upi: `${slug}@upi`,
+      },
+      product_count: 0,
+      total_sales: 0,
+      order_count: 0,
+      created_at: new Date().toISOString(),
+    };
+
+    this.vendors.update((list) => [newVendor, ...list]);
+    this.saveVendors(this.vendors());
+    this.toast.success(`🏢 Vendor Business Account "${newVendor.name}" registered successfully!`);
+
+    this.http.post<{ ok: boolean; vendor?: VendorAccount }>(`${API_BASE}/vendors`, newVendor).subscribe({
+      next: (res) => {
+        if (res?.vendor) {
+          this.vendors.update((list) => list.map((v) => (v.id === newVendor.id ? res.vendor! : v)));
+          this.saveVendors(this.vendors());
+        }
+      },
+      error: () => {},
+    });
+  }
+
+  updateVendor(id: string, updates: Partial<VendorAccount>): void {
+    this.vendors.update((list) =>
+      list.map((v) => (v.id === id ? { ...v, ...updates, updated_at: new Date().toISOString() } : v))
+    );
+    this.saveVendors(this.vendors());
+    this.toast.success('Vendor profile updated.');
+
+    this.http.put(`${API_BASE}/vendors/${id}`, updates).subscribe({ error: () => {} });
+  }
+
+  toggleVendorStatus(id: string): void {
+    const current = this.vendors().find((v) => v.id === id);
+    if (!current) return;
+    const nextStatus = current.status === 'active' ? 'suspended' : 'active';
+    this.updateVendor(id, { status: nextStatus });
+    this.toast.info(`Vendor "${current.name}" status changed to ${nextStatus.toUpperCase()}`);
+  }
+
+  // ─── TASK OPERATIONS METHODS ──────────────────────────────────────────────
+  refreshTasks(): void {
+    this.http.get<{ data: AdminTask[] }>(`${API_BASE}/tasks`).subscribe({
+      next: (res) => {
+        if (res?.data && res.data.length > 0) {
+          this.adminTasks.set(res.data);
+          this.saveTasks(res.data);
+        }
+      },
+      error: () => {},
+    });
+  }
+
+  addTask(taskData: Partial<AdminTask>): void {
+    const newTask: AdminTask = {
+      id: `tsk-${Date.now()}`,
+      title: taskData.title || 'Operational Task',
+      description: taskData.description || '',
+      assignee: taskData.assignee || 'Master Admin',
+      priority: taskData.priority || 'medium',
+      status: 'pending',
+      due_date: taskData.due_date || 'Soon',
+      related_user: taskData.related_user || '',
+      created_at: new Date().toISOString(),
+    };
+
+    this.adminTasks.update((list) => [newTask, ...list]);
+    this.saveTasks(this.adminTasks());
+    this.toast.success(`📋 Operational task "${newTask.title}" assigned!`);
+
+    this.http.post<{ ok: boolean; task?: AdminTask }>(`${API_BASE}/tasks`, newTask).subscribe({
+      next: (res) => {
+        if (res?.task) {
+          this.adminTasks.update((list) => list.map((t) => (t.id === newTask.id ? res.task! : t)));
+          this.saveTasks(this.adminTasks());
+        }
+      },
+      error: () => {},
+    });
+  }
+
+  updateTaskStatus(id: string, status: AdminTask['status']): void {
+    this.adminTasks.update((list) =>
+      list.map((t) => (t.id === id ? { ...t, status, updated_at: new Date().toISOString() } : t))
+    );
+    this.saveTasks(this.adminTasks());
+    this.toast.success(`Task moved to ${status.toUpperCase().replace('_', ' ')}`);
+
+    this.http.put(`${API_BASE}/tasks/${id}`, { status }).subscribe({ error: () => {} });
+  }
+
+  deleteTask(id: string): void {
+    this.adminTasks.update((list) => list.filter((t) => t.id !== id));
+    this.saveTasks(this.adminTasks());
+    this.toast.info('Task removed.');
+
+    this.http.delete(`${API_BASE}/tasks/${id}`).subscribe({ error: () => {} });
+  }
+
+  private broadcastChannel: BroadcastChannel | null = null;
+
+  // ─── SUPPORT INQUIRIES & AI REAL-LIFE CHATBOT ──────────────────────────────
+  private startInquiriesLivePolling(): void {
+    if (typeof window !== 'undefined') {
+      if ('BroadcastChannel' in window) {
+        this.broadcastChannel = new BroadcastChannel('urban_support_bus');
+        this.broadcastChannel.onmessage = (e) => {
+          if (e.data?.type === 'USER_QUERY') {
+            this.refreshInquiries(true);
+          }
+        };
+      }
+      setInterval(() => {
+        this.refreshInquiries(false);
+      }, 2500);
+    }
+  }
+
+  refreshInquiries(showToast = false): void {
+    this.http.get<{ data: SupportInquiry[] }>(`${API_BASE}/support/inquiries`).subscribe({
+      next: (res) => {
+        if (res?.data && Array.isArray(res.data)) {
+          const prevCount = this.supportInquiries().length;
+          this.supportInquiries.set(res.data);
+          this.saveInquiries(res.data);
+
+          if (!this.activeSupportInquiryId() && res.data[0]) {
+            this.activeSupportInquiryId.set(res.data[0].id);
+          }
+
+          if (res.data.length > prevCount && prevCount > 0 && showToast) {
+            this.toast.info('🔔 New customer inquiry received in real time!');
+          }
+        }
+      },
+      error: () => {},
+    });
+  }
+
+  createInquiry(payload: {
+    userName: string;
+    userEmail: string;
+    subject: string;
+    orderId?: string;
+    vendorName?: string;
+    priority?: 'low' | 'medium' | 'high';
+    initialMessage?: string;
+  }): void {
+    this.http.post<{ ok: boolean; inquiry: SupportInquiry }>(`${API_BASE}/support/inquiries`, payload).subscribe({
+      next: (res) => {
+        if (res?.inquiry) {
+          this.supportInquiries.update((list) => [res.inquiry, ...list]);
+          this.saveInquiries(this.supportInquiries());
+          this.activeSupportInquiryId.set(res.inquiry.id);
+          this.toast.success(`Support ticket #${res.inquiry.id.slice(0, 8)} created for ${res.inquiry.user_name}.`);
+          if (this.broadcastChannel) {
+            this.broadcastChannel.postMessage({ type: 'ADMIN_REPLY', inquiryId: res.inquiry.id });
+          }
+        }
+      },
+      error: () => {
+        this.toast.error('Failed to create support ticket.');
+      },
+    });
+  }
+
+  deleteInquiry(id: string): void {
+    this.supportInquiries.update((list) => list.filter((i) => i.id !== id));
+    this.saveInquiries(this.supportInquiries());
+    this.toast.info('Inquiry ticket removed.');
+    this.http.delete(`${API_BASE}/support/inquiries/${id}`).subscribe({ error: () => {} });
+  }
+
+  sendInquiryMessage(inquiryId: string, text: string, sender: 'admin' | 'ai' = 'admin'): void {
+    const newMsg = {
+      id: `m-${Date.now()}`,
+      sender,
+      text,
+      timestamp: new Date().toISOString(),
+    };
+
+    this.supportInquiries.update((list) =>
+      list.map((inq) =>
+        inq.id === inquiryId
+          ? {
+              ...inq,
+              messages: [...(inq.messages || []), newMsg],
+              updated_at: new Date().toISOString(),
+            }
+          : inq
+      )
+    );
+    this.saveInquiries(this.supportInquiries());
+
+    this.http
+      .post<{ ok: boolean; inquiry?: SupportInquiry }>(`${API_BASE}/support/inquiries/${inquiryId}/message`, {
+        text,
+        sender,
+      })
+      .subscribe({
+        next: (res) => {
+          if (res?.inquiry) {
+            this.supportInquiries.update((list) => list.map((i) => (i.id === inquiryId ? res.inquiry! : i)));
+            this.saveInquiries(this.supportInquiries());
+          }
+          if (this.broadcastChannel) {
+            this.broadcastChannel.postMessage({ type: 'ADMIN_REPLY', inquiryId });
+          }
+        },
+        error: () => {},
+      });
+  }
+
+  updateInquiryStatus(inquiryId: string, status: SupportInquiry['status']): void {
+    this.supportInquiries.update((list) =>
+      list.map((inq) => (inq.id === inquiryId ? { ...inq, status, updated_at: new Date().toISOString() } : inq))
+    );
+    this.saveInquiries(this.supportInquiries());
+    this.toast.success(`Inquiry ticket updated: ${status.replace('_', ' ').toUpperCase()}`);
+
+    this.http.put<{ ok: boolean; inquiry?: SupportInquiry }>(`${API_BASE}/support/inquiries/${inquiryId}/status`, { status }).subscribe({
+      next: (res) => {
+        if (res?.inquiry) {
+          this.supportInquiries.update((list) => list.map((i) => (i.id === inquiryId ? res.inquiry! : i)));
+          this.saveInquiries(this.supportInquiries());
+        }
+        if (this.broadcastChannel) {
+          this.broadcastChannel.postMessage({ type: 'STATUS_CHANGE', inquiryId, status });
+        }
+      },
+      error: () => {},
+    });
+  }
+
+  queryAiChatbot(payload: {
+    message: string;
+    inquiryId?: string;
+    orderId?: string;
+    vendorName?: string;
+    customerName?: string;
+  }): Observable<AiChatResponse> {
+    return this.http.post<AiChatResponse>(`${API_BASE}/support/ai-chat`, payload);
+  }
+
+  toggleChatDrawer(): void {
+    this.isChatDrawerOpen.update((v) => !v);
+  }
+
+  toggleAiAutoPilot(): void {
+    this.isAiAutoPilot.update((v) => !v);
+    this.toast.info(
+      this.isAiAutoPilot()
+        ? '🤖 AI Concierge Auto-Pilot ENABLED (Real-time intelligent inquiry resolution active)'
+        : '👤 AI Auto-Pilot paused (Human Master Admin response mode active)'
+    );
+  }
+
+  // ─── STORAGE LOADERS & PERSISTENCE ────────────────────────────────────────
+  private loadStoredVendors(): VendorAccount[] {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_VENDORS);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    const defaultVendors: VendorAccount[] = [
+      {
+        id: 'vnd-lab',
+        name: 'Urban Blade Lab',
+        slug: 'urban-blade-lab',
+        email: 'lab@urbanblade.in',
+        password: 'Vendor@2026',
+        contact_person: 'Dr. Vikram Verma (R&D Lead)',
+        phone: '9876543210',
+        commission_rate: 12,
+        status: 'active',
+        product_count: 14,
+        total_sales: 48920,
+        order_count: 36,
+        payout_account: { bank: 'HDFC Bank', accountNo: 'XXXXXX4812', ifsc: 'HDFC0001234', upi: 'ub.lab@hdfc' },
+      },
+      {
+        id: 'vnd-grooming',
+        name: 'Urban Blade Grooming',
+        slug: 'urban-blade-grooming',
+        email: 'grooming@urbanblade.in',
+        password: 'Vendor@2026',
+        contact_person: 'Kavita Singh (Ops Director)',
+        phone: '9876543211',
+        commission_rate: 15,
+        status: 'active',
+        product_count: 12,
+        total_sales: 36840,
+        order_count: 28,
+        payout_account: { bank: 'ICICI Bank', accountNo: 'XXXXXX9821', ifsc: 'ICIC0005678', upi: 'ub.grooming@icici' },
+      },
+      {
+        id: 'vnd-tools',
+        name: 'Urban Blade Tools',
+        slug: 'urban-blade-tools',
+        email: 'tools@urbanblade.in',
+        password: 'Vendor@2026',
+        contact_person: 'Rajesh Mehra (Hardware Lead)',
+        phone: '9876543212',
+        commission_rate: 10,
+        status: 'active',
+        product_count: 8,
+        total_sales: 24500,
+        order_count: 18,
+        payout_account: { bank: 'Axis Bank', accountNo: 'XXXXXX3456', ifsc: 'UTIB0009876', upi: 'ub.tools@axis' },
+      },
+      {
+        id: 'vnd-skin',
+        name: 'Urban Blade Skin',
+        slug: 'urban-blade-skin',
+        email: 'skin@urbanblade.in',
+        password: 'Vendor@2026',
+        contact_person: 'Pooja Sharma (Dermatologist)',
+        phone: '9876543213',
+        commission_rate: 14,
+        status: 'active',
+        product_count: 6,
+        total_sales: 19800,
+        order_count: 14,
+        payout_account: { bank: 'State Bank of India', accountNo: 'XXXXXX7890', ifsc: 'SBIN0004321', upi: 'ub.skin@sbi' },
+      },
+      {
+        id: 'vnd-salon',
+        name: 'Urban Blade Salon',
+        slug: 'salon@urbanblade.in',
+        email: 'salon@urbanblade.in',
+        password: 'Vendor@2026',
+        contact_person: 'Master Barber Gaurav',
+        phone: '9015618265',
+        commission_rate: 8,
+        status: 'active',
+        product_count: 4,
+        total_sales: 14500,
+        order_count: 12,
+        payout_account: { bank: 'Kotak Mahindra', accountNo: 'XXXXXX1234', ifsc: 'KKBK0001122', upi: 'ub.salon@kotak' },
+      },
+    ];
+    this.saveVendors(defaultVendors);
+    return defaultVendors;
+  }
+
+  private loadStoredTasks(): AdminTask[] {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_TASKS);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    const defaultTasks: AdminTask[] = [
+      {
+        id: 'tsk-1',
+        title: 'Audit Urban Blade Lab Q3 Batch Fulfillment',
+        description: 'Cross-reference dispatch scans with courier receipts for serum batches.',
+        assignee: 'Master Admin',
+        priority: 'high',
+        status: 'in_progress',
+        due_date: 'Tomorrow, 5 PM',
+        related_user: 'Dr. Vikram Verma (Urban Blade Lab)',
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: 'tsk-2',
+        title: 'Verify Payout Details for Urban Blade Tools',
+        description: 'Confirm new Axis Bank IFSC code with Rajesh Mehra before Friday release.',
+        assignee: 'Finance Desk',
+        priority: 'medium',
+        status: 'pending',
+        due_date: 'Sep 15, 2026',
+        related_user: 'Rajesh Mehra (Urban Blade Tools)',
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: 'tsk-3',
+        title: 'VIP Client Anniversary Loyalty Call',
+        description: 'Offer 20% privilege code to top spending customer Rohit Sen.',
+        assignee: 'Master Barber Gaurav',
+        priority: 'low',
+        status: 'completed',
+        due_date: 'Today',
+        related_user: 'Rohit Sen',
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: 'tsk-4',
+        title: 'Restock Precision Trimmers & Ceramic Blades',
+        description: 'Notify Urban Blade Tools when stock drops below 15 units.',
+        assignee: 'Inventory Lead',
+        priority: 'high',
+        status: 'pending',
+        due_date: 'Sep 18, 2026',
+        related_user: 'Urban Blade Tools',
+        created_at: new Date().toISOString(),
+      },
+    ];
+    this.saveTasks(defaultTasks);
+    return defaultTasks;
+  }
+
+  private loadStoredInquiries(): SupportInquiry[] {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_INQUIRIES);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          // Permanently purge legacy fake mock inquiries
+          const cleaned = parsed.filter(
+            (i: any) => !['inq-101', 'inq-102', 'inq-103'].includes(i.id) && i.subject !== 'Tracking update for Hair Serum parcel'
+          );
+          localStorage.setItem(STORAGE_KEY_INQUIRIES, JSON.stringify(cleaned));
+          return cleaned;
+        }
+      }
+    } catch {}
+    return [];
+  }
+
+  private saveVendors(vendors: VendorAccount[]): void {
+    try {
+      localStorage.setItem(STORAGE_KEY_VENDORS, JSON.stringify(vendors));
+    } catch {}
+  }
+
+  private saveTasks(tasks: AdminTask[]): void {
+    try {
+      localStorage.setItem(STORAGE_KEY_TASKS, JSON.stringify(tasks));
+    } catch {}
+  }
+
+  private saveInquiries(inquiries: SupportInquiry[]): void {
+    try {
+      localStorage.setItem(STORAGE_KEY_INQUIRIES, JSON.stringify(inquiries));
     } catch {}
   }
 }

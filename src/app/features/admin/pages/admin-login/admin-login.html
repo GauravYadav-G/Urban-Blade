@@ -105,6 +105,16 @@
           <span class="mono">{{ masterCreds.password }}</span>
         </div>
       </div>
+
+      <!-- Quick Vendor Access Row -->
+      <div class="vendor-quick-access">
+        <span class="vqa-label">Vendor Partner Login:</span>
+        <div class="vqa-buttons">
+          <button type="button" class="btn-vendor-fill" (click)="fillVendor('lab')">🧪 Urban Blade Lab</button>
+          <button type="button" class="btn-vendor-fill" (click)="fillVendor('grooming')">💈 Grooming Co.</button>
+          <button type="button" class="btn-vendor-fill" (click)="fillVendor('tools')">✂️ Pro Tools</button>
+        </div>
+      </div>
     </form>
 
     <!-- Footer Links & Security Stamp -->

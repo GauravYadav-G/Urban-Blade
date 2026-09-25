@@ -6,6 +6,11 @@
       <h1>Manage Products & Services</h1>
     </div>
     <div class="header-actions">
+      <button type="button" class="btn-ghost-action" (click)="refreshFromDb()" title="Sync live products & inventory from PostgreSQL">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        <span>Sync DB</span>
+      </button>
+
       <button type="button" class="btn-ghost-action" (click)="exportCSV()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         <span>Export CSV</span>
@@ -35,14 +40,32 @@
       />
     </div>
 
-    <!-- Category Pill Filter -->
-    <div class="filter-pills">
-      <button type="button" [class.active]="selectedCategory() === 'all'" (click)="selectedCategory.set('all')">All ({{ admin.products().length }})</button>
-      <button type="button" [class.active]="selectedCategory() === 'hair'" (click)="selectedCategory.set('hair')">Hair</button>
-      <button type="button" [class.active]="selectedCategory() === 'beard'" (click)="selectedCategory.set('beard')">Beard</button>
-      <button type="button" [class.active]="selectedCategory() === 'skin'" (click)="selectedCategory.set('skin')">Skin</button>
-      <button type="button" [class.active]="selectedCategory() === 'tools'" (click)="selectedCategory.set('tools')">Tools</button>
-      <button type="button" [class.active]="selectedCategory() === 'services'" (click)="selectedCategory.set('services')">Services</button>
+    <div class="filters-group">
+      <!-- Category Pill Filter -->
+      <div class="filter-pills">
+        <button type="button" [class.active]="selectedCategory() === 'all'" (click)="selectedCategory.set('all')">All</button>
+        <button type="button" [class.active]="selectedCategory() === 'hair'" (click)="selectedCategory.set('hair')">Hair</button>
+        <button type="button" [class.active]="selectedCategory() === 'beard'" (click)="selectedCategory.set('beard')">Beard</button>
+        <button type="button" [class.active]="selectedCategory() === 'skin'" (click)="selectedCategory.set('skin')">Skin</button>
+        <button type="button" [class.active]="selectedCategory() === 'tools'" (click)="selectedCategory.set('tools')">Tools</button>
+        <button type="button" [class.active]="selectedCategory() === 'services'" (click)="selectedCategory.set('services')">Services</button>
+      </div>
+
+      <!-- Stock Health Status Filter Pills -->
+      <div class="stock-pills">
+        <button type="button" [class.active]="selectedStockFilter() === 'all'" (click)="selectedStockFilter.set('all')">
+          All ({{ stockCounts().all }})
+        </button>
+        <button type="button" class="sp-instock" [class.active]="selectedStockFilter() === 'in-stock'" (click)="selectedStockFilter.set('in-stock')">
+          <span class="sp-dot"></span> In Stock ({{ stockCounts().inStock }})
+        </button>
+        <button type="button" class="sp-low" [class.active]="selectedStockFilter() === 'low-stock'" (click)="selectedStockFilter.set('low-stock')">
+          <span class="sp-dot"></span> Low (&le;15) ({{ stockCounts().lowStock }})
+        </button>
+        <button type="button" class="sp-out" [class.active]="selectedStockFilter() === 'out-of-stock'" (click)="selectedStockFilter.set('out-of-stock')">
+          <span class="sp-dot"></span> Out/Archived ({{ stockCounts().outOfStock }})
+        </button>
+      </div>
     </div>
   </div>
 
@@ -88,6 +111,9 @@
                 <strong class="price-now">₹{{ product.price }}</strong>
                 @if (product.compareAtPrice) {
                   <span class="price-was">₹{{ product.compareAtPrice }}</span>
+                  @if (getDiscountPercent(product.price, product.compareAtPrice); as discount) {
+                    <span class="discount-badge-table">{{ discount }}% OFF</span>
+                  }
                 }
               </div>
             </td>
@@ -133,6 +159,9 @@
             <!-- Actions -->
             <td class="text-right">
               <div class="action-buttons">
+                <button type="button" class="btn-icon" (click)="duplicateProduct(product)" title="Duplicate / Clone Product">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </button>
                 <button type="button" class="btn-icon" (click)="openEdit(product)" title="Edit in Studio">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>

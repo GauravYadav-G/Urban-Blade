@@ -2,228 +2,440 @@
   <!-- Page Header -->
   <header class="page-header">
     <div class="header-left">
-      <span class="status-indicator live">
-        <span class="pulse-dot"></span> CRM & Identity Directory
-      </span>
-      <h1 class="page-title">Customers & Salon Staff</h1>
+      <div class="view-switch-pills">
+        <button 
+          type="button" 
+          class="switch-pill" 
+          [class.active]="activeTab() === 'users'" 
+          (click)="activeTab.set('users')"
+        >
+          <span>👥 User Directory & Roles</span>
+          <span class="count-tag">{{ admin.customers().length }}</span>
+        </button>
+        <button 
+          type="button" 
+          class="switch-pill" 
+          [class.active]="activeTab() === 'tasks'" 
+          (click)="activeTab.set('tasks')"
+        >
+          <span>📋 Operations & Task Board</span>
+          <span class="count-tag amber">{{ pendingTasksCount() + inProgressTasksCount() }} active</span>
+        </button>
+      </div>
+
+      <h1 class="page-title">
+        {{ activeTab() === 'users' ? 'User Operations & Directory' : 'Internal Operational Task Board' }}
+      </h1>
       <p class="page-subtitle">
-        Manage customer accounts, salon stylist credentials, lifetime customer value (LTV), and role permissions.
+        {{ activeTab() === 'users' 
+            ? 'Manage customer accounts, vendor contacts, salon stylists, VIP loyalty statuses, and permission roles.'
+            : 'Track, assign, prioritize, and execute operational workflows, courier audits, and VIP concierge outreach.' }}
       </p>
     </div>
 
     <div class="header-stats">
-      <div class="stat-pill">
-        <span class="stat-label">Total Users</span>
-        <span class="stat-val">{{ admin.customers().length }} accounts</span>
-      </div>
-      <div class="stat-pill highlight">
-        <span class="stat-label">Lifetime Value (LTV)</span>
-        <span class="stat-val">₹{{ totalSpentSum() | number:'1.0-0' }}</span>
-      </div>
-      <button type="button" class="btn-export" (click)="exportCSV()">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        <span>Export CSV</span>
-      </button>
+      @if (activeTab() === 'users') {
+        <div class="stat-pill">
+          <span class="stat-label">Total Users</span>
+          <span class="stat-val">{{ admin.customers().length }} accounts</span>
+        </div>
+        <div class="stat-pill highlight">
+          <span class="stat-label">Lifetime Value (LTV)</span>
+          <span class="stat-val">₹{{ totalSpentSum() | number:'1.0-0' }}</span>
+        </div>
+        <button type="button" class="btn-export" (click)="exportCSV()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Export CSV</span>
+        </button>
+      } @else {
+        <button type="button" class="btn-new-task" (click)="openCreateTaskModal()">
+          <span class="plus-icon">+</span>
+          <span>Assign New Task</span>
+        </button>
+      }
     </div>
   </header>
 
-  <!-- Controls Bar: Search & Role Filter -->
-  <div class="controls-bar">
-    <div class="search-box">
-      <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="8"></circle>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-      </svg>
-      <input
-        type="text"
-        placeholder="Search customers by name or email..."
-        [ngModel]="searchQuery()"
-        (ngModelChange)="searchQuery.set($event)"
-      />
+  <!-- TAB 1: USERS DIRECTORY -->
+  @if (activeTab() === 'users') {
+    <!-- Controls Bar: Search & Role Filter -->
+    <div class="controls-bar">
+      <div class="search-box">
+        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input
+          type="text"
+          placeholder="Search users by name or email..."
+          [ngModel]="searchQuery()"
+          (ngModelChange)="searchQuery.set($event)"
+        />
+      </div>
+
+      <div class="role-filters">
+        <button class="filter-tab" [class.active]="selectedRole() === 'all'" (click)="setRoleFilter('all')">
+          All ({{ admin.customers().length }})
+        </button>
+        <button class="filter-tab" [class.active]="selectedRole() === 'customer'" (click)="setRoleFilter('customer')">
+          Customers
+        </button>
+        <button class="filter-tab" [class.active]="selectedRole() === 'stylist'" (click)="setRoleFilter('stylist')">
+          Stylists
+        </button>
+        <button class="filter-tab" [class.active]="selectedRole() === 'admin'" (click)="setRoleFilter('admin')">
+          Admins
+        </button>
+      </div>
     </div>
 
-    <div class="role-filters">
-      <button class="filter-tab" [class.active]="selectedRole() === 'all'" (click)="setRoleFilter('all')">
-        All ({{ admin.customers().length }})
-      </button>
-      <button class="filter-tab" [class.active]="selectedRole() === 'customer'" (click)="setRoleFilter('customer')">
-        Customers
-      </button>
-      <button class="filter-tab" [class.active]="selectedRole() === 'stylist'" (click)="setRoleFilter('stylist')">
-        Stylists
-      </button>
-      <button class="filter-tab" [class.active]="selectedRole() === 'admin'" (click)="setRoleFilter('admin')">
-        Admins
-      </button>
-    </div>
-  </div>
-
-  <!-- Customers Table Card -->
-  <div class="table-card">
-    <div class="table-responsive">
-      <table class="customers-table">
-        <thead>
-          <tr>
-            <th>User</th>
-            <th>Role & Access</th>
-            <th>Registered</th>
-            <th>Total Orders</th>
-            <th>Total Spend</th>
-            <th>Role Permissions</th>
-            <th>History</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (c of filteredCustomers(); track c.id) {
-            <tr class="customer-row clickable-row" (click)="inspectCustomer(c)">
-              <td>
-                <div class="user-cell">
-                  <div class="user-avatar" [class.admin-avatar]="c.role === 'admin'" [class.stylist-avatar]="c.role === 'stylist'">
-                    {{ c.name.charAt(0) }}
+    <!-- Users Data Table -->
+    <div class="table-card">
+      <div class="table-wrap">
+        <table class="customers-table">
+          <thead>
+            <tr>
+              <th>User / Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Joined Date</th>
+              <th>Orders</th>
+              <th>Lifetime Spend</th>
+              <th>Operations Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (customer of filteredCustomers(); track customer.id) {
+              <tr class="customer-row" (click)="inspectCustomer(customer)">
+                <td>
+                  <div class="user-cell">
+                    <div class="user-avatar" [class.vip]="customer.is_vip">
+                      {{ customer.name.slice(0, 2).toUpperCase() }}
+                    </div>
+                    <div class="user-info">
+                      <span class="user-name">{{ customer.name }}</span>
+                      @if (customer.is_vip) {
+                        <span class="vip-badge">VIP LOYALTY</span>
+                      }
+                    </div>
                   </div>
-                  <div class="user-meta">
-                    <span class="user-name">{{ c.name }}</span>
-                    <span class="user-email">{{ c.email }}</span>
-                  </div>
-                </div>
-              </td>
-              <td>
-                <span class="role-pill {{ c.role }}">
-                  @if (c.role === 'admin') {
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                    </svg>
-                  } @else if (c.role === 'stylist') {
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                      <circle cx="6" cy="6" r="3"></circle>
-                      <circle cx="6" cy="18" r="3"></circle>
-                      <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
-                      <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
-                      <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
-                    </svg>
-                  }
-                  {{ c.role | uppercase }}
-                </span>
-              </td>
-              <td>
-                <span class="date-cell">{{ c.created_at | date:'mediumDate' }}</span>
-              </td>
-              <td>
-                <span class="orders-count">{{ c.total_orders }} orders</span>
-              </td>
-              <td>
-                <span class="spend-cell">₹{{ c.total_spent | number:'1.0-0' }}</span>
-              </td>
-              <td>
-                <div class="role-switcher" (click)="$event.stopPropagation()">
+                </td>
+                <td class="email-cell">{{ customer.email }}</td>
+                <td class="role-cell" (click)="$event.stopPropagation()">
                   <select
-                    [ngModel]="c.role"
-                    (ngModelChange)="changeRole(c, $event)"
                     class="role-select"
+                    [ngModel]="customer.role"
+                    (ngModelChange)="changeRole(customer, $event)"
                   >
                     <option value="customer">Customer</option>
                     <option value="stylist">Stylist</option>
                     <option value="admin">Administrator</option>
                   </select>
-                </div>
-              </td>
-              <td>
-                <button class="btn-inspect" (click)="inspectCustomer(c); $event.stopPropagation()" title="View Customer History">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M9 18l6-6-6-6"></path>
-                  </svg>
-                </button>
-              </td>
-            </tr>
-          } @empty {
-            <tr>
-              <td colspan="7" class="empty-state">
-                <div class="empty-content">
-                  <span class="empty-icon">👥</span>
-                  <h4>No users found</h4>
-                  <p>No customers match "{{ searchQuery() }}". Try adjusting your search query.</p>
-                </div>
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
+                </td>
+                <td class="date-cell">{{ customer.created_at | date:'mediumDate' }}</td>
+                <td class="orders-cell">
+                  <span class="orders-tag">{{ customer.total_orders }} orders</span>
+                </td>
+                <td class="spent-cell">
+                  <span class="spent-val">₹{{ customer.total_spent | number:'1.0-0' }}</span>
+                </td>
+                <td class="actions-cell" (click)="$event.stopPropagation()">
+                  <div class="action-btns-row">
+                    <button class="btn-task-assign" (click)="openCreateTaskModal(customer.name)" title="Assign Operational Task">
+                      <span>+ Task</span>
+                    </button>
+                    <button class="btn-inspect" (click)="inspectCustomer(customer)" title="Inspect Profile & Audit Trail">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="7" class="empty-state">
+                  <div class="empty-content">
+                    <span class="empty-icon">👥</span>
+                    <h4>No users match filter criteria</h4>
+                    <p>Try searching with another query or reset the role filters.</p>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
+  }
 
-  <!-- Customer Detail Drawer / Modal -->
-  @if (selectedCustomerDetails(); as det) {
+  <!-- TAB 2: OPERATIONS & TASK BOARD -->
+  @if (activeTab() === 'tasks') {
+    <!-- Task KPI Bar -->
+    <div class="task-kpis-grid">
+      <div class="task-kpi-card">
+        <span class="tk-label">Pending Queued</span>
+        <span class="tk-val amber">{{ pendingTasksCount() }}</span>
+        <span class="tk-sub">Awaiting operator pickup</span>
+      </div>
+      <div class="task-kpi-card">
+        <span class="tk-label">In Progress</span>
+        <span class="tk-val blue">{{ inProgressTasksCount() }}</span>
+        <span class="tk-sub">Actively being worked on</span>
+      </div>
+      <div class="task-kpi-card">
+        <span class="tk-label">Completed</span>
+        <span class="tk-val emerald">{{ completedTasksCount() }}</span>
+        <span class="tk-sub">Resolved & verified</span>
+      </div>
+    </div>
+
+    <!-- Task Filter Toolbar -->
+    <div class="task-toolbar">
+      <div class="task-filter-pills">
+        <button 
+          type="button" 
+          class="t-pill" 
+          [class.active]="taskFilter() === 'all'"
+          (click)="taskFilter.set('all')"
+        >
+          All Tasks ({{ admin.adminTasks().length }})
+        </button>
+        <button 
+          type="button" 
+          class="t-pill" 
+          [class.active]="taskFilter() === 'pending'"
+          (click)="taskFilter.set('pending')"
+        >
+          <span class="t-dot pending"></span> Pending ({{ pendingTasksCount() }})
+        </button>
+        <button 
+          type="button" 
+          class="t-pill" 
+          [class.active]="taskFilter() === 'in_progress'"
+          (click)="taskFilter.set('in_progress')"
+        >
+          <span class="t-dot in-progress"></span> In Progress ({{ inProgressTasksCount() }})
+        </button>
+        <button 
+          type="button" 
+          class="t-pill" 
+          [class.active]="taskFilter() === 'completed'"
+          (click)="taskFilter.set('completed')"
+        >
+          <span class="t-dot completed"></span> Completed ({{ completedTasksCount() }})
+        </button>
+      </div>
+
+      <button type="button" class="btn-new-task-small" (click)="openCreateTaskModal()">
+        <span>+ Add Operational Task</span>
+      </button>
+    </div>
+
+    <!-- Task Cards Board -->
+    <div class="tasks-board-grid">
+      @for (task of filteredTasks(); track task.id) {
+        <div class="task-card" [class.done]="task.status === 'completed'">
+          <div class="task-card-header">
+            <span class="priority-tag {{ task.priority }}">
+              {{ task.priority | uppercase }} PRIORITY
+            </span>
+            <button type="button" class="btn-del-task" (click)="deleteTask(task, $event)" title="Delete task">✕</button>
+          </div>
+
+          <h4 class="task-title">{{ task.title }}</h4>
+          @if (task.description) {
+            <p class="task-desc">{{ task.description }}</p>
+          }
+
+          @if (task.related_user) {
+            <div class="related-user-chip">
+              <span class="user-chip-icon">👤</span>
+              <span>Related: {{ task.related_user }}</span>
+            </div>
+          }
+
+          <div class="task-card-footer">
+            <div class="task-meta-col">
+              <span class="assignee-line">Assigned: <strong>{{ task.assignee }}</strong></span>
+              <span class="due-line">Due: {{ task.due_date }}</span>
+            </div>
+
+            <button 
+              type="button" 
+              class="btn-advance-task {{ task.status }}"
+              (click)="advanceTaskStatus(task)"
+              title="Advance task status"
+            >
+              @if (task.status === 'pending') {
+                <span>Start Task ➔</span>
+              } @else if (task.status === 'in_progress') {
+                <span>Mark Complete ✓</span>
+              } @else {
+                <span>✓ Completed</span>
+              }
+            </button>
+          </div>
+        </div>
+      } @empty {
+        <div class="empty-tasks-card">
+          <span class="et-icon">🎉</span>
+          <h4>No tasks in this category</h4>
+          <p>All operational tasks have been fulfilled or clear the filter.</p>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- Task Creation Modal -->
+  @if (isCreateTaskModalOpen()) {
+    <div class="modal-backdrop" (click)="closeCreateTaskModal()">
+      <div class="modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <h3>Create Operational Task</h3>
+            <p class="modal-subtitle">Assign internal operations, dispatch verification, or concierge outreach.</p>
+          </div>
+          <button type="button" class="close-btn" (click)="closeCreateTaskModal()">✕</button>
+        </div>
+
+        <form [formGroup]="taskForm" (ngSubmit)="submitCreateTask()" class="modal-form">
+          <div class="form-group full">
+            <label>Task Title *</label>
+            <input type="text" formControlName="title" placeholder="e.g. Audit courier handover for #ORD-98214" />
+          </div>
+
+          <div class="form-group full">
+            <label>Description & Scope</label>
+            <textarea formControlName="description" rows="2" placeholder="Actionable steps or verification instructions..."></textarea>
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>Assignee *</label>
+              <select formControlName="assignee">
+                <option value="Master Admin">Master Admin</option>
+                <option value="Finance Desk">Finance Desk</option>
+                <option value="Master Barber Gaurav">Master Barber Gaurav</option>
+                <option value="Inventory Lead">Inventory Lead</option>
+                <option value="Customer Concierge">Customer Concierge</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Priority Level *</label>
+              <select formControlName="priority">
+                <option value="high">High Priority</option>
+                <option value="medium">Medium Priority</option>
+                <option value="low">Low Priority</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>Due Date *</label>
+              <input type="text" formControlName="due_date" placeholder="e.g. Tomorrow, 5 PM" />
+            </div>
+
+            <div class="form-group">
+              <label>Related User / Vendor (Optional)</label>
+              <input type="text" formControlName="related_user" placeholder="e.g. Dr. Vikram Verma" />
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary" (click)="closeCreateTaskModal()">Cancel</button>
+            <button type="submit" class="btn-primary">Assign Task</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- User Details Inspection Modal -->
+  @if (selectedCustomerDetails(); as details) {
     <div class="modal-backdrop" (click)="closeCustomerDetails()">
-      <div class="crm-drawer" (click)="$event.stopPropagation()">
-        <div class="drawer-head">
-          <div class="crm-avatar">
-            {{ det.user.name.charAt(0) }}
+      <div class="modal-card user-detail-card" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <div class="modal-user-identity">
+            <div class="modal-avatar">
+              {{ details.user.name.slice(0, 2).toUpperCase() }}
+            </div>
+            <div>
+              <h3>{{ details.user.name }}</h3>
+              <p class="modal-subtitle">{{ details.user.email }} · <span class="role-badge">{{ details.user.role | uppercase }}</span></p>
+            </div>
           </div>
-          <div class="crm-meta">
-            <span class="crm-tag">Customer Profile</span>
-            <h2 class="crm-title">{{ det.user.name }}</h2>
-            <span class="crm-sub">{{ det.user.email }} • Member since {{ det.user.created_at | date:'mediumDate' }}</span>
-          </div>
-          <button class="crm-close" (click)="closeCustomerDetails()">✕</button>
+          <button type="button" class="close-btn" (click)="closeCustomerDetails()">✕</button>
         </div>
 
-        <div class="drawer-body">
-          <!-- Lifetime Stats -->
-          <div class="crm-stats-grid">
-            <div class="crm-stat-card">
-              <span class="stat-title">Lifetime Orders</span>
-              <span class="stat-num">{{ det.orders.length }} orders</span>
+        <div class="modal-body-scroll">
+          <div class="summary-stats-grid">
+            <div class="ss-box">
+              <span class="ss-label">Account Role</span>
+              <span class="ss-val">{{ details.user.role | titlecase }}</span>
             </div>
-            <div class="crm-stat-card">
-              <span class="stat-title">Salon Appointments</span>
-              <span class="stat-num">{{ det.bookings.length }} sessions</span>
+            <div class="ss-box">
+              <span class="ss-label">Orders Placed</span>
+              <span class="ss-val">{{ details.orders.length || 0 }}</span>
             </div>
-          </div>
-
-          <!-- Purchase History -->
-          <div class="crm-section">
-            <h4 class="crm-sec-title">Order History ({{ det.orders.length }})</h4>
-            <div class="crm-orders-list">
-              @for (ord of det.orders; track ord.id) {
-                <div class="crm-order-item">
-                  <div class="order-main">
-                    <span class="ord-id">#{{ ord.id.slice(0, 8) }}</span>
-                    <span class="ord-status {{ ord.status }}">{{ ord.status | uppercase }}</span>
-                    <span class="ord-date">{{ ord.created_at | date:'mediumDate' }}</span>
-                  </div>
-                  <div class="order-items-names">
-                    {{ ord.item_names?.join(', ') || 'Salon products' }}
-                  </div>
-                  <div class="ord-amount">₹{{ ord.total_amount | number:'1.0-0' }}</div>
-                </div>
-              } @empty {
-                <div class="empty-sub">No past orders placed by this account yet.</div>
-              }
+            <div class="ss-box">
+              <span class="ss-label">Floor Bookings</span>
+              <span class="ss-val">{{ details.bookings.length || 0 }}</span>
             </div>
           </div>
 
-          <!-- Stylist Bookings -->
-          <div class="crm-section">
-            <h4 class="crm-sec-title">Salon Appointments ({{ det.bookings.length }})</h4>
-            <div class="crm-bookings-list">
-              @for (bk of det.bookings; track bk.id) {
-                <div class="crm-booking-item">
-                  <div class="bk-main">
-                    <span class="bk-slot">{{ bk.time_slot }} • {{ bk.booking_date }}</span>
-                    <span class="bk-status {{ bk.status }}">{{ bk.status | uppercase }}</span>
+          <!-- Order History Section -->
+          <div class="details-section">
+            <h4>Recent Orders & Deliveries</h4>
+            @if (details.orders && details.orders.length > 0) {
+              <div class="history-list">
+                @for (ord of details.orders; track ord.id) {
+                  <div class="history-item">
+                    <div class="hi-left">
+                      <span class="hi-id">#{{ ord.id.slice(0, 8).toUpperCase() }}</span>
+                      <span class="hi-date">{{ ord.created_at | date:'mediumDate' }}</span>
+                    </div>
+                    <div class="hi-right">
+                      <span class="hi-amount">₹{{ ord.total_amount | number:'1.0-0' }}</span>
+                      <span class="hi-status {{ ord.status }}">{{ ord.status | titlecase }}</span>
+                    </div>
                   </div>
-                  <div class="bk-service">{{ bk.notes }} with {{ bk.stylist_name || 'Master Barber' }}</div>
-                  <div class="bk-price">₹{{ bk.total_price }}</div>
-                </div>
-              } @empty {
-                <div class="empty-sub">No appointment reservations for this customer.</div>
-              }
-            </div>
+                }
+              </div>
+            } @else {
+              <p class="empty-hint">No order history recorded for this user yet.</p>
+            }
+          </div>
+
+          <!-- Appointments Section -->
+          <div class="details-section">
+            <h4>Salon Visit Appointments</h4>
+            @if (details.bookings && details.bookings.length > 0) {
+              <div class="history-list">
+                @for (bk of details.bookings; track bk.id) {
+                  <div class="history-item">
+                    <div class="hi-left">
+                      <span class="hi-id">{{ bk.time_slot }} · {{ bk.booking_date }}</span>
+                      <span class="hi-date">Stylist: {{ bk.stylist_name || 'Master Barber' }}</span>
+                    </div>
+                    <div class="hi-right">
+                      <span class="hi-amount">₹{{ bk.total_price | number:'1.0-0' }}</span>
+                      <span class="hi-status {{ bk.status }}">{{ bk.status | titlecase }}</span>
+                    </div>
+                  </div>
+                }
+              </div>
+            } @else {
+              <p class="empty-hint">No appointment bookings recorded.</p>
+            }
           </div>
         </div>
 
-        <div class="drawer-footer">
-          <button class="btn-done" (click)="closeCustomerDetails()">Close Profile</button>
+        <div class="modal-footer">
+          <button type="button" class="btn-primary" (click)="closeCustomerDetails()">Close</button>
         </div>
       </div>
     </div>

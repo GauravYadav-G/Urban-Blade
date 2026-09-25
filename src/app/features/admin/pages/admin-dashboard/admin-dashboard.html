@@ -148,10 +148,10 @@
         @for (order of admin.orders().slice(0, 4); track order.id) {
           <div class="queue-item">
             <div class="queue-item__left">
-              <div class="order-avatar">{{ order.shipping_address.fullName.charAt(0) | uppercase }}</div>
+              <div class="order-avatar">{{ (order.shipping_address.fullName ? order.shipping_address.fullName.charAt(0) : 'U') | uppercase }}</div>
               <div class="queue-item__info">
                 <div class="info-top">
-                  <strong>{{ order.shipping_address.fullName }}</strong>
+                  <strong>{{ order.shipping_address.fullName || 'Customer' }}</strong>
                   <span class="status-chip" [class]="'status-chip--' + order.status">{{ order.status | uppercase }}</span>
                 </div>
                 <span class="info-meta">{{ order.items.length }} item(s) · ₹{{ order.total_amount | number }} · {{ order.payment_method | uppercase }}</span>

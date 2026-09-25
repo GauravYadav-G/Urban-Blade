@@ -85,12 +85,12 @@
 
         <div class="client-section">
           <div class="client-avatar">
-            {{ b.customer_name.charAt(0) }}
+            {{ b.customer_name ? b.customer_name.charAt(0) : 'C' }}
           </div>
           <div class="client-info">
-            <h3 class="client-name">{{ b.customer_name }}</h3>
-            <span class="client-contact">{{ b.customer_phone }}</span>
-            <span class="client-email">{{ b.customer_email }}</span>
+            <h3 class="client-name">{{ b.customer_name || 'Client' }}</h3>
+            <span class="client-contact">{{ b.customer_phone || 'N/A' }}</span>
+            <span class="client-email">{{ b.customer_email || 'N/A' }}</span>
           </div>
         </div>
 

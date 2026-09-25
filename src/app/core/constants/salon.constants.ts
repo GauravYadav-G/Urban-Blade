@@ -29,9 +29,9 @@ export const MAIN_NAV: { label: string; route: string; query?: Record<string, st
   { label: 'Beard & Moustache', route: '/shop', query: { cat: 'beard' } },
 ];
 
-export const PAGES_NAV: { label: string; route: string }[] = [
+export const PAGES_NAV: { label: string; route: string; query?: Record<string, string> }[] = [
   { label: 'My Account', route: '/account' },
-  { label: 'Orders', route: '/orders' },
+  { label: 'Orders & Tracking', route: '/account', query: { tab: 'orders' } },
   { label: 'Book a Visit', route: '/book' },
   { label: 'Help / Support', route: '/help' },
 ];

@@ -1,34 +1,62 @@
-<section class="info">
-  <p class="kicker">Sell</p>
-  <h1>Sell on Urban Blade</h1>
-  <p class="lede">
-    List hair care, beard, skin, tools, or gift cards for the Urban Blade salon store. We stock
-    products used on the chair in {{ salon.city }} and ship the same range across NCR.
-  </p>
+<div class="sell-page-shell">
+  <header class="sell-hero">
+    <div class="kicker-pill">
+      <span class="sparkle">✦</span>
+      <span>BRAND PARTNERSHIPS & DISTRIBUTION</span>
+    </div>
+    <h1>Sell on Urban Blade</h1>
+    <p class="lede">
+      List hair care, beard formulas, skincare, tools, or gift cards for the Urban Blade luxury storefront.
+      We stock products used on the salon floor in {{ salon.city }} and ship the curated range nationwide.
+    </p>
+  </header>
 
-  <div class="cards">
-    <article>
-      <h2>What you can sell</h2>
-      <ul>
-        <li>Hair care — shampoo, oil, serum, masks, colour</li>
-        <li>Beard &amp; moustache — oil, balm, wax, combs</li>
-        <li>Skin — wash, de-tan, after-shave, glow kits</li>
-        <li>Salon tools — dryers, irons, shears, clippers</li>
-        <li>Gift cards and salon service vouchers</li>
+  <div class="cards-grid">
+    <article class="info-card card">
+      <div class="card-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <path d="M16 10a4 4 0 0 1-8 0"></path>
+        </svg>
+      </div>
+      <h2>What You Can List</h2>
+      <ul class="perk-list">
+        <li>✦ <strong>Hair Care:</strong> Shampoos, oils, serums, clay pomades, and treatment masks.</li>
+        <li>✦ <strong>Beard &amp; Moustache:</strong> Growth serums, conditioning balms, and wooden combs.</li>
+        <li>✦ <strong>Executive Skin:</strong> Charcoal face washes, de-tan kits, and SPF 30 creams.</li>
+        <li>✦ <strong>Professional Tools:</strong> Ionic dryers, ceramic irons, shears, and precision clippers.</li>
+        <li>✦ <strong>Vouchers:</strong> Experience packages and digital gift vouchers.</li>
       </ul>
     </article>
-    <article>
-      <h2>Who we work with</h2>
+
+    <article class="info-card card">
+      <div class="card-icon gold">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9" cy="7" r="4"></circle>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+        </svg>
+      </div>
+      <h2>Who We Partner With</h2>
       <p>
-        Grooming brands, local makers, and professional tool suppliers. Every listing should be
-        salon-safe, labelled, and ready to ship from India.
+        Grooming brands, indie formulators, and professional salon hardware suppliers. Every listing must be
+        compliant with Indian cosmetics standards, sealed, and ready to dispatch from Delhi NCR.
       </p>
-      <p>
-        Email <a [href]="'mailto:' + salon.email">{{ salon.email }}</a> with your catalogue, prices,
-        and stock. Or call <a [href]="'tel:' + salon.phoneTel">{{ salon.phoneDisplay }}</a>.
-      </p>
+      <div class="contact-box">
+        <strong>Direct Merchant Onboarding:</strong>
+        <p>Email: <a [href]="'mailto:' + salon.email">{{ salon.email }}</a></p>
+        <p>Studio Desk: <a [href]="'tel:' + salon.phoneTel">{{ salon.phoneDisplay }}</a></p>
+      </div>
     </article>
   </div>
 
-  <a class="cta" routerLink="/shop">See products we already sell</a>
-</section>
+  <div class="cta-banner card">
+    <div class="cb-text">
+      <h3>Explore Our Curated Storefront</h3>
+      <p>Review the existing luxury men's grooming catalog and active client listings.</p>
+    </div>
+    <a class="btn-primary" routerLink="/shop">Browse Retail Catalog ➔</a>
+  </div>
+</div>

@@ -160,7 +160,7 @@
           <ul>
             @for (page of pagesNav; track page.label) {
               <li>
-                <a [routerLink]="page.route" (click)="closePages()">{{ page.label }}</a>
+                <a [routerLink]="page.route" [queryParams]="page.query ?? {}" (click)="closePages()">{{ page.label }}</a>
               </li>
             }
           </ul>

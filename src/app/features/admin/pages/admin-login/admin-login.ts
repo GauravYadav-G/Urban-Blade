@@ -36,6 +36,19 @@ export class AdminLogin {
     this.errorMessage.set('');
   }
 
+  fillVendor(type: 'lab' | 'grooming' | 'tools'): void {
+    const emails: Record<string, string> = {
+      lab: 'lab@urbanblade.in',
+      grooming: 'grooming@urbanblade.in',
+      tools: 'tools@urbanblade.in',
+    };
+    this.form.setValue({
+      email: emails[type] || 'lab@urbanblade.in',
+      password: 'Vendor@2026',
+    });
+    this.errorMessage.set('');
+  }
+
   togglePassword(): void {
     this.showPassword.update((val) => !val);
   }
