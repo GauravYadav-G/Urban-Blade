@@ -1,12 +1,17 @@
 @if (cart.addToast(); as toast) {
-  <aside class="cart-toast" role="status">
-    <img [src]="toast.imageUrl" [alt]="toast.productName" width="56" height="56" appImgFallback />
-    <div class="cart-toast__copy">
-      <p class="cart-toast__ok">Added to cart</p>
-      <p>{{ toast.productName }}</p>
-      <p class="cart-toast__meta">{{ toast.lineQty }} in basket · {{ cart.subtotal() | inr }}</p>
+  <aside class="cart-toast" role="status" aria-live="polite">
+    <div class="cart-toast__media-wrap">
+      <img [src]="toast.imageUrl" [alt]="toast.productName" width="52" height="52" appImgFallback />
+      <span class="cart-toast__check-badge" aria-hidden="true">✓</span>
     </div>
-    <a routerLink="/cart" class="cart-toast__cta">View cart</a>
-    <button type="button" class="cart-toast__close" (click)="cart.dismissToast()" aria-label="Dismiss">×</button>
+    <div class="cart-toast__copy">
+      <p class="cart-toast__ok">Added to Cart</p>
+      <p class="cart-toast__product-name" [title]="toast.productName">{{ toast.productName }}</p>
+      <p class="cart-toast__meta">{{ toast.lineQty }} in basket · <strong>{{ cart.subtotal() | inr }}</strong></p>
+    </div>
+    <div class="cart-toast__actions">
+      <a routerLink="/cart" (click)="cart.dismissToast()" class="cart-toast__cta">View Cart</a>
+      <button type="button" class="cart-toast__close" (click)="cart.dismissToast()" aria-label="Dismiss">×</button>
+    </div>
   </aside>
 }

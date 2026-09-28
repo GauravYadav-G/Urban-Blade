@@ -9,6 +9,7 @@ import { checkRedisHealth } from '../../redis/client.js';
 import { getEventLoopLag, getMemoryUsage } from '../../core/circuit-breaker.js';
 import { syncOrderFromCarrierWebsite } from '../orders/carrier-portal.service.js';
 import { generateAiReply } from '../support/support.routes.js';
+import { requireAdmin, requireStaff } from '../../core/auth.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,6 +20,10 @@ const seedProducts: any[] = JSON.parse(
 );
 
 export async function adminRoutes(app: FastifyInstance) {
+  // ─── AUTHENTICATION & RBAC (OWASP TOP 10 ACCESS CONTROL GUARD) ───────────
+  // Protect ALL admin operations: reject unauthenticated or non-staff callers
+  app.addHook('preHandler', requireStaff);
+
   // ─── 1. DYNAMIC EXECUTIVE DASHBOARD KPI METRICS ────────────────────────────
   app.get('/admin/metrics', async (request, reply) => {
     try {
@@ -272,6 +277,45 @@ export async function adminRoutes(app: FastifyInstance) {
     };
   }>('/admin/products', async (request, reply) => {
     const p = request.body;
+    const user = request.user;
+
+    const allowedCategories = ['hair', 'beard', 'skin', 'tools', 'gifts', 'services'];
+    const allowedKinds = ['retail', 'service', 'gift'];
+    const allowedAudiences = ['men', 'ladies', 'unisex'];
+    const allowedBadges = [null, undefined, '', 'deal', 'bestseller', 'new'];
+
+    if (p.category && !allowedCategories.includes(p.category)) {
+      return reply.status(400).send({
+        error: 'INVALID_CATEGORY',
+        message: `Category must be one of: ${allowedCategories.join(', ')}`,
+      });
+    }
+    if (p.kind && !allowedKinds.includes(p.kind)) {
+      return reply.status(400).send({
+        error: 'INVALID_KIND',
+        message: `Kind must be one of: ${allowedKinds.join(', ')}`,
+      });
+    }
+    if (p.audience && !allowedAudiences.includes(p.audience)) {
+      return reply.status(400).send({
+        error: 'INVALID_AUDIENCE',
+        message: `Audience must be one of: ${allowedAudiences.join(', ')}`,
+      });
+    }
+    if (p.badge && !allowedBadges.includes(p.badge)) {
+      return reply.status(400).send({
+        error: 'INVALID_BADGE',
+        message: `Badge must be one of: deal, bestseller, new, or null`,
+      });
+    }
+    if (p.price !== undefined && (isNaN(Number(p.price)) || Number(p.price) < 0)) {
+      return reply.status(400).send({
+        error: 'INVALID_PRICE',
+        message: 'Product price must be a non-negative number.',
+      });
+    }
+
+    const effectiveVendor = user?.role === 'vendor' ? (user.vendorName || user.name) : (p.vendor || 'Urban Blade Lab');
     const slug = p.slug || p.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const stockQty = Number(p.stockQuantity ?? p.stock_quantity ?? 100);
     const inStock = stockQty > 0;
@@ -310,7 +354,7 @@ export async function adminRoutes(app: FastifyInstance) {
           compareAt,
           p.category || 'hair',
           p.kind || 'retail',
-          p.vendor || 'Urban Blade Lab',
+          effectiveVendor,
           p.audience || 'unisex',
           imgUrl,
           stockQty,
@@ -350,6 +394,26 @@ export async function adminRoutes(app: FastifyInstance) {
   }>('/admin/products/:id', async (request, reply) => {
     const { id } = request.params;
     const b = request.body;
+    const user = request.user;
+
+    if (b.price !== undefined && (isNaN(Number(b.price)) || Number(b.price) < 0)) {
+      return reply.status(400).send({
+        error: 'INVALID_PRICE',
+        message: 'Product price must be a non-negative number.',
+      });
+    }
+
+    // Vendor authorization boundary
+    if (user?.role === 'vendor') {
+      const prodCheck = await query('SELECT vendor FROM products WHERE id::text = $1 OR slug = $1', [id]);
+      if (prodCheck.rows.length > 0) {
+        const prodVendor = prodCheck.rows[0].vendor;
+        if (!prodVendor || !prodVendor.toLowerCase().includes((user.vendorName || user.name).toLowerCase())) {
+          return reply.status(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to modify another vendor product.' });
+        }
+      }
+    }
+
     const stockQty = b.stockQuantity !== undefined ? b.stockQuantity : b.stock_quantity;
     const inStock = b.inStock !== undefined ? b.inStock : (b.in_stock !== undefined ? b.in_stock : (stockQty !== undefined ? stockQty > 0 : undefined));
     const compareAt = b.compareAtPrice !== undefined ? b.compareAtPrice : b.compare_at_price;
@@ -405,6 +469,19 @@ export async function adminRoutes(app: FastifyInstance) {
   // Delete Product
   app.delete<{ Params: { id: string } }>('/admin/products/:id', async (request, reply) => {
     const { id } = request.params;
+    const user = request.user;
+
+    // Vendor authorization boundary
+    if (user?.role === 'vendor') {
+      const prodCheck = await query('SELECT vendor FROM products WHERE id::text = $1 OR slug = $1', [id]);
+      if (prodCheck.rows.length > 0) {
+        const prodVendor = prodCheck.rows[0].vendor;
+        if (!prodVendor || !prodVendor.toLowerCase().includes((user.vendorName || user.name).toLowerCase())) {
+          return reply.status(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to delete another vendor product.' });
+        }
+      }
+    }
+
     try {
       await query('DELETE FROM products WHERE id::text = $1 OR slug = $1', [id]);
     } catch {}
@@ -415,7 +492,11 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // ─── 3. ORDERS LIFECYCLE MANAGEMENT ───────────────────────────────────────
   app.get<{ Querystring: { vendor?: string } }>('/admin/orders', async (request, reply) => {
-    const { vendor } = request.query || {};
+    const user = request.user;
+    let { vendor } = request.query || {};
+    if (user?.role === 'vendor') {
+      vendor = user.vendorName || user.name;
+    }
     try {
       let sql = `
         SELECT 
@@ -793,8 +874,8 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   );
 
-  // ─── 5. CUSTOMER DIRECTORY & CRM ──────────────────────────────────────────
-  app.get('/admin/customers', async (request, reply) => {
+  // ─── 5. CUSTOMER DIRECTORY & CRM (ADMIN-ONLY) ─────────────────────────────
+  app.get('/admin/customers', { preHandler: [requireAdmin] }, async (request, reply) => {
     try {
       const res = await query(`
         SELECT 
@@ -817,56 +898,80 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   // Customer Details (with order history and appointments)
-  app.get<{ Params: { id: string } }>('/admin/customers/:id/details', async (request, reply) => {
-    const { id } = request.params;
-    try {
-      const userRes = await query('SELECT id, name, email, role, created_at FROM users WHERE id::text = $1', [id]);
-      if (userRes.rows.length === 0) return reply.status(404).send({ error: 'USER_NOT_FOUND' });
+  app.get<{ Params: { id: string } }>(
+    '/admin/customers/:id/details',
+    { preHandler: [requireAdmin] },
+    async (request, reply) => {
+      const { id } = request.params;
+      try {
+        const userRes = await query('SELECT id, name, email, role, created_at FROM users WHERE id::text = $1', [id]);
+        if (userRes.rows.length === 0) return reply.status(404).send({ error: 'USER_NOT_FOUND' });
 
-      const ordersRes = await query(`
-        SELECT o.id, o.status, o.total_amount::numeric, o.created_at,
-               COALESCE(json_agg(oi.product_name) FILTER (WHERE oi.id IS NOT NULL), '[]') as item_names
-        FROM orders o
-        LEFT JOIN order_items oi ON oi.order_id = o.id
-        WHERE o.user_id::text = $1
-        GROUP BY o.id
-        ORDER BY o.created_at DESC;
-      `, [id]);
+        const ordersRes = await query(`
+          SELECT o.id, o.status, o.total_amount::numeric, o.created_at,
+                 COALESCE(json_agg(oi.product_name) FILTER (WHERE oi.id IS NOT NULL), '[]') as item_names
+          FROM orders o
+          LEFT JOIN order_items oi ON oi.order_id = o.id
+          WHERE o.user_id::text = $1
+          GROUP BY o.id
+          ORDER BY o.created_at DESC;
+        `, [id]);
 
-      const bookingsRes = await query(`
-        SELECT b.id, b.booking_date, b.time_slot, b.status, b.total_price::numeric, b.notes, s.name as stylist_name
-        FROM bookings b
-        LEFT JOIN stylists s ON s.id = b.stylist_id
-        WHERE b.customer_email = $1 OR b.customer_phone = (SELECT email FROM users WHERE id::text = $2)
-        ORDER BY b.booking_date DESC;
-      `, [userRes.rows[0].email, id]);
+        const bookingsRes = await query(`
+          SELECT b.id, b.booking_date, b.time_slot, b.status, b.total_price::numeric, b.notes, s.name as stylist_name
+          FROM bookings b
+          LEFT JOIN stylists s ON s.id = b.stylist_id
+          WHERE b.customer_email = $1 OR b.customer_phone = (SELECT email FROM users WHERE id::text = $2)
+          ORDER BY b.booking_date DESC;
+        `, [userRes.rows[0].email, id]);
 
-      return reply.send({
-        user: userRes.rows[0],
-        orders: ordersRes.rows,
-        bookings: bookingsRes.rows,
-      });
-    } catch (err: any) {
-      return reply.status(500).send({ error: 'FAILED_TO_FETCH_CUSTOMER', message: err.message });
+        return reply.send({
+          user: userRes.rows[0],
+          orders: ordersRes.rows,
+          bookings: bookingsRes.rows,
+        });
+      } catch (err: any) {
+        return reply.status(500).send({ error: 'FAILED_TO_FETCH_CUSTOMER', message: err.message });
+      }
     }
-  });
+  );
 
-  // Update Customer Role
+  // Update Customer Role (Admin-Only, Privilege Escalation Guarded)
   app.put<{ Params: { id: string }; Body: { role: string } }>(
     '/admin/customers/:id/role',
+    { preHandler: [requireAdmin] },
     async (request, reply) => {
       const { id } = request.params;
       const { role } = request.body;
+      const allowedRoles = ['customer', 'admin', 'stylist', 'vendor'];
+      if (!role || !allowedRoles.includes(role)) {
+        return reply.status(400).send({
+          error: 'INVALID_ROLE',
+          message: `Role must be one of: ${allowedRoles.join(', ')}`,
+        });
+      }
+
+      // Master Admin cannot be demoted
+      if (id === 'cf32923e-e498-407c-93d5-8d8cef913979' && role !== 'admin') {
+        return reply.status(400).send({
+          error: 'CANNOT_DEMOTE_MASTER_ADMIN',
+          message: 'The Master Administrator account role cannot be altered.',
+        });
+      }
+
       try {
-        const res = await query('UPDATE users SET role = $1 WHERE id::text = $2 RETURNING id, name, email, role', [role, id]);
+        const res = await query(
+          'UPDATE users SET role = $1, updated_at = CURRENT_TIMESTAMP WHERE id::text = $2 RETURNING id, name, email, role',
+          [role, id]
+        );
         if (res.rows.length > 0) return reply.send(res.rows[0]);
       } catch {}
       return reply.send({ id, role });
     }
   );
 
-  // ─── 6. SYSTEM TELEMETRY & CACHE FLUSH ────────────────────────────────────
-  app.get('/admin/system', async (request, reply) => {
+  // ─── 6. SYSTEM TELEMETRY & CACHE FLUSH (ADMIN-ONLY) ──────────────────────
+  app.get('/admin/system', { preHandler: [requireAdmin] }, async (request, reply) => {
     const dbHealth = await checkDbHealth();
     const redisHealth = await checkRedisHealth();
     const eventLoopLagMs = getEventLoopLag();
@@ -884,7 +989,7 @@ export async function adminRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/admin/cache/flush', async (request, reply) => {
+  app.post('/admin/cache/flush', { preHandler: [requireAdmin] }, async (request, reply) => {
     try {
       await invalidateCatalog();
       return reply.send({
@@ -903,8 +1008,8 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   });
 
-  // ─── 7. MULTI-VENDOR BUSINESS MANAGEMENT ─────────────────────────────────
-  app.get('/admin/vendors', async (request, reply) => {
+  // ─── 7. MULTI-VENDOR BUSINESS MANAGEMENT (ADMIN-ONLY) ─────────────────────
+  app.get('/admin/vendors', { preHandler: [requireAdmin] }, async (request, reply) => {
     try {
       const res = await query(`
         SELECT 
@@ -955,7 +1060,7 @@ export async function adminRoutes(app: FastifyInstance) {
       commissionRate?: number;
       payoutAccount?: any;
     };
-  }>('/admin/vendors', async (request, reply) => {
+  }>('/admin/vendors', { preHandler: [requireAdmin] }, async (request, reply) => {
     const v = request.body;
     const slug = v.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const id = `vnd-${slug}`;
@@ -1008,7 +1113,7 @@ export async function adminRoutes(app: FastifyInstance) {
       status?: string;
       payoutAccount?: any;
     };
-  }>('/admin/vendors/:id', async (request, reply) => {
+  }>('/admin/vendors/:id', { preHandler: [requireAdmin] }, async (request, reply) => {
     const { id } = request.params;
     const v = request.body;
 
@@ -1058,8 +1163,20 @@ export async function adminRoutes(app: FastifyInstance) {
       ]);
       if (res.rows.length > 0) {
         const vendor = res.rows[0];
+        const token = app.jwt.sign(
+          {
+            id: vendor.id,
+            email: vendor.email,
+            name: vendor.name,
+            role: 'vendor',
+            vendorId: vendor.id,
+            vendorName: vendor.name,
+          },
+          { expiresIn: '15m' }
+        );
         return reply.send({
           ok: true,
+          token,
           vendor: {
             id: vendor.id,
             name: vendor.name,

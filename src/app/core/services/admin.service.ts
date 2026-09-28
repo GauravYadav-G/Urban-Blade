@@ -145,6 +145,11 @@ const API_BASE =
     ? 'http://localhost:4000/api/admin'
     : '/api/admin';
 
+const SUPPORT_API_BASE =
+  typeof window !== 'undefined' && window.location.port === '4200'
+    ? 'http://localhost:4000/api/support'
+    : '/api/support';
+
 @Injectable({ providedIn: 'root' })
 export class AdminService {
   private readonly http = inject(HttpClient);
@@ -1099,13 +1104,21 @@ export class AdminService {
   private broadcastChannel: BroadcastChannel | null = null;
 
   // ─── SUPPORT INQUIRIES & AI REAL-LIFE CHATBOT ──────────────────────────────
+  // IDs currently being deleted — excluded from every poll refresh so they never reappear
+  private readonly pendingDeletes = new Set<string>();
+
   private startInquiriesLivePolling(): void {
     if (typeof window !== 'undefined') {
       if ('BroadcastChannel' in window) {
         this.broadcastChannel = new BroadcastChannel('urban_support_bus');
         this.broadcastChannel.onmessage = (e) => {
           if (e.data?.type === 'USER_QUERY') {
-            this.refreshInquiries(true);
+            if (e.data?.deletedInquiryId) {
+              this.pendingDeletes.add(e.data.deletedInquiryId);
+              this.supportInquiries.update((list) => list.filter((i) => i.id !== e.data.deletedInquiryId));
+              this.saveInquiries(this.supportInquiries());
+            }
+            this.refreshInquiries(!e.data?.deletedInquiryId);
           }
         };
       }
@@ -1116,18 +1129,23 @@ export class AdminService {
   }
 
   refreshInquiries(showToast = false): void {
-    this.http.get<{ data: SupportInquiry[] }>(`${API_BASE}/support/inquiries`).subscribe({
+    this.http.get<{ data: SupportInquiry[] }>(`${SUPPORT_API_BASE}/inquiries`).subscribe({
       next: (res) => {
         if (res?.data && Array.isArray(res.data)) {
-          const prevCount = this.supportInquiries().length;
-          this.supportInquiries.set(res.data);
-          this.saveInquiries(res.data);
+          // Filter out any IDs currently in the delete pipeline — prevents reappearance
+          const filtered = this.pendingDeletes.size > 0
+            ? res.data.filter((i) => !this.pendingDeletes.has(i.id))
+            : res.data;
 
-          if (!this.activeSupportInquiryId() && res.data[0]) {
-            this.activeSupportInquiryId.set(res.data[0].id);
+          const prevCount = this.supportInquiries().length;
+          this.supportInquiries.set(filtered);
+          this.saveInquiries(filtered);
+
+          if (!this.activeSupportInquiryId() && filtered[0]) {
+            this.activeSupportInquiryId.set(filtered[0].id);
           }
 
-          if (res.data.length > prevCount && prevCount > 0 && showToast) {
+          if (filtered.length > prevCount && prevCount > 0 && showToast) {
             this.toast.info('🔔 New customer inquiry received in real time!');
           }
         }
@@ -1145,7 +1163,7 @@ export class AdminService {
     priority?: 'low' | 'medium' | 'high';
     initialMessage?: string;
   }): void {
-    this.http.post<{ ok: boolean; inquiry: SupportInquiry }>(`${API_BASE}/support/inquiries`, payload).subscribe({
+    this.http.post<{ ok: boolean; inquiry: SupportInquiry }>(`${SUPPORT_API_BASE}/inquiries`, payload).subscribe({
       next: (res) => {
         if (res?.inquiry) {
           this.supportInquiries.update((list) => [res.inquiry, ...list]);
@@ -1164,11 +1182,50 @@ export class AdminService {
   }
 
   deleteInquiry(id: string): void {
-    this.supportInquiries.update((list) => list.filter((i) => i.id !== id));
-    this.saveInquiries(this.supportInquiries());
-    this.toast.info('Inquiry ticket removed.');
-    this.http.delete(`${API_BASE}/support/inquiries/${id}`).subscribe({ error: () => {} });
+    this.deleteInquiries([id]);
   }
+
+  deleteInquiries(ids: string[]): void {
+    if (!ids.length) return;
+    const snapshot = this.supportInquiries();
+
+    // Mark as pending so polling never restores them
+    ids.forEach((id) => this.pendingDeletes.add(id));
+
+    // Optimistic remove from local signal
+    this.supportInquiries.update((list) => list.filter((i) => !ids.includes(i.id)));
+    this.saveInquiries(this.supportInquiries());
+
+    // Broadcast immediately so customer widgets instantly clear
+    if (this.broadcastChannel) {
+      this.broadcastChannel.postMessage({ type: 'INQUIRY_DELETED', ids });
+    }
+
+    // Fire parallel DELETEs to backend
+    const deletes = ids.map((id) =>
+      this.http.delete<{ ok: boolean }>(`${SUPPORT_API_BASE}/inquiries/${id}`).toPromise()
+        .catch(() => null)
+    );
+
+    Promise.all(deletes).then((results) => {
+      const failed = ids.filter((_, i) => results[i] === null);
+      if (failed.length === 0) {
+        this.toast.success(`${ids.length} ${ids.length === 1 ? 'inquiry' : 'inquiries'} permanently deleted.`);
+        ids.forEach((id) => this.pendingDeletes.delete(id));
+      } else {
+        // Partial failure — restore failed ones
+        failed.forEach((id) => this.pendingDeletes.delete(id));
+        const failedItems = snapshot.filter((i) => failed.includes(i.id));
+        this.supportInquiries.update((list) => [...failedItems, ...list]);
+        this.saveInquiries(this.supportInquiries());
+        this.toast.error(`${failed.length} deletion(s) failed — please try again.`);
+        if (ids.length - failed.length > 0) {
+          this.toast.success(`${ids.length - failed.length} deleted successfully.`);
+        }
+      }
+    });
+  }
+
 
   sendInquiryMessage(inquiryId: string, text: string, sender: 'admin' | 'ai' = 'admin'): void {
     const newMsg = {
@@ -1192,7 +1249,7 @@ export class AdminService {
     this.saveInquiries(this.supportInquiries());
 
     this.http
-      .post<{ ok: boolean; inquiry?: SupportInquiry }>(`${API_BASE}/support/inquiries/${inquiryId}/message`, {
+      .post<{ ok: boolean; inquiry?: SupportInquiry }>(`${SUPPORT_API_BASE}/inquiries/${inquiryId}/message`, {
         text,
         sender,
       })
@@ -1217,7 +1274,7 @@ export class AdminService {
     this.saveInquiries(this.supportInquiries());
     this.toast.success(`Inquiry ticket updated: ${status.replace('_', ' ').toUpperCase()}`);
 
-    this.http.put<{ ok: boolean; inquiry?: SupportInquiry }>(`${API_BASE}/support/inquiries/${inquiryId}/status`, { status }).subscribe({
+    this.http.put<{ ok: boolean; inquiry?: SupportInquiry }>(`${SUPPORT_API_BASE}/inquiries/${inquiryId}/status`, { status }).subscribe({
       next: (res) => {
         if (res?.inquiry) {
           this.supportInquiries.update((list) => list.map((i) => (i.id === inquiryId ? res.inquiry! : i)));
@@ -1238,7 +1295,7 @@ export class AdminService {
     vendorName?: string;
     customerName?: string;
   }): Observable<AiChatResponse> {
-    return this.http.post<AiChatResponse>(`${API_BASE}/support/ai-chat`, payload);
+    return this.http.post<AiChatResponse>(`${SUPPORT_API_BASE}/ai-chat`, payload);
   }
 
   toggleChatDrawer(): void {

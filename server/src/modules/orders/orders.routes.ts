@@ -4,6 +4,7 @@ import Razorpay from 'razorpay';
 import { query, withTransaction } from '../../db/pool.js';
 import { enqueueOrderJob, OrderJobPayload } from '../../queue/order-saga.queue.js';
 import { config } from '../../config.js';
+import { optionalAuth } from '../../core/auth.middleware.js';
 
 function toValidUuidOrNull(val?: string | null): string | null {
   if (!val || typeof val !== 'string') return null;
@@ -29,7 +30,7 @@ async function resolveUserId(userId?: string | null, email?: string | null): Pro
 export async function resolveAndVerifyItems(
   items: Array<{ productId: string; quantity: number }>,
   couponCode?: string,
-  discountAmount?: number
+  _untrustedDiscountAmount?: number
 ) {
   const verifiedItems: Array<{
     productId: string;
@@ -40,6 +41,10 @@ export async function resolveAndVerifyItems(
   }> = [];
 
   for (const it of items) {
+    if (!it.quantity || typeof it.quantity !== 'number' || !Number.isInteger(it.quantity) || it.quantity < 1) {
+      throw new Error(`INVALID_QUANTITY: Item quantity must be a positive whole number.`);
+    }
+
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(it.productId);
     const cleanSlug = it.productId.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
     const slugCandidate = (it as any).slug || cleanSlug;
@@ -67,18 +72,6 @@ export async function resolveAndVerifyItems(
     }
 
     if (!product) {
-      const fallbackRes = await query(
-        `SELECT id, name, price, stock_quantity, image_url, in_stock FROM products 
-         WHERE in_stock = true AND stock_quantity > 0 
-         ORDER BY created_at ASC 
-         LIMIT 1`
-      );
-      if (fallbackRes.rows.length > 0) {
-        product = fallbackRes.rows[0];
-      }
-    }
-
-    if (!product) {
       throw new Error(`PRODUCT_NOT_FOUND: Product "${it.productId}" was not found in catalog.`);
     }
 
@@ -98,7 +91,7 @@ export async function resolveAndVerifyItems(
 
   const subtotal = verifiedItems.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
 
-  // Authoritative Coupon Validation
+  // Authoritative Coupon Validation (zero client tampering)
   let validatedDiscount = 0;
   let cleanCoupon = '';
   if (couponCode) {
@@ -114,11 +107,7 @@ export async function resolveAndVerifyItems(
       validatedDiscount = rule.type === 'percent'
         ? Math.min(rule.max || 9999, Math.round((subtotal * rule.val) / 100))
         : Math.min(subtotal, rule.val);
-    } else if (discountAmount && discountAmount > 0 && discountAmount < subtotal) {
-      validatedDiscount = Math.min(discountAmount, Math.round(subtotal * 0.4));
     }
-  } else if (discountAmount && discountAmount > 0 && discountAmount < subtotal) {
-    validatedDiscount = Math.min(discountAmount, Math.round(subtotal * 0.4));
   }
 
   const taxableSubtotal = Math.max(0, subtotal - validatedDiscount);
@@ -253,6 +242,18 @@ export async function ordersRoutes(app: FastifyInstance) {
         shippingAddress,
       });
     } catch (err: any) {
+      if (err.message?.startsWith('INVALID_QUANTITY:')) {
+        return reply.status(400).send({
+          error: 'INVALID_QUANTITY',
+          message: err.message.replace('INVALID_QUANTITY: ', ''),
+        });
+      }
+      if (err.message?.startsWith('PRODUCT_NOT_FOUND:')) {
+        return reply.status(404).send({
+          error: 'PRODUCT_NOT_FOUND',
+          message: err.message.replace('PRODUCT_NOT_FOUND: ', ''),
+        });
+      }
       if (err.message?.startsWith('INSUFFICIENT_STOCK:')) {
         return reply.status(400).send({
           error: 'INSUFFICIENT_STOCK',
@@ -447,72 +448,84 @@ export async function ordersRoutes(app: FastifyInstance) {
     Body: {
       items: Array<{
         productId: string;
-        productName: string;
-        unitPrice: number;
         quantity: number;
-        imageUrl?: string;
       }>;
-      subtotal: number;
-      shippingFee?: number;
-      totalAmount: number;
       shippingAddress: any;
       paymentMethod?: string;
+      couponCode?: string;
+      userId?: string;
     };
   }>('/orders', async (request, reply) => {
     const {
       items,
-      subtotal,
-      shippingFee = 0,
-      totalAmount,
       shippingAddress,
       paymentMethod = 'cash_on_delivery',
-    } = request.body;
+      couponCode,
+      userId,
+    } = request.body as any;
 
     if (!items || items.length === 0) {
       return reply.status(400).send({ error: 'EMPTY_ORDER', message: 'Cart items are required' });
     }
+    if (!shippingAddress?.fullName || !shippingAddress?.phone) {
+      return reply.status(400).send({ error: 'INVALID_ADDRESS', message: 'Customer name and phone are required' });
+    }
+
+    // 1. Authoritative price and stock verification from database (zero client tampering)
+    const { verifiedItems, subtotal, shippingFee, totalAmount, discountAmount, couponCode: cleanCoupon } =
+      await resolveAndVerifyItems(items, couponCode);
 
     const orderId = crypto.randomUUID();
     const idempotencyKey =
       (request.headers['x-idempotency-key'] as string) || `auto-${orderId}`;
 
+    const effectiveAddress = {
+      ...shippingAddress,
+      email: (shippingAddress as any)?.email || (request.body as any)?.userEmail || 'customer@urbanblade.in',
+    };
+    const resolvedUserUuid = await resolveUserId(userId, effectiveAddress.email);
+
     const orderPayload: OrderJobPayload = {
       orderId,
       idempotencyKey,
-      items,
+      items: verifiedItems,
       subtotal,
       shippingFee,
       totalAmount,
       currency: 'INR',
-      shippingAddress,
+      shippingAddress: effectiveAddress,
       paymentMethod,
     };
 
-    // 1. Insert Initial Pending Order Shell into DB (non-blocking)
+    // 2. Insert Initial Pending Order Shell into DB
     try {
       await withTransaction(async (client) => {
         await client.query(
           `
           INSERT INTO orders (
-            id, idempotency_key, status, subtotal, shipping_fee, 
-            total_amount, currency, shipping_address, payment_method, payment_status, transaction_id
+            id, user_id, idempotency_key, status, subtotal, shipping_fee, 
+            total_amount, currency, shipping_address, payment_method, payment_status, transaction_id,
+            coupon_code, discount_amount
           ) VALUES (
-            $1, $2, 'accepted', $3, $4, $5, 'INR', $6, $7, 'pending', $8
+            $1, $2, $3, 'accepted', $4, $5, $6, 'INR', $7, $8, 'pending', $9, $10, $11
           );
           `,
           [
             orderId,
+            resolvedUserUuid,
             idempotencyKey,
             subtotal,
             shippingFee,
             totalAmount,
-            JSON.stringify(shippingAddress),
+            JSON.stringify(effectiveAddress),
             paymentMethod,
             `tx_saga_${orderId.slice(0, 8)}`,
+            cleanCoupon || null,
+            discountAmount || 0,
           ]
         );
 
-        for (const it of items) {
+        for (const it of verifiedItems) {
           await client.query(
             `
             INSERT INTO order_items (
@@ -529,10 +542,10 @@ export async function ordersRoutes(app: FastifyInstance) {
       // Memory fallback if DB is temporarily offline
     }
 
-    // 2. Offload Inventory Deduction & Saga Validation to BullMQ Queue
+    // 3. Offload Inventory Deduction & Saga Validation to BullMQ Queue
     await enqueueOrderJob(orderPayload);
 
-    // 3. Return HTTP 202 Accepted immediately in < 15ms
+    // 4. Return HTTP 202 Accepted immediately
     return reply.status(202).send({
       orderId,
       status: 'accepted',
@@ -868,91 +881,146 @@ export async function ordersRoutes(app: FastifyInstance) {
     }
   });
 
-  // ─── GET ORDER BY ID ──────────────────────────────────────────────────────
-  app.get<{ Params: { orderId: string } }>('/orders/:orderId', async (request, reply) => {
-    const { orderId } = request.params;
+  // ─── GET ORDER BY ID (PROTECTED WITH OWNERSHIP VERIFICATION) ─────────────
+  app.get<{ Params: { orderId: string } }>(
+    '/orders/:orderId',
+    { preHandler: [optionalAuth] },
+    async (request, reply) => {
+      const { orderId } = request.params;
+      const user = request.user;
 
-    try {
-      const orderRes = await query('SELECT * FROM orders WHERE id = $1 LIMIT 1', [orderId]);
-      if (orderRes.rows.length === 0) {
-        return reply.status(404).send({ error: 'ORDER_NOT_FOUND', message: 'Order not found' });
-      }
-
-      const itemsRes = await query('SELECT * FROM order_items WHERE order_id = $1', [orderId]);
-      return reply.send({
-        ...orderRes.rows[0],
-        items: itemsRes.rows,
-      });
-    } catch {
-      return reply.send({
-        id: orderId,
-        status: 'confirmed',
-        message: 'Order retrieved.',
-      });
-    }
-  });
-
-  // ─── GET USER ORDERS HISTORY ──────────────────────────────────────────────
-  app.get<{ Querystring: { email?: string; userId?: string } }>('/orders', async (request, reply) => {
-    const { email, userId } = request.query || {};
-    try {
-      let sql = `
-        SELECT 
-          o.id, 
-          o.user_id,
-          o.status, 
-          o.subtotal::numeric, 
-          o.total_amount::numeric, 
-          o.discount_amount::numeric,
-          o.coupon_code,
-          o.tracking_number,
-          o.currency,
-          o.payment_method, 
-          o.payment_status, 
-          o.transaction_id,
-          o.shipping_address, 
-          o.created_at,
-          o.updated_at,
-          COALESCE(
-            json_agg(
-              json_build_object(
-                'id', oi.id,
-                'product_id', oi.product_id,
-                'product_name', oi.product_name,
-                'unit_price', oi.unit_price::numeric,
-                'quantity', oi.quantity,
-                'image_url', oi.image_url
-              )
-            ) FILTER (WHERE oi.id IS NOT NULL), '[]'
-          ) as items
-        FROM orders o
-        LEFT JOIN order_items oi ON oi.order_id = o.id
-      `;
-
-      const params: any[] = [];
-      if (email || userId) {
-        if (userId) {
-          params.push(userId);
-          sql += ` WHERE (o.user_id::text = $1 OR o.shipping_address::text ILIKE '%' || $1 || '%') `;
-        } else if (email) {
-          params.push(`%${email.trim()}%`);
-          sql += ` WHERE (o.shipping_address::text ILIKE $1 OR o.user_id::text ILIKE $1) `;
+      try {
+        const orderRes = await query('SELECT * FROM orders WHERE id = $1 LIMIT 1', [orderId]);
+        if (orderRes.rows.length === 0) {
+          return reply.status(404).send({ error: 'ORDER_NOT_FOUND', message: 'Order not found' });
         }
+
+        const order = orderRes.rows[0];
+        const shipping = typeof order.shipping_address === 'string' ? JSON.parse(order.shipping_address) : order.shipping_address;
+
+        // BOLA / IDOR ownership validation
+        if (user && user.role === 'customer') {
+          const isOwner = order.user_id === user.id || shipping?.email?.toLowerCase() === user.email?.toLowerCase();
+          if (!isOwner) {
+            return reply.status(403).send({
+              error: 'FORBIDDEN',
+              message: 'You do not have permission to view another customer order.',
+            });
+          }
+        }
+
+        const itemsRes = await query('SELECT * FROM order_items WHERE order_id = $1', [orderId]);
+        return reply.send({
+          ...order,
+          subtotal: Number(order.subtotal),
+          total_amount: Number(order.total_amount),
+          discount_amount: Number(order.discount_amount || 0),
+          shipping_address: shipping,
+          items: itemsRes.rows,
+        });
+      } catch (err: any) {
+        return reply.status(500).send({ error: 'FETCH_FAILED', message: err.message });
+      }
+    }
+  );
+
+  // ─── GET USER ORDERS HISTORY (SCOPED TO AUTHENTICATED USER) ───────────────
+  app.get<{ Querystring: { email?: string; userId?: string } }>(
+    '/orders',
+    { preHandler: [optionalAuth] },
+    async (request, reply) => {
+      const { email, userId } = request.query || {};
+      const user = request.user;
+
+      // Access control & IDOR prevention:
+      // If user is authenticated as customer, enforce that they can ONLY see their own orders!
+      let filterUserId: string | null = null;
+      let filterEmail: string | null = null;
+
+      if (user && user.role === 'customer') {
+        filterUserId = user.id;
+        filterEmail = user.email;
+      } else if (user && (user.role === 'admin' || user.role === 'vendor')) {
+        filterUserId = userId || null;
+        filterEmail = email || null;
+      } else {
+        // Unauthenticated guest: MUST provide their email to view their orders, cannot dump the DB!
+        if (!email && !userId) {
+          return reply.status(401).send({
+            error: 'AUTHENTICATION_REQUIRED',
+            message: 'Please sign in or provide your registered order email to view orders.',
+          });
+        }
+        filterEmail = email || null;
+        filterUserId = userId || null;
       }
 
-      sql += ` GROUP BY o.id ORDER BY o.created_at DESC LIMIT 50; `;
-      const res = await query(sql, params);
-      const mapped = res.rows.map((r) => ({
-        ...r,
-        subtotal: Number(r.subtotal),
-        total_amount: Number(r.total_amount),
-        discount_amount: Number(r.discount_amount || 0),
-        shipping_address: typeof r.shipping_address === 'string' ? JSON.parse(r.shipping_address) : r.shipping_address,
-      }));
-      return reply.send(mapped);
-    } catch (err: any) {
-      request.log.error(err, 'Failed to fetch user orders');
-      return reply.send([]);
+      try {
+        let sql = `
+          SELECT 
+            o.id, 
+            o.user_id,
+            o.status, 
+            o.subtotal::numeric, 
+            o.total_amount::numeric, 
+            o.discount_amount::numeric,
+            o.coupon_code,
+            o.tracking_number,
+            o.currency,
+            o.payment_method, 
+            o.payment_status, 
+            o.transaction_id,
+            o.shipping_address, 
+            o.created_at,
+            o.updated_at,
+            COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', oi.id,
+                  'product_id', oi.product_id,
+                  'product_name', oi.product_name,
+                  'unit_price', oi.unit_price::numeric,
+                  'quantity', oi.quantity,
+                  'image_url', oi.image_url
+                )
+              ) FILTER (WHERE oi.id IS NOT NULL), '[]'
+            ) as items
+          FROM orders o
+          LEFT JOIN order_items oi ON oi.order_id = o.id
+        `;
+
+        const params: any[] = [];
+        const conditions: string[] = [];
+
+        if (filterUserId && filterEmail) {
+          params.push(filterUserId, `%${filterEmail.trim()}%`);
+          conditions.push(`(o.user_id::text = $1 OR o.shipping_address::text ILIKE $2)`);
+        } else if (filterUserId) {
+          params.push(filterUserId);
+          conditions.push(`(o.user_id::text = $1 OR o.shipping_address::text ILIKE '%' || $1 || '%')`);
+        } else if (filterEmail) {
+          params.push(`%${filterEmail.trim()}%`);
+          conditions.push(`(o.shipping_address::text ILIKE $1 OR o.user_id::text ILIKE $1)`);
+        }
+
+        if (conditions.length > 0) {
+          sql += ` WHERE ${conditions.join(' AND ')} `;
+        }
+
+        sql += ` GROUP BY o.id ORDER BY o.created_at DESC LIMIT 50; `;
+        const res = await query(sql, params);
+        const mapped = res.rows.map((r) => ({
+          ...r,
+          subtotal: Number(r.subtotal),
+          total_amount: Number(r.total_amount),
+          discount_amount: Number(r.discount_amount || 0),
+          shipping_address: typeof r.shipping_address === 'string' ? JSON.parse(r.shipping_address) : r.shipping_address,
+        }));
+        return reply.send(mapped);
+      } catch (err: any) {
+        request.log.error(err, 'Failed to fetch user orders');
+        return reply.send([]);
+      }
     }
-  });
+  );
 }

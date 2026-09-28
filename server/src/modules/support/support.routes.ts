@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import crypto from 'crypto';
 import { query } from '../../db/pool.js';
 import { fetchCarrierWebsiteTracking, detectCarrier } from '../orders/carrier-portal.service.js';
+import { askOnlineAi } from '../../core/online-ai.service.js';
 
 export interface AiReplyOptions {
   message: string;
@@ -109,12 +110,34 @@ export async function generateAiReply(
           { label: '✂️ Book Salon Visit', query: 'Book appointment' }
         ];
       } else {
+        // Verify caller is authorized to cancel this order (IDOR & Unauthorized Cancellation Guard)
+        const shipping = typeof matchedOrder.shipping_address === 'string' ? JSON.parse(matchedOrder.shipping_address) : matchedOrder.shipping_address;
+        const orderEmail = shipping?.email?.toLowerCase();
+        const orderPhone = (shipping?.phone || '').replace(/\D/g, '');
+        const callerEmail = opts.userEmail?.toLowerCase()?.trim();
+        const callerMsg = safeMsg.toLowerCase();
+
+        const isCallerAuthorized =
+          (callerEmail && orderEmail && callerEmail === orderEmail) ||
+          (orderEmail && callerMsg.includes(orderEmail)) ||
+          (orderPhone && orderPhone.length >= 8 && callerMsg.includes(orderPhone));
+
+        if (!isCallerAuthorized) {
+          replyText = `I located Order #${shortId}. For your security, please confirm the registered email address or phone number associated with this order before cancellation and refund can be processed.`;
+          action = 'order_cancel_auth_required';
+          actionChips = [
+            { label: '📧 Provide Order Email', query: `My email is ${orderEmail ? orderEmail.replace(/(.{2})(.*)(@.*)/, '$1***$3') : '...'}` },
+            { label: '📞 Speak to Support Desk', query: 'Connect with support specialist' }
+          ];
+          return { replyText, action, sentiment: 'urgent', confidence, operation: null, actionChips };
+        }
+
         // Execute atomic cancellation in PostgreSQL and restock
         try {
           await query(
             `UPDATE orders 
              SET status = 'cancelled', 
-                 notes = COALESCE(notes, '') || ' | [Cancelled by customer via Urban AI Concierge]', 
+                 notes = COALESCE(notes, '') || ' | [Cancelled by verified customer via Urban AI Concierge]', 
                  updated_at = NOW() 
              WHERE id = $1`,
             [matchedOrder.id]
@@ -159,6 +182,264 @@ export async function generateAiReply(
       ];
       return { replyText, action, sentiment, confidence, operation, actionChips };
     }
+  }
+
+  // ─── REAL-TIME ONLINE AI LLM ENGINE (POWERED BY FREE ONLINE API + LIVE NEON CONTEXT) ───
+  try {
+    let inStockProducts: any[] = [];
+    try {
+      const isFace = text.includes('face') || text.includes('skin') || text.includes('chehra') || text.includes('chehre') || text.includes('tan') || text.includes('glow') || text.includes('wash');
+      const isBeard = text.includes('beard') || text.includes('daadi') || text.includes('dadi') || text.includes('mooch');
+      const isHair = text.includes('hair') || text.includes('baal') || text.includes('scalp') || text.includes('shampoo') || text.includes('oil') || text.includes('serum');
+
+      let categoryClause = '';
+      if (isFace) categoryClause = "AND (category = 'skin' OR name ILIKE '%face%' OR name ILIKE '%tan%' OR name ILIKE '%spa%')";
+      else if (isBeard) categoryClause = "AND (category = 'beard' OR name ILIKE '%beard%')";
+      else if (isHair) categoryClause = "AND (category = 'hair' OR name ILIKE '%hair%' OR name ILIKE '%shampoo%')";
+
+      const pRes = await query(
+        `SELECT id, slug, name, price, compare_at_price, image_url, category, in_stock, stock_quantity, badge, rating, description 
+         FROM products 
+         WHERE in_stock = true ${categoryClause}
+         ORDER BY (badge = 'bestseller' OR badge = 'deal') DESC, rating DESC 
+         LIMIT 8`
+      );
+      inStockProducts = pRes.rows.map((p) => ({
+        id: p.id,
+        slug: p.slug,
+        name: p.name,
+        price: Number(p.price),
+        compare_at_price: p.compare_at_price ? Number(p.compare_at_price) : undefined,
+        image_url: p.image_url,
+        category: p.category,
+        in_stock: p.in_stock,
+        stock_quantity: p.stock_quantity,
+        badge: p.badge || 'Bestseller',
+        rating: Number(p.rating || 4.9),
+        description: p.description,
+      }));
+    } catch {}
+
+    let stylists: any[] = [];
+    try {
+      const stRes = await query(
+        `SELECT id, name, role, rating, avatar_url, bio FROM stylists WHERE is_active = true LIMIT 3`
+      );
+      stylists = stRes.rows.map((s) => ({
+        id: s.id,
+        name: s.name,
+        role: s.role,
+        rating: Number(s.rating || 4.9),
+        avatar_url: s.avatar_url,
+      }));
+    } catch {}
+
+    let orderSummary: string | undefined = undefined;
+    if (matchedOrder) {
+      const shortId = matchedOrder.id.slice(0, 8).toUpperCase();
+      orderSummary = `Order #${shortId}, Status: ${matchedOrder.status}, Total Amount: ₹${Number(matchedOrder.total_amount).toFixed(0)}, Carrier: ${matchedOrder.carrier || 'Delhivery Air'} (Tracking: ${matchedOrder.tracking_number || 'TRK-UB-' + shortId})`;
+    }
+
+    const aiText = await askOnlineAi(safeMsg, {
+      customerName: opts.userName,
+      customerEmail: opts.userEmail,
+      orderSummary,
+      inStockProducts,
+      stylists,
+    });
+
+    if (aiText && aiText.length > 10) {
+      replyText = aiText;
+      action = 'ai_consultation';
+      sentiment = 'positive';
+      confidence = 0.99;
+
+      const isBookingRelated =
+        text.includes('book') ||
+        text.includes('haircut') ||
+        text.includes('salon') ||
+        text.includes('chair') ||
+        text.includes('appointment') ||
+        text.includes('visit') ||
+        text.includes('stylist') ||
+        text.includes('barber') ||
+        text.includes('slot') ||
+        text.includes('pricing') ||
+        text.includes('rate card') ||
+        text.includes('menu');
+
+      const isGreeting =
+        text.startsWith('namaste') ||
+        text.startsWith('namste') ||
+        text.startsWith('hi') ||
+        text.startsWith('hello') ||
+        text.startsWith('hey') ||
+        text.includes('kaise ho') ||
+        text.includes('kesa ho') ||
+        text.includes('kese ho') ||
+        text.includes('kaisa hai') ||
+        text.includes('kya haal') ||
+        text.includes('how are you');
+
+      const isTrackingRelated =
+        !!matchedOrder &&
+        (text.includes('order') ||
+          text.includes('track') ||
+          text.includes('where is') ||
+          text.includes('status') ||
+          text.includes('package') ||
+          text.includes('delivery') ||
+          text.includes('courier') ||
+          text.includes('awb'));
+
+      const isProductRelated =
+        !isGreeting &&
+        (text.includes('product') ||
+          text.includes('hair') ||
+          text.includes('face') ||
+          text.includes('skin') ||
+          text.includes('chehra') ||
+          text.includes('chehre') ||
+          text.includes('dekka') ||
+          text.includes('dikha') ||
+          text.includes('chahiye') ||
+          text.includes('something') ||
+          text.includes('care') ||
+          text.includes('groom') ||
+          text.includes('shampoo') ||
+          text.includes('serum') ||
+          text.includes('oil') ||
+          text.includes('pomade') ||
+          text.includes('clay') ||
+          text.includes('razor') ||
+          text.includes('trimmer') ||
+          text.includes('beard') ||
+          text.includes('daadi') ||
+          text.includes('hair fall') ||
+          text.includes('dandruff') ||
+          text.includes('buy') ||
+          text.includes('recommend') ||
+          text.includes('thinning') ||
+          text.includes('scalp') ||
+          text.includes('flakes') ||
+          text.includes('glow') ||
+          text.includes('tan') ||
+          text.includes('detan') ||
+          text.includes('wash') ||
+          text.includes('scrub') ||
+          text.includes('cream'));
+
+      if (isTrackingRelated && matchedOrder) {
+        action = 'order_tracking';
+        const shortId = matchedOrder.id.slice(0, 8).toUpperCase();
+        const effectiveAwb = matchedOrder.tracking_number || `TRK-UB-${shortId}`;
+        const effectiveCarrier = matchedOrder.carrier || detectCarrier(effectiveAwb);
+        operation = {
+          type: 'order_tracking',
+          order: {
+            id: matchedOrder.id,
+            status: matchedOrder.status,
+            raw_status: matchedOrder.status.toUpperCase(),
+            current_location: 'Regional Dispatch Hub, Delhi NCR',
+            carrier: effectiveCarrier,
+            tracking_number: effectiveAwb,
+            portal_url: `https://www.delhivery.com/track/package/${effectiveAwb}`,
+            estimated_delivery: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+            total_amount: Number(matchedOrder.total_amount),
+            can_cancel: ['accepted', 'confirmed', 'processing'].includes(matchedOrder.status),
+          },
+        };
+        actionChips = [
+          { label: '🌐 Open Carrier Portal ↗', query: 'Open carrier website' },
+          { label: '🛍️ Recommended Grooming', query: 'Show bestsellers' },
+          { label: '✂️ Book Salon Chair', query: 'Book appointment' },
+        ];
+      } else if (isBookingRelated) {
+        action = 'salon_booking';
+        let services: any[] = [];
+        try {
+          const svRes = await query("SELECT id, name, price, description, image_url FROM products WHERE kind = 'service' ORDER BY price ASC LIMIT 6");
+          services = svRes.rows.map(sv => ({
+            id: sv.id,
+            name: sv.name,
+            price: Number(sv.price),
+            description: sv.description,
+            image_url: sv.image_url
+          }));
+        } catch {}
+
+        operation = {
+          type: 'salon_booking',
+          booking: {
+            venue: 'Urban Blade Flagship Studio, Sector 63, Noida (near Sector 62 Metro)',
+            hours: 'Monday – Sunday: 7:00 AM – 11:00 PM',
+            hotline: '+91 90156 18265',
+            services,
+            stylists,
+          },
+        };
+        actionChips = [
+          { label: '✂️ Reserve Men Haircut (₹249)', query: 'Book appointment' },
+          { label: '🧔 Beard Sculpting (₹199)', query: 'Book beard grooming' },
+          { label: '💈 View Salon Rate Card', query: 'What are your haircut prices?' },
+          { label: '🕒 Studio Timings & Hours', query: 'What are your salon timings?' },
+        ];
+      } else if (isProductRelated && inStockProducts.length > 0) {
+        action = 'product_recommendations';
+        const isFace = text.includes('face') || text.includes('skin') || text.includes('chehra') || text.includes('chehre') || text.includes('tan') || text.includes('glow') || text.includes('wash');
+        const isBeard = text.includes('beard') || text.includes('daadi') || text.includes('dadi') || text.includes('mooch');
+        const isHair = text.includes('hair') || text.includes('baal') || text.includes('scalp') || text.includes('shampoo') || text.includes('oil') || text.includes('serum');
+
+        let matched = inStockProducts.filter(p => {
+          const desc = `${p.name} ${p.category || ''} ${p.description || ''}`.toLowerCase();
+          if (isFace && (desc.includes('face') || desc.includes('skin') || p.category === 'skin' || desc.includes('tan') || desc.includes('wash') || desc.includes('glow') || desc.includes('spa'))) return true;
+          if (isBeard && (desc.includes('beard') || p.category === 'beard')) return true;
+          if (isHair && (desc.includes('hair') || p.category === 'hair' || desc.includes('shampoo') || desc.includes('oil') || desc.includes('serum'))) return true;
+          return false;
+        });
+        if (matched.length === 0) matched = inStockProducts;
+
+        operation = {
+          type: 'product_recommendations',
+          products: matched.slice(0, 3),
+        };
+
+        if (isFace) {
+          actionChips = [
+            { label: '🛒 View Cart', query: 'Show my cart' },
+            { label: '🧼 Face Cleanser Routine', query: 'Show skincare products' },
+            { label: '✂️ Book Salon Facial', query: 'Book appointment' },
+            { label: '✨ Bestselling Deals', query: 'Show bestsellers' },
+          ];
+        } else {
+          actionChips = [
+            { label: '🛒 View Cart', query: 'Show my cart' },
+            { label: '🧔 Beard Growth Protocol', query: 'How to fix a patchy beard?' },
+            { label: '✂️ Book Salon Visit', query: 'Book appointment' },
+            { label: '✨ Bestselling Deals', query: 'Show bestsellers' },
+          ];
+        }
+      } else if (isGreeting) {
+        action = 'greeting';
+        actionChips = [
+          { label: '✂️ Reserve Barber Chair', query: 'Book appointment' },
+          { label: '💈 Haircut Menu & Rates', query: 'What are your haircut prices?' },
+          { label: '🧴 Skincare & Hair Products', query: 'Show bestsellers' },
+          { label: '📦 Track My Order', query: 'Where is my order?' },
+        ];
+      } else {
+        actionChips = [
+          { label: '✂️ Book Barber Chair', query: 'Book appointment' },
+          { label: '📦 Track My Order', query: 'Where is my order?' },
+          { label: '💈 Haircut Prices & Menu', query: 'What are your haircut prices?' },
+          { label: '✨ Shop Bestsellers', query: 'Show bestsellers' },
+        ];
+      }
+
+      return { replyText, action, sentiment, confidence, operation, actionChips };
+    }
+  } catch {
+    // Seamless fallback to domain rule branches below
   }
 
   // ─── OPERATION 2: REAL-TIME CARRIER ORDER TRACKING ────────────────────────────
@@ -1198,12 +1479,24 @@ export async function generateAiReply(
 
   // ─── OPERATION 4: PRODUCT CATALOG SEARCH & 1-CLICK ADD TO CART (FALLBACK SEARCH) 
   const isCatalogSearchIntent = (
+    text.includes('hair') ||
+    text.includes('face') ||
+    text.includes('skin') ||
+    text.includes('chehra') ||
+    text.includes('chehre') ||
+    text.includes('dekka') ||
+    text.includes('dikha') ||
+    text.includes('chahiye') ||
+    text.includes('something') ||
+    text.includes('care') ||
+    text.includes('groom') ||
     text.includes('serum') ||
     text.includes('shampoo') ||
     text.includes('oil') ||
     text.includes('cream') ||
     text.includes('wax') ||
     text.includes('clay') ||
+    text.includes('pomade') ||
     text.includes('razor') ||
     text.includes('blade') ||
     text.includes('deal') ||
@@ -1212,9 +1505,13 @@ export async function generateAiReply(
     text.includes('recommend') ||
     text.includes('gift') ||
     text.includes('voucher') ||
-    text.includes('skin') ||
     text.includes('wash') ||
     text.includes('scrub') ||
+    text.includes('beard') ||
+    text.includes('scalp') ||
+    text.includes('tan') ||
+    text.includes('detan') ||
+    text.includes('glow') ||
     text.includes('shop')
   );
 
@@ -1224,8 +1521,8 @@ export async function generateAiReply(
 
     let products: any[] = [];
     try {
-      const searchKeywords = ['serum', 'shampoo', 'oil', 'cream', 'wax', 'clay', 'razor', 'trimmer', 'gift', 'wash', 'scrub', 'deal', 'bestseller'];
-      const hit = searchKeywords.find(k => text.includes(k)) || 'hair';
+      const searchKeywords = ['face', 'skin', 'detan', 'tan', 'wash', 'hair', 'serum', 'shampoo', 'oil', 'cream', 'wax', 'clay', 'pomade', 'razor', 'beard', 'trimmer', 'gift', 'scrub', 'deal', 'bestseller'];
+      const hit = searchKeywords.find(k => text.includes(k)) || 'face';
 
       const pRes = await query(
         `SELECT id, slug, name, price, compare_at_price, image_url, category, audience, badge, stock_quantity, in_stock, rating, review_count, description 
@@ -1255,7 +1552,7 @@ export async function generateAiReply(
     } catch {}
 
     if (products.length > 0) {
-      const listSummary = products.map(p => `• ${p.name} (₹${p.price.toFixed(0)}): Formulated for professional barbershop standards.`).join('\n');
+      const listSummary = products.map(p => `• **${p.name}** (₹${p.price.toFixed(0)}): Formulated for professional barbershop standards.`).join('\n');
       replyText = `✨ Master Barber Catalog Recommendations:\n\nBased on your query, here are our recommended salon-grade formulations:\n\n${listSummary}\n\nYou can add them directly to your shopping cart below:`;
 
       operation = {
@@ -1273,23 +1570,73 @@ export async function generateAiReply(
     }
   }
 
-  // ─── GENERAL WELCOMING CONCIERGE GREETING ────────────────────────────────────
-  replyText = `Hello! ✨ I am your Urban Blade AI Concierge, connected live to our logistics dispatch, salon chair booking, and grooming formulas. Here are key operations I can perform for you right now:\n\n` +
-    `• 📦 Real-Time Order Tracking (Live scans from Delhivery, BlueDart, DTDC)\n` +
-    `• 🚫 1-Click Order Cancellation & Automatic Refund\n` +
-    `• 🧴 Clinical Grooming Protocols (Hair fall, dandruff, styling, patchy beard, shaving)\n` +
-    `• ✂️ Studio Rate Card & Reserve Barber Chair (Vikram Sharma & Rohan Verma)\n` +
-    `• 🛡️ 7-Day Guarantee & 1-Year Hardware Warranty\n\n` +
-    `What would you like to explore today?`;
+  // ─── GENERAL CONCIERGE GREETING OR DYNAMIC CONSULTATION ──────────────────────
+  const pureGreetings = ['hi', 'hello', 'hey', 'start', 'help', 'menu', 'options', 'hola', 'namaste'];
+  const isPureGreeting = pureGreetings.includes(text.trim()) || text.trim().length === 0;
 
-  action = 'general_greeting';
-  actionChips = [
-    { label: '📦 Track My Order', query: 'Where is my order?' },
-    { label: '💈 Haircut Prices & Menu', query: 'What are your haircut prices?' },
-    { label: '📍 Studio Location & Timings', query: 'Where is your studio located?' },
-    { label: '🌿 Hair Fall & Density Protocol', query: 'What do I do for hair fall?' },
-    { label: '🧔 Beard Growth Blueprint', query: 'How to fix a patchy beard?' }
-  ];
+  if (isPureGreeting) {
+    replyText = `Hello! ✨ I am your Urban Blade AI Concierge, connected live to our logistics dispatch, salon chair booking, and grooming formulas. Here are key operations I can perform for you right now:\n\n` +
+      `• 📦 Real-Time Order Tracking (Live scans from Delhivery, BlueDart, DTDC)\n` +
+      `• 🚫 1-Click Order Cancellation & Automatic Refund\n` +
+      `• 🧴 Clinical Grooming Protocols (Hair fall, dandruff, styling, patchy beard, shaving)\n` +
+      `• ✂️ Studio Rate Card & Reserve Barber Chair (Vikram Sharma & Rohan Verma)\n` +
+      `• 🛡️ 7-Day Guarantee & 1-Year Hardware Warranty\n\n` +
+      `What would you like to explore today?`;
+
+    action = 'general_greeting';
+    actionChips = [
+      { label: '📦 Track My Order', query: 'Where is my order?' },
+      { label: '💈 Haircut Prices & Menu', query: 'What are your haircut prices?' },
+      { label: '📍 Studio Location & Timings', query: 'Where is your studio located?' },
+      { label: '🌿 Hair Fall & Density Protocol', query: 'What do I do for hair fall?' },
+      { label: '🧔 Beard Growth Blueprint', query: 'How to fix a patchy beard?' }
+    ];
+  } else {
+    // Dynamic synthesis for any unclassified customer query:
+    let fallbackProducts: any[] = [];
+    try {
+      const fbRes = await query(
+        `SELECT id, slug, name, price, compare_at_price, image_url, category, in_stock, stock_quantity, badge, rating, description 
+         FROM products 
+         WHERE in_stock = true 
+         ORDER BY (badge = 'bestseller' OR badge = 'deal') DESC, rating DESC 
+         LIMIT 3`
+      );
+      fallbackProducts = fbRes.rows.map(p => ({
+        id: p.id,
+        slug: p.slug,
+        name: p.name,
+        price: Number(p.price),
+        compare_at_price: p.compare_at_price ? Number(p.compare_at_price) : undefined,
+        image_url: p.image_url,
+        category: p.category,
+        in_stock: p.in_stock,
+        stock_quantity: p.stock_quantity,
+        badge: p.badge,
+        rating: Number(p.rating || 4.8),
+        description: p.description
+      }));
+    } catch {}
+
+    replyText = `✨ Master Barber Consultation:\n\n` +
+      `Thank you for reaching out! At Urban Blade, we formulate professional salon-grade solutions for healthy hair, scalp wellness, and beard care, as well as master grooming chairs at our Noida flagship studio.\n\n` +
+      `Could you let me know if you are looking for **clinical hair/scalp restoration**, **daily styling & pomades**, or **booking a haircut appointment**?`;
+
+    if (fallbackProducts.length > 0) {
+      operation = {
+        type: 'product_recommendations',
+        products: fallbackProducts
+      };
+    }
+
+    action = 'consultation';
+    actionChips = [
+      { label: '✂️ Reserve Barber Chair', query: 'Book appointment' },
+      { label: '💈 Haircut Rates', query: 'What are your haircut prices?' },
+      { label: '🌿 Hair Fall Protocol', query: 'What do I do for hair fall?' },
+      { label: '🧔 Beard Routine', query: 'How to fix a patchy beard?' }
+    ];
+  }
 
   return { replyText, action, sentiment, confidence, operation, actionChips };
 }
@@ -1313,14 +1660,42 @@ export async function supportRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'EMPTY_MESSAGE', message: 'Message text is required' });
       }
 
-      // Generate AI response with full operation context
-      const aiResult = await generateAiReply({
+      // Hard timeout safety net — route ALWAYS responds within 9s
+      const aiResultPromise = generateAiReply({
         message: safeMsg,
         orderId,
         userName,
         userEmail,
         inquiryId
       });
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('AI_TIMEOUT')), 9000)
+      );
+
+      let aiResult: any;
+      try {
+        aiResult = await Promise.race([aiResultPromise, timeoutPromise]);
+      } catch {
+        // Timeout or AI failure — return a graceful fallback immediately matching user language
+        const isHinglishMsg = /\b(namaste|kaise|mujhe|aap|aapke|chahiye|dikhao|batao|hai|hain|shaadi|dost|karo|kare|kuch|kya|bhai|bataiye|karvaana)\b/i.test(safeMsg);
+        const fallbackReply = isHinglishMsg
+          ? 'Namaste! Main aapki help karne ke liye yahan hoon. Thoda intezaar karein ya dobara try karein — hamare AI concierge ki service abhi busy hai. 🙏'
+          : 'Hello! I am here to assist you with Urban Blade products and salon bookings. Our concierge is momentarily busy — please try again in a moment or choose an option below. 🙏';
+
+        aiResult = {
+          replyText: fallbackReply,
+          action: 'fallback',
+          sentiment: 'neutral' as const,
+          confidence: 0.5,
+          operation: null,
+          actionChips: [
+            { label: '✂️ Book Barber Chair', query: 'Book appointment' },
+            { label: '📦 Track My Order', query: 'Where is my order?' },
+            { label: '✨ Shop Bestsellers', query: 'Show bestsellers' },
+          ],
+        };
+      }
+
 
       const userMsgObj = {
         id: `m-user-${Date.now()}`,
@@ -1463,7 +1838,26 @@ export async function supportRoutes(app: FastifyInstance) {
     }
   });
 
-  // ─── 3. STANDALONE AI CHAT ENDPOINT ───────────────────────────────────────
+  // ─── 3. DELETE INQUIRY (PERMANENTLY FROM POSTGRESQL) ──────────────────────
+  app.delete<{ Params: { id: string } }>('/support/inquiries/:id', async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const res = await query(
+        'DELETE FROM support_inquiries WHERE id = $1 RETURNING id',
+        [id]
+      );
+      if (res.rows.length === 0) {
+        return reply.status(404).send({ error: 'NOT_FOUND', message: 'Inquiry not found' });
+      }
+      request.log.info({ id }, 'Inquiry deleted from PostgreSQL');
+      return reply.send({ ok: true, deleted: id });
+    } catch (err: any) {
+      request.log.error(err, 'Failed to delete inquiry');
+      return reply.status(500).send({ error: 'DB_ERROR', message: 'Could not delete inquiry' });
+    }
+  });
+
+
   app.post<{
     Body: {
       message: string;
@@ -1512,55 +1906,70 @@ export async function supportRoutes(app: FastifyInstance) {
     }
   });
 
-  // ─── 4. CLIENT INQUIRY CREATION ───────────────────────────────────────────
+  // ─── 4. CLIENT/ADMIN INQUIRY CREATION ─────────────────────────────────────
   app.post<{
     Body: {
-      userName: string;
+      userName?: string;
       userEmail: string;
-      subject: string;
+      subject?: string;
       orderId?: string;
       vendorName?: string;
-      message: string;
+      message?: string;
+      initialMessage?: string;
       priority?: 'low' | 'medium' | 'high';
     };
   }>('/support/inquiries', async (request, reply) => {
-    const { userName, userEmail, subject, orderId, vendorName, message, priority = 'medium' } = request.body || {};
+    const { userName, userEmail, subject, orderId, vendorName, priority = 'medium' } = request.body || {};
+    const messageText = ((request.body as any)?.message || (request.body as any)?.initialMessage || '').trim();
 
-    if (!userEmail || !message) {
-      return reply.status(400).send({ error: 'MISSING_FIELDS', message: 'Email and message are required' });
+    if (!userEmail) {
+      return reply.status(400).send({ error: 'MISSING_FIELDS', message: 'Email is required' });
     }
 
     const inquiryId = `inq-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
-    const initialMsg = {
+    const messages = messageText ? [{
       id: `m-${Date.now()}`,
       sender: 'user',
-      text: message,
+      text: messageText,
       timestamp: new Date().toISOString()
-    };
+    }] : [];
+
+    const safeSubject = subject || (messageText.length > 50 ? messageText.slice(0, 47) + '...' : messageText) || 'Customer Support Request';
 
     try {
       await query(
-        `
-        INSERT INTO support_inquiries (
+        `INSERT INTO support_inquiries (
           id, user_name, user_email, subject, order_id, vendor_name, status, priority, messages, created_at, updated_at
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, 'open', $7, $8::jsonb, NOW(), NOW()
-        )
-        `,
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'open', $7, $8::jsonb, NOW(), NOW())`,
         [
           inquiryId,
           userName || 'Urban Blade Customer',
           userEmail.trim().toLowerCase(),
-          subject || 'Customer Support Request',
+          safeSubject,
           orderId || null,
           vendorName || null,
           priority,
-          JSON.stringify([initialMsg])
+          JSON.stringify(messages)
         ]
       );
 
+      const inquiry = {
+        id: inquiryId,
+        user_name: userName || 'Urban Blade Customer',
+        user_email: userEmail.trim().toLowerCase(),
+        subject: safeSubject,
+        order_id: orderId || null,
+        vendor_name: vendorName || null,
+        status: 'open',
+        priority,
+        messages,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
       return reply.status(201).send({
         ok: true,
+        inquiry,
         inquiryId,
         message: 'Your inquiry ticket has been registered. An AI Concierge and specialist have been notified.'
       });

@@ -1,8 +1,9 @@
-import { Component, inject, signal, OnInit, OnDestroy } from '@angular/core';
+import { Component, inject, signal, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { AccountService } from '@core/services/account.service';
 import { CartService } from '@core/services/cart.service';
 import type { ChatMessage, ChatOperationPayload, ChatActionChip } from '@core/models/support.model';
@@ -44,10 +45,13 @@ export interface ConfirmedBookingTicket {
   styleUrls: ['./floating-ai-chat.scss'],
 })
 export class FloatingAiChatComponent implements OnInit, OnDestroy {
+  @ViewChild('messagesViewport') private messagesViewport?: ElementRef<HTMLDivElement>;
+
   protected readonly account = inject(AccountService);
   private readonly cartService = inject(CartService);
   private readonly router = inject(Router);
   private readonly http = inject(HttpClient);
+  private readonly sanitizer = inject(DomSanitizer);
 
   readonly isOpen = signal<boolean>(false);
   readonly inquiryId = signal<string | null>(null);
@@ -75,22 +79,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
     '08:30 PM',
   ]);
 
-  readonly messages = signal<ChatMessage[]>([
-    {
-      id: 'init',
-      sender: 'ai',
-      text: `Hi there! How can I help you today? You can book a salon chair, track an order, or ask any questions about our products.`,
-      timestamp: new Date().toISOString(),
-      actionChips: [
-        { label: '✂️ Reserve Barber Chair', query: 'Book appointment' },
-        { label: '💈 Haircut Menu & Rates', query: 'What are your haircut prices?' },
-        { label: '📦 Live Order Tracking', query: 'Where is my order?' },
-        { label: '📍 Studio Location & Hours', query: 'Where is your studio located?' },
-        { label: '🌿 Hair Fall Protocol', query: 'What do I do for hair fall?' },
-        { label: '🧔 Patchy Beard Guide', query: 'How to fix a patchy beard?' },
-      ],
-    },
-  ]);
+  readonly messages = signal<ChatMessage[]>(this.getInitialWelcomeMessages());
 
   readonly quickChips: ChatActionChip[] = [
     { label: '✂️ Reserve Chair', query: 'Book appointment' },
@@ -105,6 +94,25 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
 
   private pollInterval: any = null;
   private broadcastChannel: BroadcastChannel | null = null;
+
+  private getInitialWelcomeMessages(): ChatMessage[] {
+    return [
+      {
+        id: 'init',
+        sender: 'ai',
+        text: `Hi there! How can I help you today? You can book a salon chair, track an order, or ask any questions about our products.`,
+        timestamp: new Date().toISOString(),
+        actionChips: [
+          { label: '✂️ Reserve Barber Chair', query: 'Book appointment' },
+          { label: '💈 Haircut Menu & Rates', query: 'What are your haircut prices?' },
+          { label: '📦 Live Order Tracking', query: 'Where is my order?' },
+          { label: '📍 Studio Location & Hours', query: 'Where is your studio located?' },
+          { label: '🌿 Hair Fall Protocol', query: 'What do I do for hair fall?' },
+          { label: '🧔 Patchy Beard Guide', query: 'How to fix a patchy beard?' },
+        ],
+      },
+    ];
+  }
 
   ngOnInit(): void {
     // Generate next 5 calendar dates for in-chat booking
@@ -131,7 +139,13 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
       this.broadcastChannel = new BroadcastChannel('urban_support_bus');
       this.broadcastChannel.onmessage = (event) => {
         const id = this.inquiryId();
-        if (id && (!event.data?.inquiryId || event.data.inquiryId === id)) {
+        if (event.data?.type === 'INQUIRY_DELETED') {
+          if (id && (event.data.ids?.includes(id) || event.data.inquiryId === id)) {
+            localStorage.removeItem('urban_active_inquiry_id');
+            this.inquiryId.set(null);
+            this.messages.set(this.getInitialWelcomeMessages());
+          }
+        } else if (id && (!event.data?.inquiryId || event.data.inquiryId === id)) {
           this.fetchLatestInquiry(id);
         }
       };
@@ -140,7 +154,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
     // Background sync with database every 2.5 seconds
     this.pollInterval = setInterval(() => {
       const id = this.inquiryId();
-      if (id) {
+      if (id && !this.isGenerating()) {
         this.fetchLatestInquiry(id);
       }
     }, 2500);
@@ -160,10 +174,44 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
       if (id) {
         this.fetchLatestInquiry(id);
       }
+      this.scrollToBottom('auto');
     }
   }
 
+  scrollToBottom(behavior: ScrollBehavior = 'smooth'): void {
+    if (typeof window === 'undefined') return;
+    setTimeout(() => {
+      const el = this.messagesViewport?.nativeElement;
+      if (el) {
+        el.scrollTo({ top: el.scrollHeight, behavior });
+      }
+    }, 60);
+  }
+
+  formatMessage(text: string): SafeHtml {
+    if (!text) return '';
+    let escaped = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // Bold **text** -> <strong>text</strong>
+    escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // Bullet lines: • or * or - at start of line
+    escaped = escaped.replace(/^[•\-\*]\s*(.+)$/gm, '<li class="chat-li">$1</li>');
+    // Wrap groups of <li> in <ul class="chat-ul">
+    escaped = escaped.replace(/((?:<li class="chat-li">.*?<\/li>\s*)+)/gs, '<ul class="chat-ul">$1</ul>');
+    // Double newlines to paragraph break
+    escaped = escaped.replace(/\n\n+/g, '<div class="chat-para-break"></div>');
+    // Single newlines to <br> if not inside ul or break
+    escaped = escaped.replace(/\n/g, '<br/>');
+
+    return this.sanitizer.bypassSecurityTrustHtml(escaped);
+  }
+
   fetchLatestInquiry(id: string): void {
+    if (this.isGenerating()) return;
+
     this.http
       .get<{ data: { id: string; messages: ChatMessage[]; status: string } | null; notFound?: boolean }>(
         `/api/support/inquiries/${id}`
@@ -173,28 +221,58 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
           if (res?.notFound || !res?.data) {
             localStorage.removeItem('urban_active_inquiry_id');
             this.inquiryId.set(null);
+            this.messages.set(this.getInitialWelcomeMessages());
             return;
           }
 
+          if (this.isGenerating()) return;
+
           if (res?.data?.messages && Array.isArray(res.data.messages)) {
             const newMsgs = res.data.messages;
-            const oldLen = this.messages().length;
+            const currentMsgs = this.messages();
 
-            if (!this.isOpen() && newMsgs.length > oldLen) {
-              const hasNewAdminMsg = newMsgs.slice(oldLen).some((m) => m.sender === 'admin');
-              if (hasNewAdminMsg) {
-                this.unreadAdminCount.update((c) => c + 1);
+            const isDiff =
+              newMsgs.length !== currentMsgs.length ||
+              (newMsgs.length > 0 && newMsgs[newMsgs.length - 1]?.id !== currentMsgs[currentMsgs.length - 1]?.id);
+
+            if (isDiff) {
+              if (!this.isOpen() && newMsgs.length > currentMsgs.length) {
+                const hasNewAdminMsg = newMsgs.slice(currentMsgs.length).some((m) => m.sender === 'admin');
+                if (hasNewAdminMsg) {
+                  this.unreadAdminCount.update((c) => c + 1);
+                }
               }
-            }
 
-            this.messages.set(newMsgs);
+              this.messages.set(newMsgs);
+              this.scrollToBottom('smooth');
+            }
           }
         },
         error: () => {
           localStorage.removeItem('urban_active_inquiry_id');
           this.inquiryId.set(null);
+          this.messages.set(this.getInitialWelcomeMessages());
         },
       });
+  }
+
+  clearChat(): void {
+    if (!confirm('Permanently delete and reset this chat conversation?')) return;
+    const currentId = this.inquiryId();
+    if (currentId) {
+      this.http.delete(`/api/support/inquiries/${currentId}`).subscribe({
+        next: () => {},
+        error: () => {},
+      });
+    }
+    localStorage.removeItem('urban_active_inquiry_id');
+    this.inquiryId.set(null);
+    this.messages.set(this.getInitialWelcomeMessages());
+    this.activeBookingForm.set({});
+    this.confirmedBookings.set({});
+    if (this.broadcastChannel) {
+      this.broadcastChannel.postMessage({ type: 'USER_QUERY', deletedInquiryId: currentId });
+    }
   }
 
   sendMessage(customText?: string): void {
@@ -215,6 +293,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
 
     this.messages.update((list) => [...list, optimisticUserMsg]);
     this.isGenerating.set(true);
+    this.scrollToBottom('smooth');
 
     const user = this.account.user();
     const payload = {
@@ -239,21 +318,124 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
           if (res.messages && Array.isArray(res.messages)) {
             this.messages.set(res.messages);
           }
+          this.scrollToBottom('smooth');
           if (this.broadcastChannel) {
             this.broadcastChannel.postMessage({ type: 'USER_QUERY', inquiryId: res.inquiryId });
           }
         },
-        error: () => {
+        error: async () => {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 4500);
+            const directRes = await fetch('https://text.pollinations.ai/', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: [
+                  {
+                    role: 'system',
+                    content:
+                      'You are Urban AI concierge for Urban Blade luxury barbershop (Sector 63 Noida, 7 AM-11 PM daily). Answer under 70 words with master barber polish. If user greets, reply warmly without dumping products.',
+                  },
+                  { role: 'user', content: text },
+                ],
+                model: 'openai',
+              }),
+              signal: controller.signal,
+            });
+            clearTimeout(timer);
+
+            if (directRes.ok) {
+              const aiText = await directRes.text();
+              if (aiText && !aiText.includes('<!DOCTYPE html>') && !aiText.includes('Bad gateway') && !aiText.includes('Cloudflare')) {
+                this.isGenerating.set(false);
+                this.messages.update((list) => [
+                  ...list,
+                  {
+                    id: `ai-direct-${Date.now()}`,
+                    sender: 'ai',
+                    text: aiText.trim(),
+                    timestamp: new Date().toISOString(),
+                    actionChips: [
+                      { label: '✂️ Reserve Barber Chair', query: 'Book appointment' },
+                      { label: '💈 Haircut Menu & Rates', query: 'What are your haircut prices?' },
+                      { label: '📦 Live Order Tracking', query: 'Where is my order?' },
+                      { label: '✨ Shop Bestsellers', query: 'Show bestsellers' },
+                    ],
+                  },
+                ]);
+                this.scrollToBottom('smooth');
+                return;
+              }
+            }
+          } catch {}
+
           this.isGenerating.set(false);
+          const tLower = text.toLowerCase();
+          const isGreeting =
+            tLower.startsWith('namaste') ||
+            tLower.startsWith('namste') ||
+            tLower.startsWith('hi') ||
+            tLower.startsWith('hello') ||
+            tLower.startsWith('hey') ||
+            tLower.includes('kaise ho') ||
+            tLower.includes('kesa ho') ||
+            tLower.includes('kese ho') ||
+            tLower.includes('kaisa hai') ||
+            tLower.includes('how are you');
+
+          const isHindi =
+            tLower.includes('namaste') ||
+            tLower.includes('kesa') ||
+            tLower.includes('kaise') ||
+            tLower.includes('app') ||
+            tLower.includes('aap') ||
+            tLower.includes('mujhe') ||
+            tLower.includes('kuch') ||
+            tLower.includes('dekka') ||
+            tLower.includes('dikha') ||
+            tLower.includes('chahiye') ||
+            tLower.includes('batao') ||
+            tLower.includes('chehra');
+          const isFace = tLower.includes('face') || tLower.includes('skin') || tLower.includes('chehra') || tLower.includes('chehre') || tLower.includes('tan') || tLower.includes('glow') || tLower.includes('wash');
+
+          let smartFallback = isHindi
+            ? `Namaste! Main Urban Blade salon concierge hoon. Aap hair care, beard styling, skincare products ya appointment booking ke baare mein pooch sakte hain!`
+            : `Hello! I am Urban Blade Concierge. How can I assist you today with styling advice, grooming products, or reserving a barber chair?`;
+
+          if (isGreeting) {
+            smartFallback = isHindi
+              ? `Namaste! Main bilkul badhiya hoon, aap bataiye aap kaise hain? Urban Blade mein aapka swagat hai. Aaj main aapki styling, hair care products ya salon chair booking mein kya madad kar sakta hoon?`
+              : `Hello! I'm doing great, thank you for asking. Welcome to Urban Blade! How can I assist you today with styling advice, grooming products, or reserving a barber chair?`;
+          } else if (isFace) {
+            smartFallback = isHindi
+              ? `✨ **Urban Blade Face & Skin Care Guide:**\n\nChehre ke liye hamare Master Barbers yeh best salon formulations recommend karte hain:\n\n• **Charcoal Face Wash (₹349)**: Deep pore cleansing ke liye, extra oil aur pollution hatata hai.\n• **De-Tan Home Kit (₹899)**: Dhoop aur sun-tan hatane ke liye 3-step salon facial sequence.\n• **Men's SPA Package (₹1499)**: 90-minute complete facial, massage aur hair care.\n\nAap inhein direct cart mein add kar sakte hain ya salon session book kar sakte hain!`
+              : `✨ **Urban Blade Face & Skin Care Formulations:**\n\nFor healthy, radiant skin, our Master Barbers recommend:\n\n• **Charcoal Face Wash (₹349)**: Activated charcoal & tea tree for deep pore detox and oil control.\n• **De-Tan Home Kit (₹899)**: 3-step salon facial sequence to eliminate sun damage.\n• **Men's SPA Package (₹1499)**: Complete 90-minute in-chair facial and head therapy.`;
+          } else if (tLower.includes('beard') || tLower.includes('daadi')) {
+            smartFallback = isHindi
+              ? `🧔 **Beard Care Guide:**\n\nDaadi ki growth aur styling ke liye hamare Master Barbers **Beard Oil (₹449)** aur **In-Studio Beard Sculpting (₹199)** recommend karte hain!`
+              : `🧔 For beard grooming and growth, we recommend our Organic Beard Growth Oil (₹399) and Shea Beard Butter (₹449), plus in-studio Beard Sculpting (₹199) with hot steam towels.`;
+          } else if (tLower.includes('book') || tLower.includes('haircut') || tLower.includes('appointment')) {
+            smartFallback = `✂️ You can reserve a chair at our Flagship Studio in Sector 63, Noida (open 7 AM – 11 PM daily) for Men's Precision Haircut (₹249) or Master Cut with Vikram Sharma (₹499).`;
+          } else if (tLower.includes('order') || tLower.includes('track')) {
+            smartFallback = `📦 I can check your order tracking right away! Share your Order ID or registered email, and I'll pull live carrier checkpoints.`;
+          }
+
           this.messages.update((list) => [
             ...list,
             {
-              id: `err-${Date.now()}`,
+              id: `ai-fb-${Date.now()}`,
               sender: 'ai',
-              text: 'Our Master Concierge Desk (+91 90156 18265) has recorded your inquiry. A specialist will assist you promptly.',
+              text: smartFallback,
               timestamp: new Date().toISOString(),
+              actionChips: [
+                { label: '✂️ Reserve Barber Chair', query: 'Book appointment' },
+                { label: '💈 Haircut Menu & Rates', query: 'What are your haircut prices?' },
+                { label: '📦 Live Order Tracking', query: 'Where is my order?' },
+              ],
             },
           ]);
+          this.scrollToBottom('smooth');
         },
       });
   }
@@ -460,6 +642,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
         };
 
         this.messages.update((list) => [...list, receiptMsg]);
+        this.scrollToBottom('smooth');
       },
       error: (err) => {
         this.isSubmittingBooking.update((map) => ({ ...map, [msgId]: false }));

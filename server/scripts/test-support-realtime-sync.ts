@@ -33,11 +33,21 @@ async function runLiveChatSyncTest() {
     const customerInquiryId = userMsgData.inquiryId;
     if (!customerInquiryId) throw new Error('Missing inquiryId in response');
 
+    const adminToken = app.jwt.sign({
+      id: 'usr-admin-01',
+      email: 'admin@urbanblade.in',
+      role: 'admin',
+    });
+    const adminHeaders = {
+      authorization: `Bearer ${adminToken}`,
+    };
+
     // 2. Master Admin Query Discovery in Real Time
     console.log('🛡️ 2. Checking Master Admin Queries Console (GET /api/admin/support/inquiries)...');
     const adminInquiriesRes = await app.inject({
       method: 'GET',
       url: '/api/admin/support/inquiries',
+      headers: adminHeaders,
     });
 
     if (adminInquiriesRes.statusCode !== 200) {
@@ -59,7 +69,7 @@ async function runLiveChatSyncTest() {
     const aiDraftRes = await app.inject({
       method: 'POST',
       url: '/api/admin/support/ai-chat',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       payload: {
         inquiryId: customerInquiryId,
         customerName: foundInquiry.user_name,
@@ -81,7 +91,7 @@ async function runLiveChatSyncTest() {
     const adminPostRes = await app.inject({
       method: 'POST',
       url: `/api/admin/support/inquiries/${customerInquiryId}/message`,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       payload: {
         sender: 'admin',
         text: 'Greetings Aakash, Master Barber Raghav here. I have reserved the Rosemary & Keratin Scalp Restorative Serum for you with 10% VIP discount applied.',
@@ -120,7 +130,7 @@ async function runLiveChatSyncTest() {
     const createTicketRes = await app.inject({
       method: 'POST',
       url: '/api/admin/support/inquiries',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       payload: {
         userName: 'Siddharth Rao',
         userEmail: 'siddharth.r@urbanblade.in',
@@ -142,7 +152,7 @@ async function runLiveChatSyncTest() {
     const updateStatusRes = await app.inject({
       method: 'PUT',
       url: `/api/admin/support/inquiries/${newTicketId}/status`,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
       payload: { status: 'ai_resolved' },
     });
 

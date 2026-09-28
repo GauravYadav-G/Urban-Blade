@@ -8,19 +8,46 @@ async function runAdminAndOrderFixesTest() {
   console.log('═══════════════════════════════════════════════════════════════════\n');
 
   const app: FastifyInstance = await buildApp();
+  await app.ready();
+
+  const adminToken = app.jwt.sign({
+    id: 'cf32923e-e498-407c-93d5-8d8cef913979',
+    email: 'admin@urbanblade.in',
+    role: 'admin',
+    name: 'Master Admin',
+  });
+  const adminHeaders = {
+    authorization: `Bearer ${adminToken}`,
+    'content-type': 'application/json',
+  };
+
   let createdOrderId: string | null = null;
   let createdBookingId: string | null = null;
   let testProductId: string | null = null;
   let originalStock: number = 100;
 
   try {
-    // 1. Test Admin Cache Flush
-    console.log('⚡ 1. Testing Admin Cache Flush (POST /api/admin/cache/flush)...');
-    const flushRes = await app.inject({
+    // 0. Security Verification: Unauthenticated requests to Admin MUST be rejected
+    console.log('🛡️ 0. Testing Access Control Barrier (Unauthenticated POST /api/admin/cache/flush)...');
+    const blockedRes = await app.inject({
       method: 'POST',
       url: '/api/admin/cache/flush',
     });
-    console.log(`   Response status: ${flushRes.statusCode}`);
+    console.log(`   Response status without token: ${blockedRes.statusCode}`);
+    if (blockedRes.statusCode !== 401) {
+      throw new Error(`Security Breach: Unauthenticated admin endpoint returned ${blockedRes.statusCode} instead of 401`);
+    }
+    console.log('   ✅ Access Control Barrier verified: Unauthenticated request rejected with 401 Unauthorized.\n');
+
+    // 1. Test Admin Cache Flush with valid token
+    console.log('⚡ 1. Testing Authenticated Admin Cache Flush (POST /api/admin/cache/flush)...');
+    const flushRes = await app.inject({
+      method: 'POST',
+      url: '/api/admin/cache/flush',
+      headers: adminHeaders,
+      payload: {},
+    });
+    console.log(`   Response status with admin token: ${flushRes.statusCode}`);
     if (flushRes.statusCode !== 200) {
       throw new Error(`Cache flush failed: ${flushRes.statusCode} ${flushRes.body}`);
     }
@@ -35,6 +62,7 @@ async function runAdminAndOrderFixesTest() {
     const productsRes = await app.inject({
       method: 'GET',
       url: '/api/admin/products',
+      headers: adminHeaders,
     });
     if (productsRes.statusCode !== 200) {
       throw new Error(`Failed to fetch admin products: ${productsRes.statusCode}`);
@@ -65,7 +93,7 @@ async function runAdminAndOrderFixesTest() {
     const updateProdRes = await app.inject({
       method: 'PUT',
       url: `/api/admin/products/${testProductId}`,
-      headers: { 'Content-Type': 'application/json' },
+      headers: adminHeaders,
       payload: {
         stockQuantity: targetStock,
         price: firstProd.price,
@@ -93,7 +121,7 @@ async function runAdminAndOrderFixesTest() {
     const bookingRes = await app.inject({
       method: 'POST',
       url: '/api/admin/bookings',
-      headers: { 'Content-Type': 'application/json' },
+      headers: adminHeaders,
       payload: {
         customerName: 'Sanjay Kapoor',
         customerEmail: 'sanjay.kapoor@urbanblade.in',
@@ -136,8 +164,7 @@ async function runAdminAndOrderFixesTest() {
           email: testCustomerEmail,
         },
         userId: testCustomerEmail,
-        couponCode: 'WELCOME10',
-        discountAmount: 100,
+        couponCode: 'BLADE10',
       },
     });
     console.log(`   Order response status: ${orderRes.statusCode}`);
@@ -173,7 +200,7 @@ async function runAdminAndOrderFixesTest() {
       const advanceRes = await app.inject({
         method: 'PUT',
         url: `/api/admin/orders/${createdOrderId}/status`,
-        headers: { 'Content-Type': 'application/json' },
+        headers: adminHeaders,
         payload: {
           status: st,
           trackingNumber: `TRK-TEST-${createdOrderId.slice(0, 6).toUpperCase()}`,

@@ -34,7 +34,7 @@ import { FloatingAiChatComponent } from '../../shared/components/floating-ai-cha
       flex: 1;
       width: 100%;
       max-width: none;
-      padding: 0;
+      padding: 0 0 3.5rem 0;
     }
   `,
 })

@@ -84,7 +84,14 @@ export async function seedDatabase(): Promise<boolean> {
     console.log(`✅ ${stylists.length} salon stylists seeded.`);
 
     // 3. Seed Products
-    const productsRaw = fs.readFileSync(path.resolve(__dirname, 'products.seed.json'), 'utf-8');
+    const seedCandidates = [
+      path.resolve(__dirname, 'products.seed.json'),
+      path.resolve(__dirname, '../../src/db/products.seed.json'),
+      path.resolve(process.cwd(), 'src/db/products.seed.json'),
+      path.resolve(process.cwd(), 'dist/db/products.seed.json'),
+    ];
+    const resolvedSeed = seedCandidates.find((p) => fs.existsSync(p)) || seedCandidates[0];
+    const productsRaw = fs.readFileSync(resolvedSeed, 'utf-8');
     const products = JSON.parse(productsRaw);
 
     for (const p of products) {

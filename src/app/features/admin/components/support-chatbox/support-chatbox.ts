@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, output, OnInit, OnDestroy, ViewChild, ElementRef, afterNextRender } from '@angular/core';
+import { Component, inject, signal, computed, output, OnInit, OnDestroy, ViewChild, ElementRef, afterNextRender, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminService } from '../../../../core/services/admin.service';
@@ -12,6 +12,8 @@ import { SupportInquiry } from '../../../../core/models/support.model';
   styleUrls: ['./support-chatbox.scss'],
 })
 export class SupportChatboxComponent implements OnInit, OnDestroy {
+  @Input() inline = false;
+
   admin = inject(AdminService);
   close = output<void>();
 
@@ -33,6 +35,16 @@ export class SupportChatboxComponent implements OnInit, OnDestroy {
   newOrderId = signal<string>('');
   newPriority = signal<'low' | 'medium' | 'high'>('medium');
   newInitialMessage = signal<string>('');
+
+  // Bulk selection state
+  selectedIds = signal<Set<string>>(new Set());
+  isBulkMode = signal<boolean>(false);
+  allSelected = computed(() => {
+    const visible = this.filteredInquiries();
+    const sel = this.selectedIds();
+    return visible.length > 0 && visible.every((i) => sel.has(i.id));
+  });
+  selectedCount = computed(() => this.selectedIds().size);
 
   private syncTimer: any = null;
   private lastMessageCount = 0;
@@ -184,8 +196,46 @@ export class SupportChatboxComponent implements OnInit, OnDestroy {
   }
 
   deleteInquiry(inquiryId: string): void {
-    if (confirm('Are you sure you want to permanently delete this inquiry from the PostgreSQL database?')) {
+    if (confirm('Permanently delete this inquiry?')) {
       this.admin.deleteInquiry(inquiryId);
+      if (this.selectedInquiryId() === inquiryId) {
+        this.selectedInquiryId.set(null);
+      }
+    }
+  }
+
+  toggleBulkMode(): void {
+    this.isBulkMode.update((v) => !v);
+    this.selectedIds.set(new Set());
+  }
+
+  toggleSelectOne(id: string, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    this.selectedIds.update((set) => {
+      const next = new Set(set);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  toggleSelectAll(): void {
+    if (this.allSelected()) {
+      this.selectedIds.set(new Set());
+    } else {
+      this.selectedIds.set(new Set(this.filteredInquiries().map((i) => i.id)));
+    }
+  }
+
+  deleteSelected(): void {
+    const ids = Array.from(this.selectedIds());
+    if (!ids.length) return;
+    if (!confirm(`Permanently delete ${ids.length} selected ${ids.length === 1 ? 'inquiry' : 'inquiries'}?`)) return;
+    this.admin.deleteInquiries(ids);
+    this.selectedIds.set(new Set());
+    this.isBulkMode.set(false);
+    if (ids.includes(this.selectedInquiryId() ?? '')) {
       this.selectedInquiryId.set(null);
     }
   }

@@ -53,7 +53,7 @@ export class AdminLogin {
     this.showPassword.update((val) => !val);
   }
 
-  onSubmit(): void {
+  async onSubmit(): Promise<void> {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       return;
@@ -63,7 +63,7 @@ export class AdminLogin {
     this.errorMessage.set('');
 
     const values = this.form.getRawValue();
-    const success = this.account.adminSignIn(values);
+    const success = await this.account.adminSignIn(values);
 
     if (!success) {
       this.isSubmitting.set(false);

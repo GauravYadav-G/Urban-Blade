@@ -1,5 +1,5 @@
-<div class="support-backdrop" (click)="onClose()">
-  <div class="support-modal-container" (click)="$event.stopPropagation()">
+<div [class.support-backdrop]="!inline" [class.support-page-mode]="inline" (click)="!inline && onClose()">
+  <div class="support-modal-container" [class.is-page]="inline" (click)="$event.stopPropagation()">
     
     <!-- Top Header -->
     <header class="support-header">
@@ -47,6 +47,21 @@
           <span>New Ticket</span>
         </button>
 
+        <!-- Bulk Select Toggle -->
+        <button 
+          type="button" 
+          class="btn-action-hub select-mode"
+          [class.active]="isBulkMode()"
+          (click)="toggleBulkMode()"
+          title="Select multiple inquiries for bulk delete"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+            <polyline points="9 11 12 14 22 4"></polyline>
+          </svg>
+          <span>{{ isBulkMode() ? 'Cancel Select' : 'Select' }}</span>
+        </button>
+
         <label class="toggle-autopilot" title="Toggle AI Auto-Pilot for incoming customer inquiries">
           <input type="checkbox" [checked]="aiAutoPilot()" (change)="aiAutoPilot.set(!aiAutoPilot())" />
           <span class="slider"></span>
@@ -58,7 +73,9 @@
           </span>
         </label>
 
-        <button type="button" class="btn-close-hub" (click)="onClose()" title="Close Support Hub">✕</button>
+        @if (!inline) {
+          <button type="button" class="btn-close-hub" (click)="onClose()" title="Close Support Hub">✕</button>
+        }
       </div>
     </header>
 
@@ -128,14 +145,39 @@
           </button>
         </div>
 
+        <!-- Select-All Bar (visible only in bulk mode) -->
+        @if (isBulkMode()) {
+          <div class="bulk-select-bar">
+            <label class="select-all-check">
+              <input type="checkbox" [checked]="allSelected()" (change)="toggleSelectAll()" />
+              <span>{{ allSelected() ? 'Deselect All' : 'Select All' }} ({{ filteredInquiries().length }})</span>
+            </label>
+            @if (selectedCount() > 0) {
+              <span class="selected-count-badge">{{ selectedCount() }} selected</span>
+            }
+          </div>
+        }
+
         <!-- Inquiries List -->
         <div class="inquiries-list">
           @for (inquiry of filteredInquiries(); track inquiry.id) {
             <div 
               class="inquiry-item" 
-              [class.active]="selectedInquiry()?.id === inquiry.id"
-              (click)="selectInquiry(inquiry.id)"
+              [class.active]="!isBulkMode() && selectedInquiry()?.id === inquiry.id"
+              [class.bulk-selected]="selectedIds().has(inquiry.id)"
+              (click)="isBulkMode() ? toggleSelectOne(inquiry.id, $event) : selectInquiry(inquiry.id)"
             >
+              <!-- Bulk Checkbox -->
+              @if (isBulkMode()) {
+                <div class="bulk-checkbox-wrap">
+                  <input 
+                    type="checkbox" 
+                    class="bulk-cb"
+                    [checked]="selectedIds().has(inquiry.id)"
+                    (click)="toggleSelectOne(inquiry.id, $event)"
+                  />
+                </div>
+              }
               <div class="inq-item-top">
                 <span class="user-name">{{ inquiry.user_name }}</span>
                 <span class="priority-tag {{ inquiry.priority }}">{{ inquiry.priority | uppercase }}</span>
@@ -164,6 +206,23 @@
             </div>
           }
         </div>
+
+        <!-- Bulk Action Floating Bar -->
+        @if (isBulkMode() && selectedCount() > 0) {
+          <div class="bulk-action-bar">
+            <span class="bulk-bar-count">🗂️ {{ selectedCount() }} selected</span>
+            <button type="button" class="btn-bulk-delete" (click)="deleteSelected()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                <path d="M10 11v6"></path>
+                <path d="M14 11v6"></path>
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+              </svg>
+              Delete {{ selectedCount() }} {{ selectedCount() === 1 ? 'Inquiry' : 'Inquiries' }}
+            </button>
+          </div>
+        }
       </aside>
 
       <!-- Right Main: Active Inquiry Conversation -->

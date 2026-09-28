@@ -34,14 +34,14 @@ export class LoginPage {
     this.showPassword.update((open) => !open);
   }
 
-  submit(): void {
+  async submit(): Promise<void> {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       return;
     }
-    const ok = this.account.signIn(this.form.getRawValue());
+    const ok = await this.account.signIn(this.form.getRawValue());
     if (!ok) {
-      this.loginError.set('Use the dummy login below, or create an account.');
+      this.loginError.set('Invalid email or password. Please try again.');
       return;
     }
     const returnUrl = this.route.snapshot.queryParams['returnUrl'];

@@ -17,12 +17,26 @@ export async function runMigrations(): Promise<boolean> {
   const client = await pool.connect();
   try {
     console.log('🚀 Running schema migration...');
-    const schemaSql = fs.readFileSync(path.resolve(__dirname, 'schema.sql'), 'utf-8');
+    const schemaCandidatePaths = [
+      path.resolve(__dirname, 'schema.sql'),
+      path.resolve(__dirname, '../../src/db/schema.sql'),
+      path.resolve(process.cwd(), 'src/db/schema.sql'),
+      path.resolve(process.cwd(), 'dist/db/schema.sql'),
+    ];
+    const resolvedSchema = schemaCandidatePaths.find((p) => fs.existsSync(p)) || schemaCandidatePaths[0];
+    const schemaSql = fs.readFileSync(resolvedSchema, 'utf-8');
     await client.query(schemaSql);
     console.log('✅ Base schema successfully applied.');
 
     console.log('🚀 Running index creation (GIN & B-Tree)...');
-    const indexesSql = fs.readFileSync(path.resolve(__dirname, 'indexes.sql'), 'utf-8');
+    const indexCandidatePaths = [
+      path.resolve(__dirname, 'indexes.sql'),
+      path.resolve(__dirname, '../../src/db/indexes.sql'),
+      path.resolve(process.cwd(), 'src/db/indexes.sql'),
+      path.resolve(process.cwd(), 'dist/db/indexes.sql'),
+    ];
+    const resolvedIndexes = indexCandidatePaths.find((p) => fs.existsSync(p)) || indexCandidatePaths[0];
+    const indexesSql = fs.readFileSync(resolvedIndexes, 'utf-8');
     await client.query(indexesSql);
     console.log('✅ High-performance indexes successfully applied.');
 

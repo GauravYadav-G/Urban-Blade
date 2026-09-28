@@ -412,11 +412,22 @@ async function runCompleteFlowAudit() {
     // ─────────────────────────────────────────────────────────────────────────
     console.log('\n🏢 PHASE 7: Admin Panel Operations & Complete Dispatch Pipeline');
 
+    const adminToken = app.jwt.sign({
+      id: 'cf32923e-e498-407c-93d5-8d8cef913979',
+      email: 'admin@urbanblade.in',
+      role: 'admin',
+      name: 'Master Admin',
+    });
+    const adminHeaders = {
+      authorization: `Bearer ${adminToken}`,
+    };
+
     // 7A: Admin Order Discovery
     t0 = Date.now();
     const adminOrdersResp = await app.inject({
       method: 'GET',
       url: '/api/admin/orders',
+      headers: adminHeaders,
     });
 
     if (adminOrdersResp.statusCode === 200) {
@@ -450,6 +461,7 @@ async function runCompleteFlowAudit() {
     const stage1Resp = await app.inject({
       method: 'PUT',
       url: `/api/admin/orders/${orderId}/status`,
+      headers: adminHeaders,
       payload: { status: 'processing' },
     });
 
@@ -475,6 +487,7 @@ async function runCompleteFlowAudit() {
     const stage2Resp = await app.inject({
       method: 'PUT',
       url: `/api/admin/orders/${orderId}/status`,
+      headers: adminHeaders,
       payload: { status: 'shipped' },
     });
 
@@ -500,6 +513,7 @@ async function runCompleteFlowAudit() {
     const stage3Resp = await app.inject({
       method: 'PUT',
       url: `/api/admin/orders/${orderId}/status`,
+      headers: adminHeaders,
       payload: { status: 'delivered' },
     });
 
@@ -525,6 +539,7 @@ async function runCompleteFlowAudit() {
     const metricsResp = await app.inject({
       method: 'GET',
       url: '/api/admin/metrics',
+      headers: adminHeaders,
     });
 
     if (metricsResp.statusCode === 200) {

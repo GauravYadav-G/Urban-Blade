@@ -62,6 +62,11 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/admin/pages/admin-system/admin-system').then((m) => m.AdminSystem),
       },
+      {
+        path: 'support',
+        loadComponent: () =>
+          import('./features/admin/pages/admin-support/admin-support').then((m) => m.AdminSupportPage),
+      },
     ],
   },
   {
