@@ -37,6 +37,8 @@ services:
         value: 5000
       - key: RATE_LIMIT_WINDOW_MS
         value: 60000
+      - key: MAX_EVENT_LOOP_DELAY_MS
+        value: 2500
 
 databases:
   # ─── FREE-TIER POSTGRESQL (RENDER MANAGED) ──────────────────────────────────

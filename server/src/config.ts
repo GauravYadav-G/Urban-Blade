@@ -35,7 +35,7 @@ export const config = {
   limits: {
     rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || '5000', 10),
     rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),
-    maxEventLoopDelayMs: parseInt(process.env.MAX_EVENT_LOOP_DELAY_MS || '100', 10),
+    maxEventLoopDelayMs: parseInt(process.env.MAX_EVENT_LOOP_DELAY_MS || '2500', 10),
     maxHeapUsedBytes: parseInt(process.env.MAX_HEAP_USED_BYTES || '1073741824', 10), // 1GB
   },
 
