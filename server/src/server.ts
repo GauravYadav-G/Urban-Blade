@@ -2,9 +2,20 @@ import { buildApp } from './app.js';
 import { config } from './config.js';
 import { pool } from './db/pool.js';
 import { redis } from './redis/client.js';
+import { runMigrations } from './db/migrate.js';
+import { seedDatabase } from './db/seed.js';
 
 async function start() {
   try {
+    // Zero-Touch Startup: Automatically apply schema & seed data (no paid shell needed!)
+    try {
+      console.log('🔄 Checking database & auto-applying migrations on startup...');
+      await runMigrations();
+      await seedDatabase();
+    } catch (dbErr: any) {
+      console.warn('⚠️ Startup DB initialization notice:', dbErr.message);
+    }
+
     const app = await buildApp();
 
     await app.listen({
