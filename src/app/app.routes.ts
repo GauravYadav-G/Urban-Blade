@@ -69,24 +69,9 @@ export const routes: Routes = [
       },
     ],
   },
-  {
-    path: 'auth',
-    loadComponent: () => import('@layout/auth-layout/auth-layout').then((m) => m.AuthLayout),
-    canActivate: [guestGuard],
-    children: [
-      { path: '', pathMatch: 'full', redirectTo: 'login' },
-      {
-        path: 'login',
-        loadComponent: () =>
-          import('./features/auth/pages/login-page/login-page').then((m) => m.LoginPage),
-      },
-      {
-        path: 'register',
-        loadComponent: () =>
-          import('./features/auth/pages/register-page/register-page').then((m) => m.RegisterPage),
-      },
-    ],
-  },
+  { path: 'auth/login', redirectTo: 'login', pathMatch: 'full' },
+  { path: 'auth/register', redirectTo: 'register', pathMatch: 'full' },
+  { path: 'auth', redirectTo: 'login', pathMatch: 'full' },
   {
     path: '',
     loadComponent: () => import('@layout/main-layout/main-layout').then((m) => m.MainLayout),
@@ -95,6 +80,18 @@ export const routes: Routes = [
         path: '',
         loadComponent: () =>
           import('./features/home/pages/home-page/home-page').then((m) => m.HomePage),
+      },
+      {
+        path: 'login',
+        canActivate: [guestGuard],
+        loadComponent: () =>
+          import('./features/auth/pages/login-page/login-page').then((m) => m.LoginPage),
+      },
+      {
+        path: 'register',
+        canActivate: [guestGuard],
+        loadComponent: () =>
+          import('./features/auth/pages/register-page/register-page').then((m) => m.RegisterPage),
       },
       {
         path: 'shop',

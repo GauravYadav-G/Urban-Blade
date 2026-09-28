@@ -36,12 +36,21 @@
           </svg>
           Admin Console
         </a>
-        <a routerLink="/account">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3l9-8z"/>
-          </svg>
-          Account
-        </a>
+        @if (account.isSignedIn()) {
+          <a routerLink="/account" class="store-header__user-pill" title="My Account Profile">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+            <span>{{ account.user()?.name || 'Account' }}</span>
+          </a>
+        } @else {
+          <a routerLink="/login" class="store-header__auth-link" title="Sign In or Register">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/>
+            </svg>
+            <span>Sign In / Join</span>
+          </a>
+        }
       </div>
     </div>
   </div>

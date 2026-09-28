@@ -85,6 +85,17 @@ export class AccountService {
         this.persist(demoUser);
         return true;
       }
+      if (email === ADMIN_ACCOUNT.email.toLowerCase() && credentials.password === ADMIN_ACCOUNT.password) {
+        const adminUser: StoreUser = {
+          email: ADMIN_ACCOUNT.email,
+          name: ADMIN_ACCOUNT.name,
+          role: 'admin',
+        };
+        this.persistToken('admin_offline_jwt_token');
+        this.userSignal.set(adminUser);
+        this.persist(adminUser);
+        return true;
+      }
     }
 
     return false;
@@ -180,11 +191,14 @@ export class AccountService {
   }
 
   async register(name: string, email: string, password = 'Blade@User123'): Promise<boolean> {
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedName = name.trim();
+
     try {
       const resp = await firstValueFrom(
         this.http.post<AuthResponse>(`${API_AUTH_URL}/register`, {
-          name,
-          email,
+          name: trimmedName,
+          email: trimmedEmail,
           password,
         })
       );
@@ -194,9 +208,13 @@ export class AccountService {
         this.persist(resp.user);
         return true;
       }
-    } catch {
-      // Local fallback
-      const user: StoreUser = { name, email, role: 'customer' };
+    } catch (err: any) {
+      if (err?.status === 409) {
+        throw new Error(err?.error?.message || 'An account with this email address already exists. Please sign in instead.');
+      }
+      // Local fallback for offline/demo environments
+      const user: StoreUser = { name: trimmedName, email: trimmedEmail, role: 'customer' };
+      this.persistToken('local_client_session_' + Date.now());
       this.userSignal.set(user);
       this.persist(user);
       return true;

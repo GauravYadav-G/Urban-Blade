@@ -7,6 +7,7 @@ import { CatalogService } from '@core/services/catalog.service';
 import { ImgFallback } from '@shared/directives/img-fallback';
 import { InrPipe } from '@shared/pipes/inr-pipe';
 import { SiteSettingsService } from '@core/services/site-settings.service';
+import { AccountService } from '@core/services/account.service';
 import { DepartmentDrawer } from '../department-drawer/department-drawer';
 import { StoreLogo } from '../store-logo/store-logo';
 import { ThemeToggle } from '../theme-toggle/theme-toggle';
@@ -22,6 +23,7 @@ export class StoreHeader {
   private readonly catalog = inject(CatalogService);
   private readonly cart = inject(CartService);
   readonly siteSettings = inject(SiteSettingsService);
+  readonly account = inject(AccountService);
 
   readonly salon = SALON;
   readonly settings = this.siteSettings.settings;
