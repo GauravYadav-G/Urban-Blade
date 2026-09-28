@@ -6,6 +6,7 @@
     "start": "ng serve --proxy-config proxy.conf.json",
     "dev": "ng serve --proxy-config proxy.conf.json",
     "build": "ng build",
+    "build:godaddy": "ng build && (cd dist/salon-store/browser && zip -q -r ../../../urbanblade-frontend.zip . && cd ../../..) && echo '✅ Created urbanblade-frontend.zip ready for GoDaddy cPanel upload!'",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "server:dev": "npm --prefix server run dev",

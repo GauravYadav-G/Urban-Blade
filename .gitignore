@@ -6,6 +6,7 @@ dist/
 /tmp
 /out-tsc
 /bazel-out
+*.zip
 
 # Node dependencies
 node_modules/
