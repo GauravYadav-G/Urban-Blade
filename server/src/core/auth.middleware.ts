@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { getCacheKey, isRedisAvailable } from '../redis/client.js';
+import { getCacheKey } from '../redis/client.js';
 import { query } from '../db/pool.js';
 
 export interface AuthUser {
@@ -49,22 +49,12 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
       });
     }
 
-    // Only query database for revocation if Redis is not active
-    if (!isRedisAvailable()) {
-      try {
-        const dbRevoked = await query(
-          'SELECT 1 FROM revoked_access_tokens WHERE token_hash = $1 AND expires_at > NOW()',
-          [createHash('sha256').update(token).digest('hex')]
-        );
-        if (dbRevoked.rows.length > 0) {
-          return reply.status(401).send({
-            error: 'TOKEN_REVOKED',
-            message: 'This session has been logged out. Please sign in again.',
-          });
-        }
-      } catch {
-        // In case table is still initializing
-      }
+    try {
+      const revoked = await query('SELECT 1 FROM revoked_access_tokens WHERE token_hash = $1 AND expires_at > NOW()', [createHash('sha256').update(token).digest('hex')]);
+      if (revoked.rows.length) return reply.code(401).send({ error: 'TOKEN_REVOKED' });
+    } catch (err) {
+      request.log.error({ err }, 'Session validation unavailable');
+      return reply.code(503).send({ error: 'AUTH_UNAVAILABLE', message: 'Unable to validate your session. Please retry.' });
     }
 
     (request as any)._authChecked = true;
@@ -88,8 +78,11 @@ export async function optionalAuth(request: FastifyRequest, _reply: FastifyReply
     const isRevoked = await getCacheKey(`revoked:${token}`);
     if (isRevoked) return;
     await request.jwtVerify({ algorithms: ['HS256'] });
+    const revoked = await query('SELECT 1 FROM revoked_access_tokens WHERE token_hash = $1 AND expires_at > NOW()', [createHash('sha256').update(token).digest('hex')]);
+    if (revoked.rows.length) { (request as any).user = undefined; return; }
     (request as any)._authChecked = true;
   } catch {
+    (request as any).user = undefined;
     // Tolerant: ignore expired/invalid token on public/optional routes so guests can proceed
   }
 }

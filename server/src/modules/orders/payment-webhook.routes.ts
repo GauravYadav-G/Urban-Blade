@@ -17,7 +17,7 @@ export async function paymentWebhookRoutes(app: FastifyInstance) {
     }
     let event;
     try { event = JSON.parse(raw.toString('utf8')); } catch { return reply.code(400).send({ error: 'INVALID_JSON' }); }
-    if (event.event !== 'payment.captured' && event.event !== 'order.paid') return { received: true };
+    if (event.event !== 'payment.captured' && event.event !== 'order.paid' && event.event !== 'payment.authorized') return { received: true };
     const paymentId = event.payload?.payment?.entity?.id;
     if (typeof paymentId !== 'string') return reply.code(400).send({ error: 'MISSING_PAYMENT' });
     try {

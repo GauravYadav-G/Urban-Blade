@@ -36,8 +36,8 @@ export class ProductDetailPage {
     return p ? this.catalog.related(p) : [];
   });
   readonly savedOnList = computed(() => {
-    const id = this.id();
-    return id ? this.list.products().some((item) => item.id === id) : false;
+    const id = this.product()?.id;
+    return id ? this.list.has(id) : false;
   });
 
   readonly zoomActive = signal(false);

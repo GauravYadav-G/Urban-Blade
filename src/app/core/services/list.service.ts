@@ -10,20 +10,23 @@ export class ListService {
   private readonly idsSignal = signal<string[]>(this.readStored());
 
   readonly products = computed<Product[]>(() =>
-    this.idsSignal()
+    Array.from(new Set(this.idsSignal().map(id => this.catalog.byId(id)?.id || id)))
       .map((id) => this.catalog.byId(id))
       .filter((item): item is Product => Boolean(item)),
   );
 
   has(productId: string): boolean {
-    return this.idsSignal().includes(productId);
+    const canonical = this.catalog.byId(productId)?.id || productId;
+    return this.idsSignal().some(id => (this.catalog.byId(id)?.id || id) === canonical);
   }
 
   toggle(productId: string): void {
     if (!this.catalog.byId(productId)) {
       return;
     }
-    this.idsSignal.update((ids) => {
+    productId = this.catalog.byId(productId)?.id || productId;
+    this.idsSignal.update((stored) => {
+      const ids = Array.from(new Set(stored.map(id => this.catalog.byId(id)?.id || id)));
       const next = ids.includes(productId) ? ids.filter((id) => id !== productId) : [productId, ...ids];
       this.persist(next);
       return next;
@@ -31,7 +34,9 @@ export class ListService {
   }
 
   remove(productId: string): void {
-    this.idsSignal.update((ids) => {
+    productId = this.catalog.byId(productId)?.id || productId;
+    this.idsSignal.update((stored) => {
+      const ids = Array.from(new Set(stored.map(id => this.catalog.byId(id)?.id || id)));
       const next = ids.filter((id) => id !== productId);
       this.persist(next);
       return next;

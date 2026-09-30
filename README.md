@@ -61,3 +61,23 @@ Angular CLI does not come with an end-to-end testing framework by default. You c
 ## Additional Resources
 
 For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+
+## Production CORS configuration
+
+The Render API's `CORS_ORIGINS` must include `https://urban-blade.vercel.app`.
+For an existing Render service, add that exact origin (without a trailing slash)
+to its comma-separated `CORS_ORIGINS` environment variable and redeploy the API.
+An environment value overrides the defaults in `server/src/config.ts`; changing
+`render.yaml` alone does not update a service managed manually in the dashboard.
+
+Verify registration preflight after deployment:
+
+```bash
+curl -i -X OPTIONS https://urbanblade-api.onrender.com/api/auth/register \
+  -H 'Origin: https://urban-blade.vercel.app' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: content-type'
+```
+
+Expect status `204` and
+`Access-Control-Allow-Origin: https://urban-blade.vercel.app`.

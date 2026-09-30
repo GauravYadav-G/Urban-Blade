@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import crypto from 'crypto';
 import { query, withTransaction } from '../../db/pool.js';
 import { acquireLock, releaseLock } from '../../redis/lock.service.js';
-import { optionalAuth } from '../../core/auth.middleware.js';
+import { requireAuth, optionalAuth } from '../../core/auth.middleware.js';
 
 // Fallback stylists
 const fallbackStylists = [
@@ -201,11 +201,11 @@ export async function bookingsRoutes(app: FastifyInstance) {
   // ─── GET USER BOOKINGS HISTORY ────────────────────────────────────────────
   app.get<{ Querystring: { email?: string } }>(
     '/bookings',
-    { preHandler: [optionalAuth] },
+    { preHandler: [requireAuth] },
     async (request, reply) => {
       const { email } = request.query || {};
       const user = request.user;
-      const scopedEmail = user?.role === 'customer' ? user.email : email;
+      const scopedEmail = user?.role === 'admin' ? email : user?.email;
 
       if (user?.role === 'vendor') {
         return reply.status(403).send({

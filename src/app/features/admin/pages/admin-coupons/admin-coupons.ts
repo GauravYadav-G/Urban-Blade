@@ -147,7 +147,7 @@ export class AdminCoupons implements OnInit, OnDestroy {
     this.editingCouponId.set(null);
   }
 
-  saveCoupon(): void {
+  async saveCoupon(): Promise<void> {
     if (this.couponForm.invalid) {
       this.toast.error('Please verify coupon details before saving.');
       return;
@@ -167,7 +167,7 @@ export class AdminCoupons implements OnInit, OnDestroy {
 
     const editId = this.editingCouponId();
     if (editId) {
-      this.couponService.updateCoupon(editId, {
+      try { await this.couponService.updateCoupon(editId, {
         code,
         description: val.description || '',
         discountType,
@@ -177,10 +177,10 @@ export class AdminCoupons implements OnInit, OnDestroy {
         expiresAt,
         isActive,
       });
-      this.closeModal();
+      this.closeModal(); } catch { /* service reports the error */ }
     } else {
       try {
-        this.couponService.addCoupon({
+        await this.couponService.addCoupon({
           code,
           description: val.description || '',
           discountType,

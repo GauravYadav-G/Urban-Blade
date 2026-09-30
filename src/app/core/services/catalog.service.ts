@@ -22,7 +22,7 @@ export interface PaginatedProducts {
   totalPages: number;
 }
 
-const CATALOG_STORAGE_KEY = 'urban-blade-admin-products';
+const CATALOG_STORAGE_KEY = 'urban-blade-catalog-v2';
 
 const API_BASE =
   typeof window !== 'undefined' && window.location.port === '4200'

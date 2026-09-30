@@ -2,7 +2,7 @@ import { pool, query, withTransaction } from '../../db/pool.js';
 import { paymentGateway, settleCapturedPayment } from './payment-settlement.service.js';
 import { cancelOrderAndReleaseStock } from './stock-reservation.service.js';
 
-export async function reapAbandonedCheckouts(): Promise<number> {
+export async function reapAbandonedCheckouts(gateway = paymentGateway): Promise<number> {
   if (pool.ended) return 0;
   let count = 0;
 
@@ -23,25 +23,29 @@ export async function reapAbandonedCheckouts(): Promise<number> {
       let capturedPaymentId: string | null = null;
       let hasAuthorizedOrCaptured = false;
 
+      if (!order.idempotency_key) continue;
       if (order.idempotency_key) {
         try {
-          const payments = await paymentGateway().orders.fetchPayments(order.idempotency_key);
+          const payments = await gateway().orders.fetchPayments(order.idempotency_key);
+          if (!Array.isArray(payments?.items) || Number(payments.count || 0) > payments.items.length) continue;
           const captured = payments?.items?.find(payment => payment.status === 'captured');
           const authorized = payments?.items?.find(payment => payment.status === 'authorized');
           if (captured) {
             capturedPaymentId = captured.id;
             hasAuthorizedOrCaptured = true;
           } else if (authorized) {
+            capturedPaymentId = authorized.id;
             hasAuthorizedOrCaptured = true;
           }
+          if (payments?.items?.some(payment => !['failed', 'refunded', 'captured'].includes(payment.status))) hasAuthorizedOrCaptured = true;
         } catch {
-          // If payment fetch fails (e.g. order not found on gateway or mock id in dev),
-          // order has no gateway capture.
+          // Unknown gateway state is not evidence of non-payment. Keep the hold.
+          continue;
         }
       }
 
       if (capturedPaymentId) {
-        await settleCapturedPayment(capturedPaymentId, order.id);
+        await settleCapturedPayment(capturedPaymentId, order.id, gateway());
       } else if (order.is_expired && !hasAuthorizedOrCaptured) {
         // Grace period expired (30m) with no authorization or capture:
         // Safely cancel order and return reserved stock to available inventory.
@@ -77,8 +81,11 @@ export async function reapAbandonedCheckouts(): Promise<number> {
 }
 
 export function startAbandonedCheckoutReaper(intervalMs = 60000): NodeJS.Timeout {
+  let running = false;
   const timer = setInterval(() => {
-    reapAbandonedCheckouts().catch(err => console.error('Checkout cleanup failed', err.message));
+    if (running) return;
+    running = true;
+    reapAbandonedCheckouts().catch(err => console.error('Checkout cleanup failed', err.message)).finally(() => { running = false; });
   }, intervalMs);
   timer.unref();
   return timer;

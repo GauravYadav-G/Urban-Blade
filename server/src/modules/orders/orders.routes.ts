@@ -1,7 +1,10 @@
-import { FastifyInstance } from 'fastify';
+import type { PoolClient } from 'pg';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import crypto from 'crypto';
 import Razorpay from 'razorpay';
-import { settleCapturedPayment } from './payment-settlement.service.js';
+import { calculateTotals, couponDiscount, getSiteSettings } from '../commerce/commerce.service.js';
+import { orderReceipt } from './receipt.service.js';
+import { settleCapturedPayment, paymentGateway } from './payment-settlement.service.js';
 import { query, withTransaction } from '../../db/pool.js';
 import { config } from '../../config.js';
 import { optionalAuth, requireAuth } from '../../core/auth.middleware.js';
@@ -12,6 +15,11 @@ import {
   releaseStockReservation,
   reserveStock,
 } from './stock-reservation.service.js';
+
+function checkoutTransaction<T>(request: FastifyRequest, fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = (request as any).checkoutClient as PoolClient | undefined;
+  return client ? fn(client) : withTransaction(fn);
+}
 
 function toValidUuidOrNull(val?: string | null): string | null {
   if (!val || typeof val !== 'string') return null;
@@ -63,7 +71,7 @@ export async function resolveAndVerifyItems(
       `SELECT id, slug, name, price, stock_quantity, stock_reserved, image_url, in_stock FROM products WHERE ${
         isUUID
           ? 'id = $1'
-          : 'slug = $1 OR slug = $2 OR slug = $3 OR id::text = $1 OR name ILIKE $2 OR name ILIKE $3'
+          : 'slug = $1 OR slug = $2 OR slug = $3 OR id::text = $1 '
       } LIMIT 1`,
       isUUID ? [it.productId] : [it.productId, cleanSlug, slugCandidate]
     );
@@ -98,31 +106,10 @@ export async function resolveAndVerifyItems(
 
   const subtotal = verifiedItems.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
 
-  // Authoritative Coupon Validation (zero client tampering)
-  let validatedDiscount = 0;
-  let cleanCoupon = '';
-  if (couponCode) {
-    cleanCoupon = couponCode.trim().toUpperCase();
-    const KNOWN_COUPONS: Record<string, { type: 'percent' | 'flat'; val: number; min: number; max?: number }> = {
-      BLADE10: { type: 'percent', val: 10, min: 499, max: 200 },
-      WELCOME20: { type: 'percent', val: 20, min: 999, max: 400 },
-      FIRST100: { type: 'flat', val: 100, min: 599 },
-      VIP20: { type: 'percent', val: 20, min: 1499, max: 500 },
-    };
-    const rule = KNOWN_COUPONS[cleanCoupon];
-    if (!rule || subtotal < rule.min) throw new Error('INVALID_COUPON: Coupon is invalid or the minimum order value has not been reached.');
-    if (rule && subtotal >= rule.min) {
-      validatedDiscount = rule.type === 'percent'
-        ? Math.min(rule.max || 9999, Math.round((subtotal * rule.val) / 100))
-        : Math.min(subtotal, rule.val);
-    }
-  }
-
-  const taxableSubtotal = Math.max(0, subtotal - validatedDiscount);
-  const shippingFee = taxableSubtotal >= 999 || subtotal >= 999 ? 0 : 99;
-  const totalAmount = Math.round((taxableSubtotal + shippingFee) * 100) / 100;
-
-  return { verifiedItems, subtotal, discountAmount: validatedDiscount, couponCode: cleanCoupon, shippingFee, totalAmount };
+  const settings = await getSiteSettings();
+  if (settings.operations?.acceptingOrders === false) throw new Error('STORE_CLOSED: Orders are temporarily paused.');
+  const coupon = await couponDiscount(couponCode, subtotal);
+  return { verifiedItems, couponCode: coupon.couponCode, ...calculateTotals(subtotal, coupon.discount, settings.ecommerce) };
 }
 
 export async function ordersRoutes(app: FastifyInstance) {
@@ -139,10 +126,12 @@ export async function ordersRoutes(app: FastifyInstance) {
     body.userId = request.user.id;
     if (body.shippingAddress) {
       const address = body.shippingAddress;
-      if (typeof address.fullName !== 'string' || address.fullName.trim().length < 2 ||
+      if (typeof address.fullName !== 'string' || address.fullName.trim().length < 2 || address.fullName.length > 100 ||
           typeof address.phone !== 'string' || !/^[0-9]{10}$/.test(address.phone) ||
-          typeof address.street !== 'string' || address.street.trim().length < 5 ||
-          typeof address.city !== 'string' || address.city.trim().length < 2) {
+          typeof address.street !== 'string' || address.street.trim().length < 5 || address.street.length > 500 ||
+          typeof address.city !== 'string' || address.city.trim().length < 2 || address.city.length > 100 ||
+          (address.postalCode !== undefined && (typeof address.postalCode !== 'string' || !/^[1-9][0-9]{5}$/.test(address.postalCode))) ||
+          (address.state !== undefined && (typeof address.state !== 'string' || address.state.trim().length < 2 || address.state.length > 100))) {
         return reply.code(400).send({ error: 'INVALID_ADDRESS', message: 'Enter a complete delivery address and a 10-digit phone number.' });
       }
       address.email = request.user.email;
@@ -150,15 +139,35 @@ export async function ordersRoutes(app: FastifyInstance) {
     if (path.endsWith('/cancel-payment') || path.endsWith('/razorpay/verify')) {
       if (!toValidUuidOrNull(body.orderId)) return reply.code(400).send({ error: 'INVALID_ORDER_ID' });
       const order = await query('SELECT user_id, payment_method FROM orders WHERE id = $1', [body.orderId]);
-      if (path.endsWith('/cancel-payment') && order.rows[0]?.payment_method === 'Razorpay') return reply.code(409).send({ error: 'PAYMENT_IN_PROGRESS', message: 'Online payment reservations are reconciled automatically.' });
       if (!order.rows[0] || order.rows[0].user_id !== request.user.id) {
         return reply.code(404).send({ error: 'ORDER_NOT_FOUND' });
       }
+      if (path.endsWith('/cancel-payment') && order.rows[0]?.payment_method === 'Razorpay') return reply.code(409).send({ error: 'PAYMENT_IN_PROGRESS', message: 'Online payment reservations are reconciled automatically.' });
+
     }
   });
   app.post<{ Body: { items: Array<{productId: string; quantity: number}>; couponCode?: string } }>('/orders/quote', async (request, reply) => {
     try { return await resolveAndVerifyItems(request.body.items, request.body.couponCode); }
     catch (err: any) { return reply.code(400).send({ error: 'INVALID_CHECKOUT', message: err.message }); }
+  });
+
+  app.post<{ Params: { orderId: string } }>('/orders/:orderId/reconcile', async (request, reply) => {
+    const result = await query('SELECT * FROM orders WHERE id::text = $1 AND user_id = $2', [request.params.orderId, request.user.id]);
+    let order = result.rows[0];
+    if (!order) return reply.code(404).send({ error: 'ORDER_NOT_FOUND' });
+    if (order.payment_method === 'Razorpay' && order.payment_status !== 'captured') {
+      try {
+        const payments = await paymentGateway().orders.fetchPayments(order.idempotency_key);
+        const paid = payments.items.find(p => p.status === 'captured' || p.status === 'authorized');
+        if (paid) await settleCapturedPayment(paid.id, order.id);
+      } catch (err) {
+        request.log.error({ err, orderId: order.id }, 'Payment confirmation pending');
+        return reply.code(503).send({ error: 'CONFIRMATION_PENDING', message: 'Payment status is still being checked. Do not pay again.' });
+      }
+      order = (await query('SELECT * FROM orders WHERE id = $1', [order.id])).rows[0];
+    }
+    if (order.payment_status === 'captured' || (order.payment_method === 'Cash on Delivery' && order.status !== 'cancelled')) return { receipt: await orderReceipt(order) };
+    return { pending: order.status !== 'cancelled', cancelled: order.status === 'cancelled' };
   });
 
   // ─── RETIRED ENDPOINTS (HTTP 410 GONE) ──────────────────────────────────────
@@ -242,7 +251,7 @@ export async function ordersRoutes(app: FastifyInstance) {
     }
 
     try {
-      const { verifiedItems, subtotal, discountAmount: validatedDiscount, couponCode: cleanCoupon, shippingFee, totalAmount } =
+      const { verifiedItems, subtotal, discountAmount: validatedDiscount, couponCode: cleanCoupon, shippingFee, totalAmount, taxAmount, taxInclusive, taxRatePercent } =
         await resolveAndVerifyItems(items, couponCode, discountAmount);
       const expectedTotal = (request.body as any).expectedTotal;
       if (typeof expectedTotal !== 'number' || Math.round(expectedTotal * 100) !== Math.round(totalAmount * 100)) {
@@ -260,7 +269,7 @@ export async function ordersRoutes(app: FastifyInstance) {
       if (!razorpayOrderId) throw new Error('PAYMENT_GATEWAY_UNAVAILABLE');
 
       // Atomically reserve inventory in Neon PostgreSQL (payment-first: reserve only)
-      await withTransaction(async (client) => {
+      await checkoutTransaction(request, async (client) => {
         const effectiveAddress = {
           ...shippingAddress,
           email: (shippingAddress as any).email || (request.body as any).userEmail || 'customer@urbanblade.in',
@@ -271,8 +280,8 @@ export async function ordersRoutes(app: FastifyInstance) {
         await client.query(
           `INSERT INTO orders (
             id, user_id, idempotency_key, status, subtotal, shipping_fee, total_amount, currency,
-            shipping_address, payment_method, payment_status, transaction_id, coupon_code, discount_amount
-          ) VALUES ($1, $2, $3, 'accepted', $4, $5, $6, 'INR', $7, 'Razorpay', 'pending', $8, $9, $10)`,
+            shipping_address, payment_method, payment_status, transaction_id, coupon_code, discount_amount, tax_amount, tax_inclusive, tax_rate_percent
+          ) VALUES ($1, $2, $3, 'accepted', $4, $5, $6, 'INR', $7, 'Razorpay', 'pending', $8, $9, $10, $11, $12, $13)`,
           [
             orderId,
             resolvedUserUuid,
@@ -284,6 +293,7 @@ export async function ordersRoutes(app: FastifyInstance) {
             razorpayOrderId,
             cleanCoupon || null,
             validatedDiscount || 0,
+            taxAmount, taxInclusive, taxRatePercent,
           ]
         );
 
@@ -316,6 +326,7 @@ export async function ordersRoutes(app: FastifyInstance) {
         razorpayOrderId,
         amount: amountInPaise,
         totalAmount,
+        subtotal, shippingFee, discountAmount: validatedDiscount, couponCode: cleanCoupon, taxAmount, taxInclusive, taxRatePercent,
         currency: 'INR',
         keyId: config.razorpay.keyId,
         items: verifiedItems,
@@ -325,7 +336,7 @@ export async function ordersRoutes(app: FastifyInstance) {
       request.log.error({ err }, 'Failed to create Razorpay checkout order');
       return reply.status(400).send({
         error: 'RAZORPAY_ORDER_FAILED',
-        message: err.message || 'Unable to reserve inventory in Neon PostgreSQL',
+        message: /^(INVALID_|INSUFFICIENT_|PRODUCT_|DUPLICATE_|STORE_CLOSED)/.test(err.message || '') ? err.message : 'Unable to start online payment. Please retry or contact support.',
       });
     }
   });
@@ -377,7 +388,9 @@ export async function ordersRoutes(app: FastifyInstance) {
         receiptNumber: `RCPT-UB-${order.id.slice(0, 8).toUpperCase()}`,
         status: 'confirmed',
         paymentStatus: 'captured',
-        totalAmount: parseFloat(order.total_amount),
+        totalAmount: Number(order.total_amount),
+        subtotal: Number(order.subtotal), shippingFee: Number(order.shipping_fee), discountAmount: Number(order.discount_amount),
+        couponCode: order.coupon_code, taxAmount: Number(order.tax_amount), taxInclusive: order.tax_inclusive, taxRatePercent: Number(order.tax_rate_percent),
         currency: order.currency || 'INR',
         confirmedAt: order.updated_at || new Date().toISOString(),
         shippingAddress: order.shipping_address,
@@ -418,7 +431,7 @@ export async function ordersRoutes(app: FastifyInstance) {
     }
 
     try {
-      const { verifiedItems, subtotal, discountAmount: validatedDiscount, couponCode: cleanCoupon, shippingFee, totalAmount } =
+      const { verifiedItems, subtotal, discountAmount: validatedDiscount, couponCode: cleanCoupon, shippingFee, totalAmount, taxAmount, taxInclusive, taxRatePercent } =
         await resolveAndVerifyItems(items, couponCode, discountAmount);
       const expectedTotal = (request.body as any).expectedTotal;
       if (typeof expectedTotal !== 'number' || Math.round(expectedTotal * 100) !== Math.round(totalAmount * 100)) {
@@ -426,52 +439,18 @@ export async function ordersRoutes(app: FastifyInstance) {
       }
       const orderId = crypto.randomUUID();
 
-      await withTransaction(async (client) => {
-        for (const it of [...verifiedItems].sort((a, b) => a.productId.localeCompare(b.productId))) {
-          // Lock the product row for update
-          await client.query('SELECT 1 FROM products WHERE id = $1 FOR UPDATE', [it.productId]);
-          const updateRes = await client.query(
-            `UPDATE products
-             SET stock_reserved = stock_reserved + $1,
-                 version = version + 1,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = $2 AND (stock_quantity - stock_reserved) >= $1
-             RETURNING stock_quantity, stock_reserved;`,
-            [it.quantity, it.productId]
-          );
-
-          if (updateRes.rowCount === 0) {
-            throw new Error(`Atomic lock failed: Insufficient stock for ${it.productName}`);
-          }
-        }
-
+      await checkoutTransaction(request, async (client) => {
         const effectiveAddress = {
           ...shippingAddress,
           email: (shippingAddress as any).email || (request.body as any).userEmail || 'customer@urbanblade.in',
         };
         const resolvedUserUuid = await resolveUserId(userId, effectiveAddress.email);
         const codTxId = `pay_cod_${orderId.slice(0, 8)}`;
-        // Commit stock reservation for COD (confirmed immediately)
-        for (const it of [...verifiedItems].sort((a, b) => a.productId.localeCompare(b.productId))) {
-          await client.query(
-            `
-            UPDATE products
-            SET stock_quantity = stock_quantity - $1,
-                stock_reserved = stock_reserved - $1,
-                in_stock = (stock_quantity - $1 > 0),
-                version = version + 1,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2;
-            `,
-            [it.quantity, it.productId]
-          );
-        }
-
         await client.query(
           `INSERT INTO orders (
             id, user_id, idempotency_key, status, subtotal, shipping_fee, total_amount, currency,
-            shipping_address, payment_method, payment_status, transaction_id, coupon_code, discount_amount
-          ) VALUES ($1, $2, $3, 'confirmed', $4, $5, $6, 'INR', $7, 'Cash on Delivery', 'pending', $8, $9, $10)`,
+            shipping_address, payment_method, payment_status, transaction_id, coupon_code, discount_amount, tax_amount, tax_inclusive, tax_rate_percent
+          ) VALUES ($1, $2, $3, 'confirmed', $4, $5, $6, 'INR', $7, 'Cash on Delivery', 'pending', $8, $9, $10, $11, $12, $13)`,
           [
             orderId,
             resolvedUserUuid,
@@ -483,8 +462,12 @@ export async function ordersRoutes(app: FastifyInstance) {
             codTxId,
             cleanCoupon || null,
             validatedDiscount || 0,
+            taxAmount, taxInclusive, taxRatePercent,
           ]
         );
+
+        await reserveStock(client, orderId, verifiedItems);
+        await commitStockReservation(client, orderId);
 
         // Track coupon usage if a coupon was applied
         if (cleanCoupon && validatedDiscount > 0 && resolvedUserUuid) {
@@ -510,12 +493,13 @@ export async function ordersRoutes(app: FastifyInstance) {
       const receipt = {
         success: true,
         orderId,
-        paymentId: codTxId,
-        transactionId: codTxId,
+        paymentId: '',
+        transactionId: '',
         receiptNumber: `RCPT-UB-${orderId.slice(0, 8).toUpperCase()}`,
         status: 'confirmed',
         paymentStatus: 'pending',
         totalAmount,
+        subtotal, shippingFee, discountAmount: validatedDiscount, couponCode: cleanCoupon, taxAmount, taxInclusive, taxRatePercent,
         currency: 'INR',
         confirmedAt: new Date().toISOString(),
         shippingAddress,
@@ -528,7 +512,7 @@ export async function ordersRoutes(app: FastifyInstance) {
         })),
         paymentDetails: {
           method: 'Cash on Delivery',
-          transactionId: codTxId,
+          transactionId: '',
           instruction: 'Pay upon delivery at your doorstep.',
         },
       };
@@ -537,7 +521,7 @@ export async function ordersRoutes(app: FastifyInstance) {
     } catch (err: any) {
       return reply.status(400).send({
         error: 'COD_ORDER_FAILED',
-        message: err.message || 'Unable to place Cash on Delivery order',
+        message: /^(INVALID_|INSUFFICIENT_|PRODUCT_|DUPLICATE_|STORE_CLOSED)/.test(err.message || '') ? err.message : 'Unable to place your order. Please retry.',
       });
     }
   });

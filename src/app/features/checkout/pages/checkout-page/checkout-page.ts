@@ -1,512 +1,126 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
-import { SALON } from '@core/constants/salon.constants';
+import { RouterLink } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
 import { CartService } from '@core/services/cart.service';
-import { AdminService, type AdminOrder } from '@core/services/admin.service';
-import { SiteSettingsService } from '@core/services/site-settings.service';
-import { PaymentService, PaymentReceipt } from '@core/services/payment.service';
-import { AddressService } from '@core/services/address.service';
 import { AccountService } from '@core/services/account.service';
-import type { SavedAddress } from '@core/models/address.model';
-import { ToastService } from '@core/services/toast.service';
+import { AddressService } from '@core/services/address.service';
+import { SiteSettingsService } from '@core/services/site-settings.service';
+import { PaymentService, PaymentReceipt, OrderQuote, RazorpayOrderResponse } from '@core/services/payment.service';
 import { InrPipe } from '@shared/pipes/inr-pipe';
+import type { SavedAddress } from '@core/models/address.model';
 
-import { CouponService } from '@core/services/coupon.service';
-import type { Coupon } from '@core/models/coupon.model';
-
-@Component({
-  selector: 'app-checkout-page',
-  standalone: true,
+@Component({ selector: 'app-checkout-page', standalone: true,
   imports: [CommonModule, ReactiveFormsModule, RouterLink, InrPipe],
-  templateUrl: './checkout-page.html',
-  styleUrl: './checkout-page.scss',
-})
+  templateUrl: './checkout-page.html', styleUrl: './checkout-page.scss' })
 export class CheckoutPage implements OnInit {
   private readonly fb = inject(FormBuilder);
-  private readonly router = inject(Router);
-  protected readonly cart = inject(CartService);
-  private readonly admin = inject(AdminService);
-  private readonly paymentService = inject(PaymentService);
-  private readonly toast = inject(ToastService);
-  readonly siteSettings = inject(SiteSettingsService);
-  protected readonly account = inject(AccountService);
-  protected readonly addressService = inject(AddressService);
-  protected readonly couponService = inject(CouponService);
-
-  readonly salon = SALON;
-  readonly settings = this.siteSettings.settings;
-  readonly placed = signal(false);
-  readonly isInitiating = signal(false);
-  readonly confirmedReceipt = signal<PaymentReceipt | null>(null);
-  readonly confirmedOrder = signal<AdminOrder | null>(null);
-
-  readonly savedAddresses = this.addressService.addresses;
-  readonly selectedAddressId = signal<string | 'custom' | null>(null);
-  readonly isCustomMode = signal<boolean>(false);
-  readonly isEditing = signal<boolean>(false);
-  readonly showAddressList = signal<boolean>(false);
-
-  // Coupon promo code states
-  readonly couponCodeInput = signal<string>('');
-  readonly appliedCoupon = signal<Coupon | null>(null);
-  readonly couponDiscount = signal<number>(0);
-  readonly couponError = signal<string>('');
-  readonly hasActiveCoupons = computed(() => this.couponService.coupons().some((c) => c.isActive));
-
-  // Reactive ecommerce rules from Admin Settings
-  readonly freeShippingThreshold = computed(() => 999);
-  readonly standardShippingFee = computed(() => 99);
-  readonly freeShippingEnabled = computed(() => true);
-  readonly taxRatePercent = computed(() => this.settings().ecommerce.taxRatePercent);
-  readonly taxEnabled = computed(() => this.settings().ecommerce.taxEnabled ?? true);
-  readonly taxInclusive = computed(() => true);
-
-  readonly deliveryFee = computed(() => {
-    const sub = this.cart.subtotal();
-    if (this.freeShippingEnabled() && sub >= this.freeShippingThreshold()) {
-      return 0;
-    }
-    return this.standardShippingFee();
-  });
-
-  readonly remainingForFreeShipping = computed(() => {
-    const sub = this.cart.subtotal();
-    const thresh = this.freeShippingThreshold();
-    return sub < thresh ? thresh - sub : 0;
-  });
-
-  readonly taxAmount = computed(() => {
-    if (!this.taxEnabled()) return 0;
-    const rate = this.taxRatePercent();
-    const taxableSubtotal = Math.max(0, this.cart.subtotal() - this.couponDiscount());
-    if (this.taxInclusive()) {
-      // GST included in price: Tax = Amount - (Amount / (1 + Rate/100))
-      return Math.round(taxableSubtotal - taxableSubtotal / (1 + rate / 100));
-    }
-    // GST added on top: Tax = Amount * Rate / 100
-    return Math.round((taxableSubtotal * rate) / 100);
-  });
-
-  readonly activeShipping = signal<{
-    fullName: string;
-    phone: string;
-    street: string;
-    city: string;
-  }>({
-    fullName: '',
-    phone: '',
-    street: '',
-    city: 'Ghaziabad',
-  });
-
-  readonly estimatedTotal = computed(() => {
-    const sub = this.cart.subtotal();
-    const disc = this.couponDiscount();
-    const ship = this.deliveryFee();
-    const taxExtra = (!this.taxInclusive() && this.taxEnabled()) ? this.taxAmount() : 0;
-    return Math.max(0, sub - disc + ship + taxExtra);
-  });
-
+  readonly cart = inject(CartService);
+  readonly account = inject(AccountService);
+  readonly addresses = inject(AddressService);
+  readonly site = inject(SiteSettingsService);
+  readonly payment = inject(PaymentService);
+  readonly busy = signal(false);
+  readonly message = signal('');
+  readonly error = signal('');
+  readonly quote = signal<OrderQuote | null>(null);
+  readonly receipt = signal<PaymentReceipt | null>(null);
+  readonly coupon = signal('');
+  readonly couponInput = signal('');
+  readonly pending = signal<RazorpayOrderResponse | null>(null);
+  readonly total = computed(() => this.quote()?.totalAmount ?? this.cart.subtotal());
   readonly form = this.fb.nonNullable.group({
-    name: ['', [Validators.required, Validators.minLength(2)]],
-    phone: ['', [Validators.required, Validators.pattern(/^[0-9]{10}$/)]],
-    address: ['', [Validators.required, Validators.minLength(5)]],
-    city: ['Ghaziabad', [Validators.required, Validators.minLength(2)]],
-    saveToProfile: [false],
-    payment: ['razorpay' as 'razorpay' | 'cod', Validators.required],
+    name: [this.account.user()?.name || '', [Validators.required, Validators.minLength(2), Validators.maxLength(100)]],
+    phone: [this.account.user()?.phone || '', [Validators.required, Validators.pattern(/^[6-9][0-9]{9}$/)]],
+    street: ['', [Validators.required, Validators.minLength(5), Validators.maxLength(500)]],
+    city: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(100)]],
+    state: ['', [Validators.required, Validators.maxLength(100)]],
+    postalCode: ['', [Validators.required, Validators.pattern(/^[1-9][0-9]{5}$/)]],
+    save: [false], method: ['razorpay' as 'razorpay' | 'cod'],
   });
-
-  ngOnInit(): void {
-    const addresses = this.savedAddresses();
-    const currentUser = this.account.user();
-
-    if (addresses.length > 0) {
-      const defaultAddr = addresses.find((a) => a.isDefault) || addresses[0];
-      this.selectSavedAddress(defaultAddr);
-    } else {
-      this.selectedAddressId.set('custom');
-      this.isCustomMode.set(true);
-      this.isEditing.set(true);
-      const name = currentUser?.name || '';
-      this.form.patchValue({ name, city: 'Ghaziabad' });
-      this.activeShipping.set({
-        fullName: name,
-        phone: '',
-        street: '',
-        city: 'Ghaziabad',
-      });
-    }
+  async ngOnInit(): Promise<void> {
+    const address = this.addresses.addresses().find(a => a.isDefault) || this.addresses.addresses()[0];
+    if (address) this.selectAddress(address);
+    this.pending.set(this.payment.restorePendingOrder());
+    if (this.pending()) await this.checkPayment();
+    else if (this.cart.lines().length) await this.refreshQuote();
   }
-
-  formatAddressLine(addr: SavedAddress): string {
-    return [
-      addr.house,
-      addr.street,
-      addr.landmark ? `Near ${addr.landmark}` : '',
-    ]
-      .filter(Boolean)
-      .join(', ');
+  selectAddress(a: SavedAddress): void {
+    this.form.patchValue({ name: a.fullName, phone: a.mobile.replace(/\D/g, '').slice(-10),
+      street: [a.house, a.street, a.landmark].filter(Boolean).join(', '), city: a.city, state: a.state, postalCode: a.pinCode });
   }
-
-  selectSavedAddress(addr: SavedAddress): void {
-    this.selectedAddressId.set(addr.id);
-    this.isCustomMode.set(false);
-    this.isEditing.set(false);
-    this.showAddressList.set(false);
-    const line = this.formatAddressLine(addr);
-    const phone = addr.mobile.replace(/\D/g, '').slice(-10);
-    const city = addr.city || 'Ghaziabad';
-
-    this.form.patchValue({
-      name: addr.fullName,
-      phone,
-      address: line || addr.street,
-      city,
-    });
-
-    this.activeShipping.set({
-      fullName: addr.fullName,
-      phone,
-      street: line || addr.street,
-      city,
-    });
+  invalid(field: 'name' | 'phone' | 'street' | 'city' | 'state' | 'postalCode'): boolean {
+    const c = this.form.controls[field]; return c.touched && c.invalid;
   }
-
-  startEditingAddress(): void {
-    this.isEditing.set(true);
-    this.showAddressList.set(false);
-    const curr = this.activeShipping();
-    this.form.patchValue({
-      name: curr.fullName,
-      phone: curr.phone,
-      address: curr.street,
-      city: curr.city,
-    });
+  private items() { return this.cart.lines().map(l => ({ productId: l.productId, quantity: l.qty, slug: l.slug })); }
+  async refreshQuote(code = this.coupon()): Promise<boolean> {
+    if (this.busy()) return false;
+    this.busy.set(true); this.error.set(''); this.message.set('');
+    try {
+      const q = await firstValueFrom(this.payment.quoteOrder(this.items(), code || undefined));
+      this.cart.updatePrices(q.verifiedItems); this.quote.set(q); this.coupon.set(q.couponCode || '');
+      return true;
+    } catch (err: any) { this.error.set(err.error?.message || 'We could not check prices and stock. Please try again.'); return false; }
+    finally { this.busy.set(false); }
   }
-
-  stopEditingAddress(): void {
-    if (this.savedAddresses().length === 0) {
-      return;
-    }
-    this.isEditing.set(false);
-    this.isCustomMode.set(false);
-    this.showAddressList.set(false);
-    const curr = this.activeShipping();
-    this.form.patchValue({
-      name: curr.fullName,
-      phone: curr.phone,
-      address: curr.street,
-      city: curr.city,
-    });
+  async applyCoupon(): Promise<void> { await this.refreshQuote(this.couponInput().trim().toUpperCase()); }
+  async removeCoupon(): Promise<void> { if (await this.refreshQuote('')) this.couponInput.set(''); }
+  async submit(): Promise<void> {
+    if (this.busy() || this.pending() || this.receipt()) return;
+    this.form.markAllAsTouched();
+    if (this.form.invalid) { this.error.set('Check the highlighted delivery details.'); return; }
+    if (!this.cart.lines().length) return;
+    const before = this.quote()?.totalAmount;
+    if (!await this.refreshQuote()) return;
+    if (before !== this.quote()!.totalAmount) { this.message.set('Your total has changed. Review the updated amount, then continue.'); return; }
+    this.busy.set(true); this.error.set('');
+    const v = this.form.getRawValue();
+    const shippingAddress = { fullName: v.name.trim(), phone: v.phone, street: v.street.trim(), city: v.city.trim(), state: v.state.trim(), postalCode: v.postalCode, email: this.account.user()?.email };
+    const payload = { items: this.items(), shippingAddress, couponCode: this.coupon() || undefined, expectedTotal: this.quote()!.totalAmount };
+    try {
+      if (v.save) this.addresses.save({ fullName: v.name, mobile: v.phone, house: '', street: v.street, landmark: '', city: v.city, state: v.state, pinCode: v.postalCode, location: null, isDefault: !this.addresses.addresses().length });
+      if (v.method === 'cod') this.complete(await firstValueFrom(this.payment.placeCodOrder(payload)));
+      else {
+        const order = await firstValueFrom(this.payment.createRazorpayOrder(payload));
+        this.pending.set(order); this.payment.rememberPendingOrder(order);
+        await this.openPayment(order);
+      }
+    } catch (err: any) { this.error.set(err.error?.message || 'Checkout could not be completed. Retry with the same cart; your request will not create a duplicate order.'); }
+    finally { if (!this.pending()) this.busy.set(false); else if (this.error()) this.busy.set(false); }
   }
-
-  saveEditedAddress(): void {
-    const nameCtrl = this.form.controls.name;
-    const phoneCtrl = this.form.controls.phone;
-    const addrCtrl = this.form.controls.address;
-    const cityCtrl = this.form.controls.city;
-
-    if (nameCtrl.invalid || phoneCtrl.invalid || addrCtrl.invalid || cityCtrl.invalid) {
-      this.form.markAllAsTouched();
-      this.toast.error('Please enter a valid recipient name, 10-digit mobile number, and street address.');
-      return;
-    }
-
-    const val = this.form.getRawValue();
-    const cleanPhone = val.phone.replace(/\D/g, '').slice(-10);
-
-    this.activeShipping.set({
-      fullName: val.name,
-      phone: cleanPhone,
-      street: val.address,
-      city: val.city || 'Ghaziabad',
-    });
-
-    if (val.saveToProfile && this.isCustomMode()) {
-      this.addressService.save({
-        fullName: val.name,
-        mobile: cleanPhone,
-        location: null,
-        house: '',
-        street: val.address,
-        landmark: '',
-        pinCode: '201301',
-        city: val.city || 'Ghaziabad',
-        state: 'Uttar Pradesh',
-        isDefault: this.savedAddresses().length === 0,
-      });
-    }
-
-    this.isEditing.set(false);
-    this.isCustomMode.set(false);
-    this.toast.success('Delivery address updated for this order.');
+  async resumePayment(): Promise<void> {
+    if (this.busy() || !this.pending()) return;
+    await this.checkPayment();
+    if (this.pending() && !this.error()) { this.busy.set(true); await this.openPayment(this.pending()!); }
   }
-
-  openDifferentAddress(): void {
-    this.showAddressList.set(true);
-    this.isEditing.set(false);
-  }
-
-  closeDifferentAddress(): void {
-    this.showAddressList.set(false);
-  }
-
-  selectCustomAddress(): void {
-    this.selectedAddressId.set('custom');
-    this.isCustomMode.set(true);
-    this.isEditing.set(true);
-    this.showAddressList.set(false);
-    const user = this.account.user();
-    this.form.patchValue({
-      name: user?.name || '',
-      phone: '',
-      address: '',
-      city: 'Ghaziabad',
-    });
-  }
-
-  initiateCheckout(event?: Event): void {
-    event?.preventDefault();
-    if (this.isInitiating() || this.placed()) return;
-    if (this.form.invalid || !this.cart.lines().length) {
-      this.form.markAllAsTouched();
-      this.toast.error('Complete your delivery details and add products before checkout.');
-      return;
-    }
-    this.isInitiating.set(true);
-    const items = this.cart.lines().map(line => ({ productId: line.productId, quantity: line.qty }));
-    this.paymentService.quoteOrder(items, this.appliedCoupon()?.code).subscribe({
-      next: quote => {
-        const oldTotal = Math.round(this.estimatedTotal() * 100);
-        this.cart.updatePrices(quote.verifiedItems);
-        this.couponDiscount.set(quote.discountAmount);
-        this.isInitiating.set(false);
-        const newTotal = Math.round(this.estimatedTotal() * 100);
-        const serverTotal = Math.round(quote.totalAmount * 100);
-        if (oldTotal !== serverTotal && newTotal !== serverTotal) {
-          this.toast.info('Your order total has been updated. Please review it and place your order again.');
-          return;
-        }
-        this.placeOrder();
-      },
-      error: err => { this.isInitiating.set(false); this.toast.error(err.error?.message || 'Unable to check current prices and stock.'); },
-    });
-  }
-
-  private placeOrder(event?: Event): void {
-    if (this.isInitiating() || this.placed()) return;
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-
-    if (this.cart.lines().length === 0) {
-      this.toast.error('Your cart is empty. Please add items to checkout.');
-      return;
-    }
-
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
-      this.toast.error('Please enter a valid full name, 10-digit mobile number, and street address.');
-      return;
-    }
-
-    this.isInitiating.set(true);
-    const val = this.form.getRawValue();
-    const cleanPhone = val.phone.replace(/\D/g, '').slice(-10);
-
-    const currentUser = this.account.user();
-    const customerEmail = currentUser?.email || 'customer@urbanblade.in';
-    const userId = currentUser?.email || undefined;
-
-    const items = this.cart.lines().map((line) => ({
-      productId: line.productId,
-      slug: (line as any).slug || line.productId.replace(/^(hc|bd|sk|tl|gf|sv)-/, ''),
-      quantity: line.qty,
-    }));
-
-    const shippingAddress = {
-      fullName: val.name,
-      phone: cleanPhone,
-      street: val.address,
-      city: val.city || 'Ghaziabad',
-      email: customerEmail,
-    };
-
-    // Save custom address to profile if requested
-    if (val.saveToProfile && this.isCustomMode()) {
-      this.addressService.save({
-        fullName: val.name,
-        mobile: cleanPhone,
-        location: null,
-        house: '',
-        street: val.address,
-        landmark: '',
-        pinCode: '201301',
-        city: val.city || 'Ghaziabad',
-        state: 'Uttar Pradesh',
-        isDefault: this.savedAddresses().length === 0,
-      });
-    }
-
-    const couponCode = this.appliedCoupon()?.code;
-    const discountAmount = this.couponDiscount();
-
-    if (val.payment === 'cod') {
-      // 1-Click Cash on Delivery
-      this.paymentService.placeCodOrder({ items, shippingAddress, userId, couponCode, discountAmount, expectedTotal: this.estimatedTotal() }).subscribe({
-        next: (receipt) => {
-          this.isInitiating.set(false);
-          this.toast.success(`🎉 COD Order #${receipt.receiptNumber} confirmed!`);
-          this.onPaymentSuccess(receipt);
-        },
-        error: (err) => {
-          this.isInitiating.set(false);
-          const msg = err.error?.message || 'Unable to place Cash on Delivery order. Please try again.';
-          this.toast.error(msg);
-        },
-      });
-      return;
-    }
-
-    // Official Razorpay Standard Checkout
-    this.paymentService.createRazorpayOrder({ items, shippingAddress, userId, couponCode, discountAmount, expectedTotal: this.estimatedTotal() }).subscribe({
-      next: (orderData) => {
-        this.toast.info('Launching official Razorpay payment gateway...');
-
-        this.paymentService.launchRazorpayCheckout(orderData, {
-          onSuccess: (rzpResp) => {
-            this.isInitiating.set(true);
-            this.toast.info('Confirming your payment...');
-
-            this.paymentService
-              .verifyRazorpayPayment({
-                orderId: orderData.orderId,
-                razorpayOrderId: rzpResp.razorpay_order_id,
-                razorpayPaymentId: rzpResp.razorpay_payment_id,
-                razorpaySignature: rzpResp.razorpay_signature,
-              })
-              .subscribe({
-                next: (receipt) => {
-                  this.isInitiating.set(false);
-                  this.toast.success(`🎉 Payment Verified! Order #${receipt.receiptNumber} confirmed.`);
-                  this.onPaymentSuccess(receipt);
-                },
-                error: (err) => {
-                  this.isInitiating.set(false);
-                  const msg = err.error?.message || 'Payment verification failed.';
-                  this.toast.error(msg);
-                },
-              });
-          },
-          onDismiss: () => {
-            this.isInitiating.set(false);
-            this.toast.info('Payment window closed. Your cart remains saved.');
-          },
-          onError: (err) => {
-            this.isInitiating.set(false);
-            this.toast.error(err?.description || 'Razorpay payment could not be processed.');
-          },
+  private async openPayment(order: RazorpayOrderResponse): Promise<void> {
+    await this.payment.launchRazorpayCheckout(order, {
+      onSuccess: response => {
+        this.message.set('Payment received by the gateway. Confirming your order…');
+        this.payment.verifyRazorpayPayment({ orderId: order.orderId, razorpayOrderId: response.razorpay_order_id, razorpayPaymentId: response.razorpay_payment_id, razorpaySignature: response.razorpay_signature }).subscribe({
+          next: r => this.complete(r),
+          error: () => { this.busy.set(false); this.error.set('Confirmation is pending. Use “Check payment status” before making another payment.'); },
         });
       },
-      error: (err) => {
-        this.isInitiating.set(false);
-        const msg = err.error?.message || 'Unable to initialize Razorpay checkout. Please try again.';
-        this.toast.error(msg);
-      },
+      onDismiss: () => { this.busy.set(false); this.message.set('Payment window closed. You can resume this same order or check its payment status.'); },
+      onError: err => { this.busy.set(false); this.error.set(err?.description || 'Payment could not be completed. Your order is saved for retry.'); },
     });
   }
-
-  applyCoupon(): void {
-    const code = this.couponCodeInput().trim();
-    if (!code) {
-      this.couponError.set('Please enter a coupon code.');
-      return;
-    }
-
-    const res = this.couponService.validateCoupon(code, this.cart.subtotal());
-    if (res.valid && res.coupon) {
-      this.appliedCoupon.set(res.coupon);
-      this.couponDiscount.set(res.discount);
-      this.couponError.set('');
-      this.toast.success(`Coupon "${res.coupon.code}" applied! You saved ₹${res.discount}.`);
-    } else {
-      this.appliedCoupon.set(null);
-      this.couponDiscount.set(0);
-      this.couponError.set(res.reason || 'Invalid coupon code.');
-      this.toast.error(res.reason || 'Invalid coupon code.');
-    }
+  async checkPayment(): Promise<void> {
+    const order = this.pending(); if (!order || this.busy()) return;
+    this.busy.set(true); this.error.set('');
+    try {
+      const result = await firstValueFrom(this.payment.reconcileOrder(order.orderId));
+      if (result.receipt) this.complete(result.receipt);
+      else if (result.cancelled) { this.pending.set(null); this.payment.clearPendingOrder(); this.message.set('This checkout expired without a confirmed payment. Review your cart to start again.'); }
+      else this.message.set('Payment has not been confirmed yet. Resume this order to pay, or check again if your account was debited.');
+    } catch (err: any) { this.error.set(err.error?.message || 'Payment status is unavailable. Do not pay again until confirmation is available.'); }
+    finally { this.busy.set(false); }
   }
-
-  removeCoupon(): void {
-    const code = this.appliedCoupon()?.code;
-    this.appliedCoupon.set(null);
-    this.couponDiscount.set(0);
-    this.couponCodeInput.set('');
-    this.couponError.set('');
-    if (code) {
-      this.toast.info(`Coupon "${code}" removed.`);
-    }
+  private complete(r: PaymentReceipt): void {
+    this.receipt.set(r); this.pending.set(null); this.payment.clearPendingOrder();
+    this.busy.set(false); this.error.set(''); this.message.set(''); this.cart.clear();
   }
-
-  onPaymentSuccess(receipt: PaymentReceipt): void {
-    this.confirmedReceipt.set(receipt);
-    this.placed.set(true);
-
-    if (this.appliedCoupon()) {
-      this.couponService.recordUsage(this.appliedCoupon()!.code);
-    }
-
-    const adminOrder: AdminOrder = {
-      id: receipt.orderId,
-      status: 'confirmed',
-      subtotal: this.cart.subtotal(),
-      total_amount: receipt.totalAmount,
-      currency: 'INR',
-      payment_method: receipt.paymentDetails?.method || 'Razorpay',
-      payment_status: receipt.paymentStatus,
-      transaction_id: receipt.paymentId || (receipt as any).transactionId || '',
-      gateway_order_id: receipt.paymentDetails?.razorpayOrderId || '',
-      shipping_address: {
-        fullName: receipt.shippingAddress.fullName,
-        phone: receipt.shippingAddress.phone,
-        city: receipt.shippingAddress.city || 'Ghaziabad',
-        street: receipt.shippingAddress.street,
-        email: receipt.shippingAddress.email || this.account.user()?.email || 'customer@urbanblade.in',
-      },
-      created_at: receipt.confirmedAt,
-      items: receipt.items.map((i) => ({
-        product_name: i.product_name,
-        unit_price: Number(i.unit_price),
-        quantity: i.quantity,
-        image_url: i.image_url,
-      })),
-      tracking_number: `TRK-UB-${receipt.orderId.slice(0, 6).toUpperCase()}`,
-      notes: this.appliedCoupon()
-        ? `Order placed via ${receipt.paymentDetails?.method || 'Razorpay'}. Coupon ${this.appliedCoupon()!.code} applied (-₹${this.couponDiscount()}).`
-        : `Order placed via ${receipt.paymentDetails?.method || 'Razorpay'}.`,
-    };
-    this.confirmedOrder.set(adminOrder);
-    this.admin.addOrder(adminOrder);
-
-    this.cart.clear();
-  }
-
-  printInvoice(): void {
-    const inv = this.confirmedOrder();
-    const originalTitle = document.title;
-    if (inv?.id) {
-      document.title = `Tax_Invoice_UB_${inv.id.slice(0, 8).toUpperCase()}`;
-    }
-    window.print();
-    setTimeout(() => {
-      document.title = originalTitle;
-    }, 1000);
-  }
-
-  shop(): void {
-    void this.router.navigate(['/shop']);
-  }
+  printReceipt(): void { window.print(); }
 }

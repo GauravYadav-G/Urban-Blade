@@ -1,4 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { SALON } from '@core/constants/salon.constants';
 import type { SiteSettings } from '@core/models/site-settings.model';
 import { ToastService } from './toast.service';
@@ -43,37 +44,28 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
 
 @Injectable({ providedIn: 'root' })
 export class SiteSettingsService {
+  private readonly http = inject(HttpClient);
   private readonly toast = inject(ToastService);
-  private readonly settingsSignal = signal<SiteSettings>(this.loadSettings());
+  private readonly settingsSignal = signal<SiteSettings>(DEFAULT_SITE_SETTINGS);
 
   readonly settings = this.settingsSignal.asReadonly();
 
-  private loadSettings(): SiteSettings {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        return {
-          announcement: { ...DEFAULT_SITE_SETTINGS.announcement, ...(parsed.announcement || {}) },
-          business: { ...DEFAULT_SITE_SETTINGS.business, ...(parsed.business || {}) },
-          ecommerce: { ...DEFAULT_SITE_SETTINGS.ecommerce, ...(parsed.ecommerce || {}) },
-          operations: { ...DEFAULT_SITE_SETTINGS.operations, ...(parsed.operations || {}) },
-        };
-      }
-    } catch {
-      // ignore parsing error
-    }
-    return DEFAULT_SITE_SETTINGS;
+  constructor() {
+    this.http.get<Partial<SiteSettings>>('/api/settings').subscribe({ next: data => this.apply(data), error: () => {} });
   }
-
+  private apply(data: Partial<SiteSettings>): void {
+    this.settingsSignal.set({
+      announcement: { ...DEFAULT_SITE_SETTINGS.announcement, ...data.announcement },
+      business: { ...DEFAULT_SITE_SETTINGS.business, ...data.business },
+      ecommerce: { ...DEFAULT_SITE_SETTINGS.ecommerce, ...data.ecommerce },
+      operations: { ...DEFAULT_SITE_SETTINGS.operations, ...data.operations },
+    });
+  }
   saveSettings(newSettings: SiteSettings): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newSettings));
-      this.settingsSignal.set(newSettings);
-      this.toast.success('Live website settings updated and broadcasted.');
-    } catch {
-      this.toast.error('Failed to persist settings.');
-    }
+    this.http.put<SiteSettings>('/api/settings', newSettings).subscribe({
+      next: data => { this.apply(data); this.toast.success('Website settings saved.'); },
+      error: () => this.toast.error('Settings could not be saved. Please retry.'),
+    });
   }
 
   updatePartial(partial: Partial<SiteSettings>): void {
@@ -89,6 +81,6 @@ export class SiteSettingsService {
 
   resetToDefaults(): void {
     this.saveSettings(DEFAULT_SITE_SETTINGS);
-    this.toast.info('Website settings reset to factory defaults.');
+
   }
 }

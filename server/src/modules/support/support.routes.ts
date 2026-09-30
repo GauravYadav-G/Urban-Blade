@@ -1,12 +1,15 @@
 import { FastifyInstance } from 'fastify';
 import crypto from 'crypto';
-import { query } from '../../db/pool.js';
+import { requireAuth, requireAdmin } from '../../core/auth.middleware.js';
+import { cancelOrderAndReleaseStock } from '../orders/stock-reservation.service.js';
+import { query, withTransaction } from '../../db/pool.js';
 import { fetchCarrierWebsiteTracking, detectCarrier } from '../orders/carrier-portal.service.js';
 import { askOnlineAi } from '../../core/online-ai.service.js';
 
 export interface AiReplyOptions {
   message: string;
   orderId?: string;
+  userId?: string;
   userEmail?: string;
   userName?: string;
   inquiryId?: string;
@@ -52,32 +55,12 @@ export async function generateAiReply(
   }
 
   let matchedOrder: any = null;
-  if (targetOrderId) {
-    const clean = targetOrderId.trim();
-    try {
-      const ordRes = await query(
-        `SELECT o.* FROM orders o 
-         WHERE o.id::text ILIKE $1 
-            OR o.id::text ILIKE $2 
-            OR o.tracking_number ILIKE $1 
-         ORDER BY o.created_at DESC 
-         LIMIT 1`,
-        [clean, `%${clean}%`]
-      );
-      if (ordRes.rows.length > 0) matchedOrder = ordRes.rows[0];
-    } catch {}
-  } else if (opts.userEmail) {
-    try {
-      const emailRes = await query(
-        `SELECT o.* FROM orders o 
-         WHERE o.shipping_address->>'email' ILIKE $1 
-            OR o.shipping_address->>'phone' ILIKE $1
-         ORDER BY o.created_at DESC 
-         LIMIT 1`,
-        [opts.userEmail.trim()]
-      );
-      if (emailRes.rows.length > 0) matchedOrder = emailRes.rows[0];
-    } catch {}
+  if (opts.userId) {
+    const result = await query(
+      `SELECT o.* FROM orders o WHERE o.user_id = $1
+       AND ($2::text IS NULL OR o.id::text = $2 OR LOWER(o.tracking_number) = LOWER($2))
+       ORDER BY o.created_at DESC LIMIT 1`, [opts.userId, targetOrderId?.trim() || null]);
+    matchedOrder = result.rows[0] || null;
   }
 
   // ─── OPERATION 1: ORDER CANCELLATION ─────────────────────────────────────────
@@ -110,53 +93,15 @@ export async function generateAiReply(
           { label: '✂️ Book Salon Visit', query: 'Book appointment' }
         ];
       } else {
-        // Verify caller is authorized to cancel this order (IDOR & Unauthorized Cancellation Guard)
-        const shipping = typeof matchedOrder.shipping_address === 'string' ? JSON.parse(matchedOrder.shipping_address) : matchedOrder.shipping_address;
-        const orderEmail = shipping?.email?.toLowerCase();
-        const orderPhone = (shipping?.phone || '').replace(/\D/g, '');
-        const callerEmail = opts.userEmail?.toLowerCase()?.trim();
-        const callerMsg = safeMsg.toLowerCase();
-
-        const isCallerAuthorized =
-          (callerEmail && orderEmail && callerEmail === orderEmail) ||
-          (orderEmail && callerMsg.includes(orderEmail)) ||
-          (orderPhone && orderPhone.length >= 8 && callerMsg.includes(orderPhone));
-
-        if (!isCallerAuthorized) {
-          replyText = `I located Order #${shortId}. For your security, please confirm the registered email address or phone number associated with this order before cancellation and refund can be processed.`;
-          action = 'order_cancel_auth_required';
-          actionChips = [
-            { label: '📧 Provide Order Email', query: `My email is ${orderEmail ? orderEmail.replace(/(.{2})(.*)(@.*)/, '$1***$3') : '...'}` },
-            { label: '📞 Speak to Support Desk', query: 'Connect with support specialist' }
-          ];
-          return { replyText, action, sentiment: 'urgent', confidence, operation: null, actionChips };
+        if (!opts.userId || matchedOrder.user_id !== opts.userId || matchedOrder.payment_method === 'Razorpay') {
+          return { replyText: 'Online payments need a support review before cancellation. No refund has been initiated.', action: 'support_required', sentiment, confidence, operation: null, actionChips: [] };
         }
-
-        // Execute atomic cancellation in PostgreSQL and restock
-        try {
-          await query(
-            `UPDATE orders 
-             SET status = 'cancelled', 
-                 notes = COALESCE(notes, '') || ' | [Cancelled by verified customer via Urban AI Concierge]', 
-                 updated_at = NOW() 
-             WHERE id = $1`,
-            [matchedOrder.id]
-          );
-
-          await query(
-            `UPDATE products p 
-             SET stock_quantity = p.stock_quantity + oi.quantity, in_stock = true 
-             FROM order_items oi 
-             WHERE oi.order_id = $1 AND oi.product_id = p.id`,
-            [matchedOrder.id]
-          );
-        } catch {}
-
+        const result = await withTransaction(client => cancelOrderAndReleaseStock(client, matchedOrder.id, { allowedStatuses: ['accepted', 'confirmed'] }));
+        if (!result.cancelled) {
+          return { replyText: 'This order cannot be cancelled automatically. Please contact support. No refund has been initiated.', action: 'support_required', sentiment, confidence, operation: null, actionChips: [] };
+        }
         matchedOrder.status = 'cancelled';
-        replyText = `✅ Order #${shortId} has been successfully CANCELLED.\n\n` +
-          `• Refund Status: Reversal of ₹${Number(matchedOrder.total_amount).toFixed(0)} initiated automatically.\n` +
-          `• Method: Reversing to original ${matchedOrder.payment_method || 'payment mode'} within 24–48 business hours.\n` +
-          `• Items Restocked: Grooming items have been released back to regional studio stock.`;
+        replyText = `Order #${shortId} has been cancelled. No payment was collected and no refund is due.`;
 
         operation = {
           type: 'order_cancelled',
@@ -174,7 +119,7 @@ export async function generateAiReply(
       }
       return { replyText, action, sentiment, confidence, operation, actionChips };
     } else {
-      replyText = `I can help cancel your unfulfilled order right away! Could you please share your Order ID (e.g. #ORD-XXXX)? I will locate your dispatch and execute the cancellation and refund immediately.`;
+      replyText = `I can help cancel your unfulfilled order right away! Could you please share your Order ID (e.g. #ORD-XXXX)? I can check whether it is eligible for cancellation.`;
       action = 'order_cancel_prompt';
       actionChips = [
         { label: '📦 Where is my Order ID?', query: 'Where do I find my order ID?' },
@@ -1326,7 +1271,7 @@ export async function generateAiReply(
     replyText = `🛡️ Urban Blade 100% Satisfaction Guarantee & Policy:\n\n` +
       `• 7-Day Doorstep Replacement: Any damaged in transit, leaking, or defective grooming bottle or accessory is replaced completely free of cost.\n` +
       `• 1-Year Comprehensive Warranty: All electrical styling tools (Precision Trimmers, Ionic Dryers, Styling Irons) include a full 1-year brand warranty with doorstep pickup.\n` +
-      `• Instant Cancellation & Refund: Unfulfilled orders can be cancelled with 1-click in chat; pre-paid refunds credit back within 24–48 hours.`;
+      `• Instant Cancellation & Refund: Eligible unpaid orders can be cancelled in chat. Paid orders and refunds require support review.`;
 
     operation = {
       type: 'policy_faq',
@@ -1642,6 +1587,34 @@ export async function generateAiReply(
 }
 
 export async function supportRoutes(app: FastifyInstance) {
+  app.addHook('preHandler', async (request, reply) => {
+    await requireAuth(request, reply);
+    if (reply.sent) return;
+    if (request.method === 'DELETE') { await requireAdmin(request, reply); return; }
+    const body = request.body as any;
+    if (body) {
+      body.userEmail = request.user.email;
+      body.customerEmail = request.user.email;
+      body.userName = request.user.name;
+      body.customerName = request.user.name;
+      body.priority = 'medium';
+      for (const field of ['message', 'initialMessage', 'subject']) {
+        if (body[field] !== undefined && (typeof body[field] !== 'string' || body[field].length > 4000)) {
+          return reply.code(400).send({ error: 'INVALID_MESSAGE' });
+        }
+      }
+      if (body.orderId) {
+        const owned = await query('SELECT id FROM orders WHERE id::text = $1 AND user_id = $2', [body.orderId, request.user.id]);
+        if (!owned.rows.length) return reply.code(404).send({ error: 'ORDER_NOT_FOUND' });
+      }
+    }
+    const inquiryId = (request.params as any)?.id || body?.inquiryId;
+    if (inquiryId && request.user.role !== 'admin') {
+      const owned = await query('SELECT id FROM support_inquiries WHERE id = $1 AND LOWER(user_email) = LOWER($2)', [inquiryId, request.user.email]);
+      if (!owned.rows.length) return reply.code(404).send({ error: 'INQUIRY_NOT_FOUND' });
+    }
+  });
+
   // ─── 1. REAL-TIME OMNICHANNEL LIVE CHAT (SYNCED WITH ADMIN PANEL) ──────────
   app.post<{
     Body: {
@@ -1651,7 +1624,7 @@ export async function supportRoutes(app: FastifyInstance) {
       message: string;
       orderId?: string;
     };
-  }>('/support/live-chat/message', async (request, reply) => {
+  }>('/support/live-chat/message', { config: { rateLimit: { max: 15, timeWindow: '1 minute' } } }, async (request, reply) => {
     try {
       const { inquiryId, userName, userEmail, message, orderId } = request.body || {};
       const safeMsg = (message || '').trim();
@@ -1662,6 +1635,7 @@ export async function supportRoutes(app: FastifyInstance) {
 
       // Hard timeout safety net — route ALWAYS responds within 9s
       const aiResultPromise = generateAiReply({
+        userId: request.user.id,
         message: safeMsg,
         orderId,
         userName,
@@ -1866,10 +1840,11 @@ export async function supportRoutes(app: FastifyInstance) {
       customerName?: string;
       customerEmail?: string;
     };
-  }>('/support/ai-chat', async (request, reply) => {
+  }>('/support/ai-chat', { config: { rateLimit: { max: 15, timeWindow: '1 minute' } } }, async (request, reply) => {
     try {
       const { message, orderId, customerName, customerEmail, vendorName } = request.body || {};
       const aiResult = await generateAiReply({
+        userId: request.user.id,
         message,
         orderId,
         userName: customerName,
@@ -1918,7 +1893,7 @@ export async function supportRoutes(app: FastifyInstance) {
       initialMessage?: string;
       priority?: 'low' | 'medium' | 'high';
     };
-  }>('/support/inquiries', async (request, reply) => {
+  }>('/support/inquiries', { config: { rateLimit: { max: 15, timeWindow: '1 minute' } } }, async (request, reply) => {
     const { userName, userEmail, subject, orderId, vendorName, priority = 'medium' } = request.body || {};
     const messageText = ((request.body as any)?.message || (request.body as any)?.initialMessage || '').trim();
 
@@ -1980,13 +1955,13 @@ export async function supportRoutes(app: FastifyInstance) {
   });
 
   // ─── 5. CLIENT INQUIRIES LIST (BY EMAIL) ──────────────────────────────────
-  app.get<{ Querystring: { email?: string } }>('/support/inquiries', async (request, reply) => {
-    const { email } = request.query || {};
+  app.get<{ Querystring: { email?: string } }>('/support/inquiries', { config: { rateLimit: { max: 15, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const email = request.user.role === 'admin' ? request.query.email : request.user.email;
     try {
       let sql = 'SELECT * FROM support_inquiries ';
       const params: any[] = [];
       if (email) {
-        sql += 'WHERE user_email ILIKE $1 ';
+        sql += 'WHERE LOWER(user_email) = LOWER($1) ';
         params.push(email.trim());
       }
       sql += 'ORDER BY created_at DESC LIMIT 30';

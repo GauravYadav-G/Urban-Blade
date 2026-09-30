@@ -17,7 +17,7 @@ Start with test-mode merchant keys in `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET
 
 `https://YOUR_API/api/payments/razorpay/webhook`
 
-Subscribe to `payment.captured` and `order.paid`. Configure automatic capture in the merchant dashboard. Both browser verification and webhook settlement fetch the payment from Razorpay and require the correct gateway order, INR amount, currency, and captured status. Webhooks validate the original request bytes. Repeated notifications do not decrement stock twice. A background worker also checks pending gateway orders.
+Subscribe to `payment.authorized`, `payment.captured`, and `order.paid`. Configure automatic capture in the merchant dashboard. Both browser verification and webhook settlement fetch the payment from Razorpay and require the correct gateway order, INR amount, currency, and captured status. Webhooks validate the original request bytes. Repeated notifications do not decrement stock twice. A background worker also checks pending gateway orders.
 
 See [Razorpay integration guidance](https://razorpay.com/docs/server-integration/python/test-app/) and [webhook signature validation](https://github.com/razorpay/markdown-docs/blob/master/webhooks/validate-test.md).
 
@@ -25,13 +25,22 @@ The previous source contained a payment secret and shared demo credentials. Rota
 
 ## Production requirements and limitations
 
-- Set `NODE_ENV=production`, `DATABASE_URL`, a random `JWT_SECRET` of at least 32 characters, exact comma-separated `CORS_ORIGINS`, and Redis credentials. Checkout idempotency fails closed when Redis is unavailable in production. Database TLS verifies certificates; use `DATABASE_CA_CERT` for a private CA ([node-postgres TLS configuration](https://node-postgres.com/features/ssl)).
-- Run migrations explicitly before starting the API. Automatic schema changes and demo seeding are disabled by default. Provision a real administrator; development seed credentials must not be used in production.
-- Verify a real test-mode purchase, COD order, replayed webhook, browser-close recovery, concurrent stock reservations, and logged-out access against an isolated database before deployment. Automated tests currently use database/provider boundaries, not a real database or payment account.
+- Set `NODE_ENV=production`, `DATABASE_URL`, a random `JWT_SECRET` of at least 32 characters, exact comma-separated `CORS_ORIGINS`, and optional Redis credentials. Production checkout idempotency is persisted atomically with the order in PostgreSQL; Redis is not required to open Razorpay. Database TLS verifies certificates; use `DATABASE_CA_CERT` for a private CA ([node-postgres TLS configuration](https://node-postgres.com/features/ssl)).
+- Startup applies schema migrations transactionally by default. For externally managed migrations, run them before startup and set `AUTO_MIGRATE=false`. Demo seeding remains disabled by default. Provision a real administrator; development seed credentials must not be used in production.
+- Verify a real test-mode purchase, COD order, replayed webhook, browser-close recovery, concurrent stock reservations, and logged-out access against an isolated database before deployment. Automated tests use embedded PostgreSQL for real schema/query checks and controlled payment-provider responses; they do not charge a payment account.
 - Online payment holds are intentionally retained while payment is unresolved. Review stale holds and gateway reconciliation failures operationally; do not manually release stock while bank authorization is pending. Refunds and late-payment exceptions need operator reconciliation in Razorpay. Automatic refunds and a complete returns workflow are not implemented.
-- Shipping is currently ₹99, free at a pre-discount subtotal of ₹999. Coupon rules are server-defined. Local admin coupon/settings edits are not an authoritative pricing system. Configure and validate business tax/shipping rules before launch.
+- Default shipping is ₹99, free at a pre-discount subtotal of ₹999. Website settings and coupon definitions are persisted by authenticated admin APIs and used for authoritative quotes. Saved order totals are used in receipts. Validate the configured business tax/shipping rules before launch.
 - Further work remains on account recovery, persistent customer profile/address editing, and replacing demo/local-only admin features. This change is a core checkout/security repair, not a claim that every legacy feature is production-ready.
 
 ## Checks performed
 
 The regression suite covers authentication, blocked legacy payment certification, forged signatures, cross-order payment substitution, order ownership, authoritative discounts, quantity/stock validation, concurrent idempotency, stock-ledger failures, and webhook payload tampering. Run it with `npm --prefix server test`.
+
+## September checkout fixes
+
+- The API now runs migrations by default (set `AUTO_MIGRATE=false` only after applying them manually). Deploy the API before deploying the frontend. The schema adds shared settings, coupons, saved tax totals, and durable checkout responses.
+- Set Razorpay test/live key pairs and webhook secret consistently. Subscribe the signed webhook `/api/payments/razorpay/webhook` to `payment.authorized`, `payment.captured`, and `order.paid`. Verify using Razorpay test mode before accepting live payments.
+- Failed gateway lookups retain holds. Pending orders are reconciled; after 30 minutes, holds with no in-progress/authorized/captured payment can expire. A late capture reacquires inventory transactionally; insufficient stock requires operator reconciliation. Never promise an automatic refund: no automatic refund service exists.
+- Coupons and website settings are now shared server data. Recreate any coupons previously stored only in an administrator’s browser; they are not silently trusted or imported.
+- The hardcoded NVIDIA credential was removed. Its owner must revoke the previously exposed key and set a replacement `NVIDIA_API_KEY` in the deployment environment. Removing source text does not revoke a key or remove it from repository history.
+- Customer documents are order receipts with persisted totals; no fabricated GST registration, tax invoice number, or COD payment transaction is shown.

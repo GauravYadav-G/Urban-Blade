@@ -52,6 +52,8 @@ export interface DailyMetric {
 
 export interface AdminProduct extends Product {
   stock_quantity?: number;
+  stock_reserved?: number;
+  availableQuantity?: number;
 }
 
 export interface AdminOrder {
@@ -884,7 +886,9 @@ export class AdminService {
             reviewCount: Number(p.reviewCount ?? p.review_count ?? 1),
             badge: p.badge,
             inStock: Boolean(p.inStock ?? p.in_stock ?? true),
-            stock_quantity: Number(p.stock_quantity ?? p.stockQuantity ?? 100),
+            stock_quantity: Number(p.stock_quantity ?? p.stockQuantity ?? 0),
+            stock_reserved: Number(p.stock_reserved || 0),
+            availableQuantity: Number(p.availableQuantity ?? p.stock_quantity ?? 0),
           }));
           this.products.set(mapped);
           this.saveProducts(mapped);

@@ -7,13 +7,12 @@ export interface AiContext {
   history?: Array<{ sender: 'user' | 'ai' | 'admin'; text: string }>;
 }
 
-const DEFAULT_NVIDIA_KEY = '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';
 
 /**
  * 1. NVIDIA NIM — tries first available model, aborts after 5s per attempt
  */
 async function callNvidiaNim(messages: Array<{ role: string; content: string }>): Promise<string | null> {
-  const apiKey = (process.env.NVIDIA_API_KEY || DEFAULT_NVIDIA_KEY).trim();
+  const apiKey = (process.env.NVIDIA_API_KEY || '').trim();
   if (!apiKey) return null;
 
   const model = process.env.NVIDIA_MODEL || 'meta/llama-3.2-11b-vision-instruct';

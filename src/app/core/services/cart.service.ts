@@ -18,6 +18,7 @@ export const CART_TOAST_DURATION_MS = 4000;
 export class CartService {
   private readonly linesSignal = signal<CartLine[]>(this.readStored());
   private readonly toastSignal = signal<CartAddToast | null>(null);
+  syncToServer?: (items: CartLine[]) => void;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
 
   readonly lines = this.linesSignal.asReadonly();
@@ -26,6 +27,14 @@ export class CartService {
   readonly subtotal = computed(() =>
     this.linesSignal().reduce((sum, line) => sum + line.unitPrice * line.qty, 0),
   );
+
+  mergeServerCart(items: CartLine[]): void {
+    const valid = Array.isArray(items) ? items.filter(i => i && typeof i.productId === 'string' && Number.isInteger(i.qty) && i.qty > 0 && i.qty <= 100 && Number.isFinite(i.unitPrice)) : [];
+    const merged = new Map(valid.map(i => [i.productId, i]));
+    for (const local of this.linesSignal()) merged.set(local.productId, local);
+    const next = Array.from(merged.values()).slice(0, 100);
+    this.linesSignal.set(next); this.persist(next);
+  }
 
   addProduct(product: Product, qty = 1): void {
     if (!product.inStock || !Number.isInteger(qty) || qty < 1) return;
@@ -111,6 +120,7 @@ export class CartService {
   }
 
   private persist(lines: CartLine[]): void {
+    this.syncToServer?.(lines);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(lines));
     } catch {

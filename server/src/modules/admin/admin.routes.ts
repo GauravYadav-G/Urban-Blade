@@ -26,6 +26,9 @@ export async function adminRoutes(app: FastifyInstance) {
   // ─── AUTHENTICATION & RBAC (OWASP TOP 10 ACCESS CONTROL GUARD) ───────────
   // Protect ALL admin operations: reject unauthenticated or non-staff callers
   app.addHook('preHandler', requireStaff);
+  app.addHook('preHandler', async (request, reply) => {
+    if (request.url.startsWith('/api/admin/support/')) await requireAdmin(request, reply);
+  });
 
   // ─── 1. DYNAMIC EXECUTIVE DASHBOARD KPI METRICS ────────────────────────────
   app.get('/admin/metrics', async (request, reply) => {
@@ -73,8 +76,8 @@ export async function adminRoutes(app: FastifyInstance) {
       const stockRes = await query(`
         SELECT 
           COUNT(*)::int as total,
-          COUNT(*) FILTER (WHERE stock_quantity <= 15 AND stock_quantity > 0)::int as low_stock,
-          COUNT(*) FILTER (WHERE stock_quantity = 0 OR in_stock = false)::int as out_of_stock
+          COUNT(*) FILTER (WHERE stock_quantity - stock_reserved <= 15 AND stock_quantity - stock_reserved > 0)::int as low_stock,
+          COUNT(*) FILTER (WHERE stock_quantity - stock_reserved <= 0 OR in_stock = false)::int as out_of_stock
         FROM products;
       `);
 
@@ -185,8 +188,9 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   function formatProductRow(p: any) {
-    const stockQty = Number(p.stock_quantity ?? p.stockQuantity ?? 100);
-    const inStockVal = Boolean(p.in_stock ?? p.inStock ?? (stockQty > 0));
+    const stockQty = Number(p.stock_quantity ?? p.stockQuantity ?? 0);
+    const availableQty = Math.max(0, stockQty - Number(p.stock_reserved || 0));
+    const inStockVal = Boolean(p.in_stock ?? p.inStock ?? true) && availableQty > 0;
     const compareAt = p.compare_at_price != null ? Number(p.compare_at_price) : (p.compareAtPrice != null ? Number(p.compareAtPrice) : null);
     const img = p.image_url || p.imageUrl || '/images/products/hc-shampoo.jpg';
     const freeDel = p.free_delivery ?? p.freeDelivery ?? true;
@@ -224,6 +228,8 @@ export async function adminRoutes(app: FastifyInstance) {
       in_stock: inStockVal,
       stockQuantity: stockQty,
       stock_quantity: stockQty,
+      stock_reserved: Number(p.stock_reserved || 0),
+      availableQuantity: availableQty,
       createdAt: p.created_at,
       created_at: p.created_at,
     };
@@ -238,27 +244,23 @@ export async function adminRoutes(app: FastifyInstance) {
       let sql = `
         SELECT id, slug, name, description, long_description, highlights, price, compare_at_price,
                currency, image_url, category, kind, vendor, audience, free_delivery,
-               rating, review_count, badge, in_stock, stock_quantity, created_at
+               rating, review_count, badge, in_stock, stock_quantity, stock_reserved, created_at
         FROM products
       `;
       const params: any[] = [];
       if (vendor) {
         params.push(vendor);
-        sql += ` WHERE vendor ILIKE $1 `;
+        sql += ` WHERE LOWER(vendor) = LOWER($1) `;
       }
       sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2} `;
       params.push(limitNum, offsetNum);
 
       const res = await query(sql, params);
-      if (res.rows.length > 0) {
-        return reply.send({ data: res.rows.map(formatProductRow) });
-      }
-    } catch {}
-
-    const list = seedProducts.filter((p) => !vendor || p.vendor?.toLowerCase().includes(vendor.toLowerCase()));
-    return reply.send({
-      data: list.slice(offsetNum, offsetNum + limitNum).map(formatProductRow),
-    });
+      return reply.send({ data: res.rows.map(formatProductRow) });
+    } catch (err) {
+      request.log.error({ err }, 'Inventory unavailable');
+      return reply.code(503).send({ error: 'INVENTORY_UNAVAILABLE' });
+    }
   });
 
   // Create Product
@@ -429,16 +431,17 @@ export async function adminRoutes(app: FastifyInstance) {
 
     // Vendor authorization boundary
     if (user?.role === 'vendor') {
-      const prodCheck = await query('SELECT vendor FROM products WHERE id::text = $1 OR slug = $1', [id]);
+      const prodCheck = await query('SELECT vendor FROM products WHERE id::text = $1 OR slug = $1 ORDER BY (id::text = $1) DESC LIMIT 1', [id]);
       if (prodCheck.rows.length > 0) {
         const prodVendor = prodCheck.rows[0].vendor;
-        if (!prodVendor || !prodVendor.toLowerCase().includes((user.vendorName || user.name).toLowerCase())) {
+        if (!prodVendor || prodVendor.trim().toLowerCase() !== (user.vendorName || user.name).trim().toLowerCase()) {
           return reply.status(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to modify another vendor product.' });
         }
       }
     }
 
     const stockQty = b.stockQuantity !== undefined ? b.stockQuantity : b.stock_quantity;
+    if (stockQty !== undefined && (!Number.isInteger(stockQty) || stockQty < 0)) return reply.code(400).send({ error: 'INVALID_STOCK' });
     const inStock = b.inStock !== undefined ? b.inStock : (b.in_stock !== undefined ? b.in_stock : (stockQty !== undefined ? stockQty > 0 : undefined));
     const compareAt = b.compareAtPrice !== undefined ? b.compareAtPrice : b.compare_at_price;
     const imgUrl = b.imageUrl || b.image_url;
@@ -460,7 +463,8 @@ export async function adminRoutes(app: FastifyInstance) {
           image_url = COALESCE($9, image_url),
           long_description = COALESCE($10, long_description),
           updated_at = CURRENT_TIMESTAMP
-        WHERE id::text = $11 OR slug = $11 OR slug = $12 OR slug ILIKE ('%' || $12 || '%')
+        WHERE id = (SELECT id FROM products WHERE id::text = $11 OR slug = $11 ORDER BY (id::text = $11) DESC LIMIT 1)
+          AND ($4::integer IS NULL OR $4 >= stock_reserved)
         RETURNING *;
         `,
         [
@@ -475,7 +479,6 @@ export async function adminRoutes(app: FastifyInstance) {
           imgUrl,
           longDesc,
           id,
-          cleanId,
         ]
       );
 
@@ -484,7 +487,10 @@ export async function adminRoutes(app: FastifyInstance) {
       if (res.rows.length > 0) {
         return reply.send(formatProductRow(res.rows[0]));
       }
-    } catch {}
+    } catch (err) {
+      request.log.error({ err }, 'Product update failed');
+      return reply.code(500).send({ error: 'PRODUCT_UPDATE_FAILED' });
+    }
 
     await invalidateCatalog();
     return reply.status(404).send({ error: 'PRODUCT_NOT_FOUND' });
@@ -497,18 +503,22 @@ export async function adminRoutes(app: FastifyInstance) {
 
     // Vendor authorization boundary
     if (user?.role === 'vendor') {
-      const prodCheck = await query('SELECT vendor FROM products WHERE id::text = $1 OR slug = $1', [id]);
+      const prodCheck = await query('SELECT vendor FROM products WHERE id::text = $1 OR slug = $1 ORDER BY (id::text = $1) DESC LIMIT 1', [id]);
       if (prodCheck.rows.length > 0) {
         const prodVendor = prodCheck.rows[0].vendor;
-        if (!prodVendor || !prodVendor.toLowerCase().includes((user.vendorName || user.name).toLowerCase())) {
+        if (!prodVendor || prodVendor.trim().toLowerCase() !== (user.vendorName || user.name).trim().toLowerCase()) {
           return reply.status(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to delete another vendor product.' });
         }
       }
     }
 
     try {
-      await query('DELETE FROM products WHERE id::text = $1 OR slug = $1', [id]);
-    } catch {}
+      const deleted = await query('DELETE FROM products WHERE id = (SELECT id FROM products WHERE id::text = $1 OR slug = $1 ORDER BY (id::text = $1) DESC LIMIT 1) RETURNING id', [id]);
+      if (!deleted.rowCount) return reply.code(404).send({ error: 'PRODUCT_NOT_FOUND' });
+    } catch (err) {
+      request.log.error({ err }, 'Product deletion failed');
+      return reply.code(409).send({ error: 'PRODUCT_DELETE_FAILED' });
+    }
 
     await invalidateCatalog();
     return reply.send({ success: true, message: 'Product removed' });
@@ -564,7 +574,7 @@ export async function adminRoutes(app: FastifyInstance) {
           WHERE EXISTS (
             SELECT 1 FROM order_items oi2 
             LEFT JOIN products p2 ON p2.id = oi2.product_id 
-            WHERE oi2.order_id = o.id AND (p2.vendor ILIKE $1 OR oi2.product_name ILIKE '%' || $1 || '%')
+            WHERE oi2.order_id = o.id AND (p2.LOWER(vendor) = LOWER($1) OR oi2.product_name ILIKE '%' || $1 || '%')
           )
         `;
       }
@@ -1241,42 +1251,12 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post<{
-    Body: { email: string; password: string };
-  }>('/admin/vendors/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const { email, password } = request.body;
-    try {
-      const res = await query('SELECT * FROM vendors WHERE LOWER(email) = LOWER($1) AND status = $2', [
-        email.trim().toLowerCase(),
-        'active',
-      ]);
-      if (res.rows.length > 0 && await bcrypt.compare(password, res.rows[0].password)) {
-        const vendor = res.rows[0];
-        const token = app.jwt.sign(
-          {
-            id: vendor.id,
-            email: vendor.email,
-            name: vendor.name,
-            role: 'vendor',
-            vendorId: vendor.id,
-            vendorName: vendor.name,
-          },
-          { expiresIn: '15m' }
-        );
-        return reply.send({
-          ok: true,
-          token,
-          vendor: {
-            id: vendor.id,
-            name: vendor.name,
-            email: vendor.email,
-            commissionRate: Number(vendor.commission_rate),
-            role: 'vendor',
-          },
-        });
-      }
-    } catch {}
-    return reply.status(401).send({ error: 'INVALID_CREDENTIALS', message: 'Invalid vendor login credentials or vendor account suspended.' });
+  // Keep legacy clients on the same user identity and refresh-token flow.
+  app.post('/admin/vendors/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const result = await app.inject({ method: 'POST', url: '/api/auth/login', payload: request.body as any });
+    const body = result.json();
+    if (result.statusCode === 200 && body.user?.role !== 'vendor') return reply.code(403).send({ error: 'VENDOR_ONLY' });
+    return reply.code(result.statusCode).send(result.statusCode === 200 ? { ...body, vendor: body.user } : body);
   });
 
   // ─── 8. UNIFIED USER OPERATIONS & TASKS ────────────────────────────────────

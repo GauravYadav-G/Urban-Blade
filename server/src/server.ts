@@ -7,18 +7,30 @@ import { seedDatabase } from './db/seed.js';
 
 async function start() {
   try {
-    // Schema changes and demo data are explicit operator actions.
-    if (process.env.AUTO_MIGRATE === 'true') {
+    // Apply required schema before accepting requests; demo data remains opt-in.
+    if (process.env.AUTO_MIGRATE !== 'false') {
       if (!await runMigrations()) throw new Error('Database migration failed');
     }
     if (process.env.SEED_DEMO_DATA === 'true' && !config.isProduction) await seedDatabase();
 
     const app = await buildApp();
 
-    await app.listen({
-      port: config.port,
-      host: config.host,
-    });
+    try {
+      await app.listen({
+        port: config.port,
+        host: config.host,
+      });
+    } catch (listenErr) {
+      if (config.host === '::') {
+        console.warn('⚠️ IPv6 dual-stack bind failed, falling back to 0.0.0.0');
+        await app.listen({
+          port: config.port,
+          host: '0.0.0.0',
+        });
+      } else {
+        throw listenErr;
+      }
+    }
 
     console.log(`
 ╔═══════════════════════════════════════════════════════════════════╗

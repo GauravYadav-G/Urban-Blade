@@ -123,7 +123,8 @@
               <div class="stock-stepper">
                 <button type="button" class="step-btn" (click)="admin.updateStock(product.id, -1)" [disabled]="(product.stock_quantity ?? 0) <= 0">-</button>
                 <span class="stock-display" [class.low]="(product.stock_quantity ?? 0) <= 10" [class.out]="(product.stock_quantity ?? 0) <= 0">
-                  {{ product.stock_quantity ?? 0 }}
+                  {{ product.stock_quantity ?? 0 }} on hand
+                  <small>{{ product.stock_reserved ?? 0 }} reserved · {{ product.availableQuantity ?? product.stock_quantity ?? 0 }} available</small>
                 </span>
                 <button type="button" class="step-btn" (click)="admin.updateStock(product.id, 10)">+10</button>
               </div>

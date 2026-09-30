@@ -64,6 +64,7 @@ export async function reserveStock(client: PoolClient, orderId: string, items: S
           version = version + 1,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
+        AND in_stock = TRUE
         AND (stock_quantity - stock_reserved) >= $1
       RETURNING id;
       `,
@@ -300,6 +301,11 @@ export async function cancelOrderAndReleaseStock(
   if ((updated.rowCount ?? 0) === 0) return { cancelled: false, released: 0 };
 
   const { activeReservations } = await releaseStockReservation(client, orderId);
+  const committed = await client.query("SELECT product_id, quantity FROM stock_reservations WHERE order_id = $1 AND status = 'committed' ORDER BY product_id FOR UPDATE", [orderId]);
+  for (const item of committed.rows) {
+    await client.query('UPDATE products SET stock_quantity = stock_quantity + $1, in_stock = TRUE, version = version + 1 WHERE id = $2', [item.quantity, item.product_id]);
+  }
+  await client.query("UPDATE stock_reservations SET status = 'restored', resolved_at = NOW() WHERE order_id = $1 AND status = 'committed'", [orderId]);
   return { cancelled: true, released: activeReservations };
 }
 

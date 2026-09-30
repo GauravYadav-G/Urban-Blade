@@ -6,9 +6,9 @@ import underPressure from '@fastify/under-pressure';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 
+import { commerceRoutes } from './modules/commerce/commerce.routes.js';
 import { config } from './config.js';
 import { idempotencyHook, saveIdempotentResponse } from './core/idempotency.middleware.js';
-import { initializeOrderQueue } from './queue/order-saga.queue.js';
 import { startAbandonedCheckoutReaper } from './modules/orders/abandoned-checkout.reaper.js';
 
 // Route modules
@@ -43,6 +43,31 @@ export async function buildApp(): Promise<FastifyInstance> {
     return payload;
   });
 
+  // Register CORS first so preflights and load-shedding responses have CORS headers.
+  await app.register(cors, {
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (config.corsOrigins.includes('*') || config.corsOrigins.includes(origin)) {
+        return cb(null, true);
+      }
+      try {
+        const parsed = new URL(origin);
+        if (
+          origin === 'https://urban-blade.vercel.app' ||
+          parsed.hostname === 'localhost' ||
+          parsed.hostname === '127.0.0.1' ||
+          (parsed.hostname === 'urbanblade.shop' || parsed.hostname.endsWith('.urbanblade.shop')) ||
+          (parsed.hostname === 'urbanblade.in' || parsed.hostname.endsWith('.urbanblade.in'))
+        ) {
+          return cb(null, true);
+        }
+      } catch {}
+      return cb(null, false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
+
   // ─── 1. LOAD SHEDDING & EVENT LOOP CIRCUIT BREAKER (ZERO-CRASH GUARD) ──────
   await app.register(underPressure, {
     maxEventLoopDelay: config.limits.maxEventLoopDelayMs,
@@ -63,31 +88,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     },
   });
 
-  // ─── 2. CORS & HIGH-CONCURRENCY RATE LIMITING ──────────────────────────────
-  await app.register(cors, {
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
-      if (config.corsOrigins.includes('*') || config.corsOrigins.includes(origin)) {
-        return cb(null, true);
-      }
-      try {
-        const parsed = new URL(origin);
-        if (
-          parsed.hostname === 'localhost' ||
-          parsed.hostname === '127.0.0.1' ||
-          parsed.hostname.endsWith('urbanblade.shop') ||
-          parsed.hostname.endsWith('urbanblade.in') ||
-          parsed.hostname.endsWith('onrender.com')
-        ) {
-          return cb(null, true);
-        }
-      } catch {}
-      return cb(null, false);
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  });
-
+  // High-concurrency rate limiting
   await app.register(rateLimit, {
     max: config.limits.rateLimitMax,
     timeWindow: config.limits.rateLimitWindowMs,
@@ -119,6 +120,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.addHook('onSend', saveIdempotentResponse);
 
   // ─── 6. REGISTER API ROUTE MODULES ────────────────────────────────────────
+  await app.register(commerceRoutes, { prefix: '/api' });
   await app.register(healthRoutes, { prefix: '/api' });
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(productsRoutes, { prefix: '/api' });
@@ -130,7 +132,6 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(supportRoutes, { prefix: '/api' });
 
   // ─── 7. INITIALIZE BACKGROUND SAGA QUEUES & CLEANUP TASKS ─────────────────
-  initializeOrderQueue();
   startAbandonedCheckoutReaper();
 
 

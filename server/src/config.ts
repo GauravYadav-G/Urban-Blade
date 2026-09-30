@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import { randomBytes } from 'node:crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -9,7 +8,7 @@ const __dirname = path.dirname(__filename);
 // Load .env from server root
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-const DEFAULT_CORS_ORIGINS = 'https://www.urbanblade.shop,https://urbanblade.shop,https://www.urbanblade.in,https://urbanblade.in,http://localhost:4200';
+const DEFAULT_CORS_ORIGINS = 'https://urban-blade.vercel.app,https://www.urbanblade.shop,https://urbanblade.shop,https://www.urbanblade.in,https://urbanblade.in,http://localhost:4200';
 
 if (process.env.NODE_ENV === 'production') {
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters');
@@ -22,7 +21,7 @@ export const config = {
   env: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
   port: parseInt(process.env.PORT || '4000', 10),
-  host: process.env.HOST || '0.0.0.0',
+  host: process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '::'),
   logLevel: process.env.LOG_LEVEL || 'info',
   corsOrigins: (process.env.CORS_ORIGINS || DEFAULT_CORS_ORIGINS)
     .split(',')

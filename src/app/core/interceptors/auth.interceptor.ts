@@ -24,7 +24,10 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   const target = new URL(url, window.location.origin);
   const allowedOrigins = new Set([window.location.origin, new URL(apiHost).origin]);
-  if (!isProd) allowedOrigins.add('http://localhost:4000');
+  if (!isProd) {
+    allowedOrigins.add('http://localhost:4000');
+    allowedOrigins.add('http://127.0.0.1:4000');
+  }
   if (!allowedOrigins.has(target.origin) || !target.pathname.startsWith('/api/')) return next(req);
   let headers = req.headers;
   if (!headers.has('x-session-id')) headers = headers.set('x-session-id', sessionId);
@@ -38,7 +41,8 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         err.status === 401 &&
         !url.includes('/auth/login') &&
         !url.includes('/auth/register') &&
-        !url.includes('/auth/refresh')
+        !url.includes('/auth/refresh') &&
+        !url.includes('/auth/logout')
       ) {
         return from(account.refreshSession()).pipe(
           switchMap((newToken) => {

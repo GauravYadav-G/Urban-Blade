@@ -1,6 +1,8 @@
+import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import bcrypt from 'bcryptjs';
+import { config } from '../../config.js';
 import { query } from '../../db/pool.js';
 import { setCacheKey } from '../../redis/client.js';
 import { requireAuth } from '../../core/auth.middleware.js';
@@ -56,7 +58,7 @@ export async function authRoutes(app: FastifyInstance) {
           // Older installations may not have the vendors table yet.
         }
 
-        if (vendorRecord?.status === 'suspended') {
+        if (vendorRecord?.status === 'suspended' && (!res.rows.length || res.rows[0].role === 'vendor')) {
           return reply.status(403).send({
             error: 'VENDOR_SUSPENDED',
             message: 'This vendor account is suspended. Contact the administrator.',
@@ -66,18 +68,14 @@ export async function authRoutes(app: FastifyInstance) {
         // Vendor accounts created in the admin panel must also be able to use
         // the shared staff login. Provision their user row on first login.
         // Use bcrypt to verify the vendor password (stored as hash in vendors table)
-        if (vendorRecord && vendorRecord.password) {
+        if (!res.rows.length && vendorRecord && vendorRecord.password) {
           const isValidPassword = await bcrypt.compare(password, vendorRecord.password);
           if (isValidPassword) {
             const hash = await bcrypt.hash(password, 10);
             res = await query(
               `INSERT INTO users (name, email, password_hash, role)
                VALUES ($1, $2, $3, 'vendor')
-               ON CONFLICT (email) DO UPDATE SET
-                 name = EXCLUDED.name,
-                 password_hash = EXCLUDED.password_hash,
-                 role = 'vendor',
-                 updated_at = CURRENT_TIMESTAMP
+               ON CONFLICT (email) DO NOTHING
                RETURNING id, name, email, password_hash, role;`,
               [vendorRecord.name, normalizedEmail, hash]
             );
@@ -110,7 +108,7 @@ export async function authRoutes(app: FastifyInstance) {
             tokenPayload.vendorName = vendorRecord?.name || vInfo?.name || user.name;
           }
 
-          const token = app.jwt.sign(tokenPayload, { expiresIn: '24h' });
+          const token = app.jwt.sign(tokenPayload, { expiresIn: config.jwt.expiresIn });
 
           // Store refresh token in database with expiration
           const refreshToken = crypto.randomUUID();
@@ -208,7 +206,7 @@ export async function authRoutes(app: FastifyInstance) {
         const newUser = res.rows[0];
         const token = app.jwt.sign(
           { id: newUser.id, email: newUser.email, name: newUser.name, role: newUser.role, phone: newUser.phone || null },
-          { expiresIn: '24h' }
+          { expiresIn: config.jwt.expiresIn }
         );
 
         // Generate refresh token for new user
@@ -338,7 +336,7 @@ export async function authRoutes(app: FastifyInstance) {
       // Generate new access token
       const newAccessToken = app.jwt.sign(
         { id: user.id, email: user.email, name: user.name, role: user.role, phone: user.phone || null },
-        { expiresIn: '24h' }
+        { expiresIn: config.jwt.expiresIn }
       );
 
       return reply.send({
@@ -392,10 +390,17 @@ export async function authRoutes(app: FastifyInstance) {
     { preHandler: [requireAuth] },
     async (request, reply) => {
       const user = request.user as any;
-      const { items } = request.body;
-      if (!Array.isArray(items)) {
+      const parsed = z.array(z.object({
+        lineId: z.string().max(255), productId: z.string().min(1).max(255), slug: z.string().max(255).optional(),
+        name: z.string().max(255), imageUrl: z.string().max(2000), unitPrice: z.number().finite().min(0).max(1000000),
+        compareAtPrice: z.number().finite().min(0).optional(), currency: z.literal('INR'),
+        qty: z.number().int().min(1).max(100), kind: z.enum(['retail', 'service', 'gift']), description: z.string().max(4000).optional(),
+      })).max(100).safeParse(request.body?.items);
+      if (!parsed.success) {
         return reply.status(400).send({ error: 'INVALID_CART', message: 'Items must be an array' });
       }
+      const items = parsed.data;
+      if (new Set(items.map(i => i.productId)).size !== items.length) return reply.code(400).send({ error: 'DUPLICATE_CART_ITEM' });
       try {
         await query(
           `INSERT INTO carts (user_id, items, version, updated_at)

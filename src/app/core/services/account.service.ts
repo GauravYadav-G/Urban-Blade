@@ -2,6 +2,8 @@ import { Injectable, inject, computed, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import type { LoginCredentials, StoreUser } from '@core/models/user.model';
+import { CartService } from './cart.service';
+import type { CartLine } from '../models/cart.model';
 import { ADMIN_ACCOUNT } from '@core/constants/salon.constants';
 
 const STORAGE_KEY = 'urban-blade-user';
@@ -17,12 +19,15 @@ const API_AUTH_URL =
 interface AuthResponse {
   token: string;
   refreshToken?: string;
+  serverCart?: CartLine[];
   user: StoreUser;
 }
 
 @Injectable({ providedIn: 'root' })
 export class AccountService {
   private readonly http = inject(HttpClient);
+  private readonly cart = inject(CartService);
+  private cartSync = Promise.resolve();
   private readonly userSignal = signal<StoreUser | null>(this.readStored());
   private refreshPromise: Promise<string | null> | null = null;
 
@@ -42,6 +47,20 @@ export class AccountService {
     'skin@urbanblade.in': { id: 'vnd-skin', name: 'Urban Blade Skin' },
     'salon@urbanblade.in': { id: 'vnd-salon', name: 'Urban Blade Salon' },
   };
+
+  constructor() {
+    this.cart.syncToServer = items => {
+      const token = this.getToken();
+      if (!token || !this.isSignedIn()) return;
+      this.cartSync = this.cartSync.then(async () => {
+        if (this.getToken() !== token) return;
+        await firstValueFrom(this.http.post(`${API_AUTH_URL}/cart`, { items }));
+      }).catch(() => {});
+    };
+    queueMicrotask(() => {
+      if (this.isSignedIn()) this.http.get<{items: CartLine[]}>(`${API_AUTH_URL}/cart`).subscribe({ next: result => this.cart.mergeServerCart(result.items), error: () => {} });
+    });
+  }
 
   getToken(): string | null {
     if (typeof window === 'undefined') return null;
@@ -78,6 +97,7 @@ export class AccountService {
         this.persistTokens(resp.token, resp.refreshToken);
         this.userSignal.set(resp.user);
         this.persist(resp.user);
+        this.cart.mergeServerCart(resp.serverCart || []);
         return true;
       }
     } catch {
@@ -107,6 +127,7 @@ export class AccountService {
         this.persistTokens(resp.token, resp.refreshToken);
         this.userSignal.set(resp.user);
         this.persist(resp.user);
+        this.cart.mergeServerCart(resp.serverCart || []);
         return true;
       }
     } catch {
@@ -162,6 +183,7 @@ export class AccountService {
         this.persistTokens(resp.token, resp.refreshToken);
         this.userSignal.set(resp.user);
         this.persist(resp.user);
+        this.cart.mergeServerCart(resp.serverCart || []);
         return true;
       }
     } catch (err: any) {
@@ -251,6 +273,7 @@ export class AccountService {
     }
 
     this.userSignal.set(null);
+    this.cart.clear();
     try {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(TOKEN_KEY);

@@ -16,6 +16,8 @@ export async function runMigrations(): Promise<boolean> {
 
   const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(184728391)');
     console.log('🚀 Running schema migration...');
     const schemaCandidatePaths = [
       path.resolve(__dirname, 'schema.sql'),
@@ -40,8 +42,10 @@ export async function runMigrations(): Promise<boolean> {
     await client.query(indexesSql);
     console.log('✅ High-performance indexes successfully applied.');
 
+    await client.query('COMMIT');
     return true;
   } catch (err: any) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('❌ Migration failed:', err.message);
     return false;
   } finally {

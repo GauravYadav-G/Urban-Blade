@@ -21,6 +21,7 @@ let db;
 beforeEach(() => {
   db = async (sql) => {
     if (sql.includes('revoked_access_tokens')) return { rows: [], rowCount: 0 };
+    if (sql.includes('FROM site_settings')) return { rows: [], rowCount: 0 };
     if (sql.includes('FROM products')) return { rows: [product], rowCount: 1 };
     throw new Error(`Unexpected query: ${sql}`);
   };
@@ -125,7 +126,7 @@ test('COD persists an order owned by the signed-in user with provider-independen
   const statements = [];
   const originalConnect = pool.connect;
   pool.connect = async () => ({
-    query: async (sql, values) => { statements.push({ sql, values }); return { rows: [], rowCount: 1 }; }, release() {},
+    query: async (sql, values) => { statements.push({ sql, values }); return { rows: sql.includes("status = 'active'") && sql.includes('SELECT product_id') ? [{ product_id: product.id, quantity: 1 }] : [], rowCount: 1 }; }, release() {},
   });
   const app = await appWithOrders();
   try {

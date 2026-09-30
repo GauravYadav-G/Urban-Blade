@@ -284,3 +284,40 @@ CREATE TABLE IF NOT EXISTS revoked_access_tokens (
   expires_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_revoked_access_expiry ON revoked_access_tokens(expires_at);
+
+-- Shared, server-authoritative checkout settings and coupon definitions.
+CREATE TABLE IF NOT EXISTS site_settings (id TEXT PRIMARY KEY, value JSONB NOT NULL);
+CREATE TABLE IF NOT EXISTS coupons (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), code VARCHAR(100) NOT NULL UNIQUE,
+  discount_type TEXT NOT NULL CHECK (discount_type IN ('percentage','fixed')),
+  discount_value NUMERIC(12,2) NOT NULL CHECK (discount_value > 0),
+  min_order_value NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (min_order_value >= 0),
+  max_discount_amount NUMERIC(12,2), is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  description TEXT NOT NULL DEFAULT '', expires_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_amount NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_inclusive BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_rate_percent NUMERIC(5,2) NOT NULL DEFAULT 0;
+-- A restored reservation records a cancelled sale; manual orders have no ledger.
+ALTER TABLE stock_reservations DROP CONSTRAINT IF EXISTS stock_reservations_status_check;
+ALTER TABLE stock_reservations ADD CONSTRAINT stock_reservations_status_check CHECK (status IN ('active','committed','released','restored'));
+
+CREATE TABLE IF NOT EXISTS checkout_requests (
+  key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, status INTEGER NOT NULL,
+  body JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS support_inquiries (
+  id TEXT PRIMARY KEY, user_name TEXT NOT NULL, user_email TEXT NOT NULL,
+  subject TEXT NOT NULL, order_id TEXT, vendor_name TEXT,
+  status TEXT NOT NULL DEFAULT 'open', priority TEXT NOT NULL DEFAULT 'medium',
+  messages JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_support_inquiries_owner ON support_inquiries(LOWER(user_email));
+CREATE TABLE IF NOT EXISTS admin_tasks (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+  assignee TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending',
+  due_date TEXT, related_user TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

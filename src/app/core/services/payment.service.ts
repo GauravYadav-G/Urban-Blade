@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, catchError, tap, throwError } from 'rxjs';
+import { Observable, catchError, tap, throwError, timeout } from 'rxjs';
 import { AccountService } from './account.service';
 
 export interface CheckoutItemRequest {
@@ -14,6 +14,7 @@ export interface ShippingAddress {
   street: string;
   city?: string;
   postalCode?: string;
+  state?: string;
   email?: string;
 }
 
@@ -49,6 +50,13 @@ export interface PaymentReceipt {
   receiptNumber: string;
   status: 'confirmed';
   paymentStatus: 'captured' | 'pending';
+  subtotal: number;
+  shippingFee: number;
+  discountAmount: number;
+  couponCode?: string;
+  taxAmount: number;
+  taxInclusive: boolean;
+  taxRatePercent: number;
   totalAmount: number;
   currency: string;
   confirmedAt: string;
@@ -61,6 +69,12 @@ export interface PaymentReceipt {
     image_url?: string;
   }>;
   paymentDetails?: any;
+}
+
+export interface OrderQuote {
+  subtotal: number; totalAmount: number; shippingFee: number; discountAmount: number;
+  couponCode: string; taxAmount: number; taxInclusive: boolean; taxRatePercent: number;
+  verifiedItems: Array<{ productId: string; slug?: string; unitPrice: number }>;
 }
 
 const API_BASE =
@@ -77,48 +91,64 @@ export class PaymentService {
   readonly lastReceipt = signal<PaymentReceipt | null>(null);
   readonly activeRazorpayOrder = signal<RazorpayOrderResponse | null>(null);
 
-  quoteOrder(items: CheckoutItemRequest[], couponCode?: string): Observable<{ totalAmount: number; discountAmount: number; verifiedItems: Array<{ productId: string; unitPrice: number }> }> {
-    return this.http.post<any>(`${API_BASE}/orders/quote`, { items, couponCode });
+  quoteOrder(items: CheckoutItemRequest[], couponCode?: string): Observable<OrderQuote> {
+    return this.http.post<OrderQuote>(`${API_BASE}/orders/quote`, { items, couponCode }).pipe(timeout(30000));
   }
-
+  reconcileOrder(orderId: string): Observable<{receipt?: PaymentReceipt; pending?: boolean; cancelled?: boolean}> {
+    return this.http.post<any>(`${API_BASE}/orders/${encodeURIComponent(orderId)}/reconcile`, {}).pipe(timeout(30000));
+  }
+  rememberPendingOrder(order: RazorpayOrderResponse): void {
+    try { sessionStorage.setItem('urban-blade-pending-payment', JSON.stringify({ user: this.account.user()?.email, order })); } catch {}
+  }
+  restorePendingOrder(): RazorpayOrderResponse | null {
+    try { const saved = JSON.parse(sessionStorage.getItem('urban-blade-pending-payment') || 'null'); return saved?.user === this.account.user()?.email && saved?.order?.orderId ? saved.order : null; } catch { return null; }
+  }
+  clearPendingOrder(): void {
+    this.activeRazorpayOrder.set(null);
+    try { sessionStorage.removeItem('urban-blade-pending-payment'); sessionStorage.removeItem('checkout-attempt'); } catch {}
+  }
+  private attempt: { fingerprint: string; key: string } | null = null;
   private checkoutKey(method: string, payload: unknown): string {
     const fingerprint = JSON.stringify({ method, payload, user: this.account.user()?.email });
-    const stored = sessionStorage.getItem('checkout-attempt');
-    if (stored) {
-      const attempt = JSON.parse(stored);
-      if (attempt.fingerprint === fingerprint && Date.now() - attempt.createdAt < 15 * 60 * 1000) return attempt.key;
-    }
+    if (this.attempt?.fingerprint === fingerprint) return this.attempt.key;
+    try {
+      const stored = JSON.parse(sessionStorage.getItem('checkout-attempt') || 'null');
+      if (stored?.fingerprint === fingerprint && typeof stored.key === 'string') { this.attempt = stored; return stored.key; }
+    } catch {}
     const key = crypto.randomUUID();
-    sessionStorage.setItem('checkout-attempt', JSON.stringify({ fingerprint, key, createdAt: Date.now() }));
+    this.attempt = { fingerprint, key };
+    try { sessionStorage.setItem('checkout-attempt', JSON.stringify(this.attempt)); } catch {}
     return key;
   }
+  private scriptPromise: Promise<boolean> | null = null;
 
   /**
    * Dynamically loads the official Razorpay Checkout JavaScript SDK
    */
   loadRazorpayScript(): Promise<boolean> {
-    return new Promise((resolve) => {
-      if (typeof window === 'undefined') return resolve(false);
-      if ((window as any).Razorpay) return resolve(true);
-
-      const existingScript = document.getElementById('razorpay-checkout-js');
-      if (existingScript) {
-        existingScript.addEventListener('load', () => resolve(true));
-        existingScript.addEventListener('error', () => resolve(false));
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.id = 'razorpay-checkout-js';
-      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-      script.async = true;
-      script.onload = () => resolve(true);
-      script.onerror = () => {
-        script.remove();
-        resolve(false);
+    if (typeof window === 'undefined') return Promise.resolve(false);
+    if ((window as any).Razorpay) return Promise.resolve(true);
+    if (this.scriptPromise) return this.scriptPromise;
+    this.scriptPromise = new Promise<boolean>(resolve => {
+      let script = document.getElementById('razorpay-checkout-js') as HTMLScriptElement | null;
+      const finish = (loaded: boolean) => {
+        clearTimeout(timer);
+        if (!loaded) { script?.remove(); this.scriptPromise = null; }
+        resolve(loaded);
       };
-      document.body.appendChild(script);
+      const timer = setTimeout(() => finish(false), 15000);
+      if (!script) {
+        script = document.createElement('script'); script.id = 'razorpay-checkout-js';
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js'; script.async = true;
+        script.addEventListener('load', () => finish(!!(window as any).Razorpay), { once: true });
+        script.addEventListener('error', () => finish(false), { once: true });
+        document.body.appendChild(script);
+      } else {
+        script.addEventListener('load', () => finish(!!(window as any).Razorpay), { once: true });
+        script.addEventListener('error', () => finish(false), { once: true });
+      }
     });
+    return this.scriptPromise;
   }
 
   /**
@@ -137,6 +167,7 @@ export class PaymentService {
     return this.http
       .post<RazorpayOrderResponse>(`${API_BASE}/orders/razorpay/create-order`, payload, { headers: { 'x-idempotency-key': this.checkoutKey('razorpay', payload) } })
       .pipe(
+        timeout(30000),
         tap((order) => {
           this.isProcessing.set(false);
           this.activeRazorpayOrder.set(order);
@@ -157,9 +188,11 @@ export class PaymentService {
     return this.http
       .post<PaymentReceipt>(`${API_BASE}/orders/razorpay/verify`, payload)
       .pipe(
+        timeout(30000),
         tap((receipt) => {
           this.lastReceipt.set(receipt);
-          sessionStorage.removeItem('checkout-attempt');
+          this.attempt = null;
+          try { sessionStorage.removeItem('checkout-attempt'); } catch {}
           this.isProcessing.set(false);
         }),
         catchError((err) => {
@@ -185,9 +218,11 @@ export class PaymentService {
     return this.http
       .post<PaymentReceipt>(`${API_BASE}/orders/cod-order`, payload, { headers: { 'x-idempotency-key': this.checkoutKey('cod', payload) } })
       .pipe(
+        timeout(30000),
         tap((receipt) => {
           this.lastReceipt.set(receipt);
-          sessionStorage.removeItem('checkout-attempt');
+          this.attempt = null;
+          try { sessionStorage.removeItem('checkout-attempt'); } catch {}
           this.isProcessing.set(false);
         }),
         catchError((err) => {
@@ -221,14 +256,15 @@ export class PaymentService {
     const cleanPhone = (orderData.shippingAddress.phone || '').replace(/\D/g, '').slice(-10);
 
 
+    let completed = false;
     const options: any = {
+      timeout: 900,
       key: orderData.keyId,
       order_id: orderData.razorpayOrderId,
       amount: orderData.amount,
       currency: orderData.currency || 'INR',
       name: 'Urban Blade Luxury Salon',
       description: `Order #${orderData.orderId.slice(0, 8).toUpperCase()}`,
-      image: 'https://cdn-icons-png.flaticon.com/512/3663/3663335.png',
       prefill: {
         name: orderData.shippingAddress.fullName,
         contact: cleanPhone,
@@ -247,10 +283,12 @@ export class PaymentService {
         handleback: true,
         confirm_close: true,
         ondismiss: () => {
-          if (callbacks.onDismiss) callbacks.onDismiss();
+          if (!completed) callbacks.onDismiss?.();
         },
       },
       handler: (response: any) => {
+        if (completed) return;
+        completed = true;
         callbacks.onSuccess({
           razorpay_payment_id: response.razorpay_payment_id,
           razorpay_order_id: response.razorpay_order_id || orderData.razorpayOrderId,
@@ -263,7 +301,10 @@ export class PaymentService {
     try {
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', (errResp: any) => {
-        if (callbacks.onError) callbacks.onError(errResp?.error);
+        if (completed) return;
+        completed = true;
+        rzp.close();
+        callbacks.onError?.(errResp?.error);
       });
       rzp.open();
     } catch (err) {
