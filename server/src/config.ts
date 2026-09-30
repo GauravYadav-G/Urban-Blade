@@ -9,10 +9,11 @@ const __dirname = path.dirname(__filename);
 // Load .env from server root
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
+const DEFAULT_CORS_ORIGINS = 'https://www.urbanblade.shop,https://urbanblade.shop,https://www.urbanblade.in,https://urbanblade.in,http://localhost:4200';
+
 if (process.env.NODE_ENV === 'production') {
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters');
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
-  if (!process.env.CORS_ORIGINS) throw new Error('CORS_ORIGINS must list trusted storefront origins');
 }
 
 const DEV_FALLBACK_JWT_SECRET = 'urbanblade-dev-jwt-secret-do-not-use-in-prod-32chars!';
@@ -23,7 +24,10 @@ export const config = {
   port: parseInt(process.env.PORT || '4000', 10),
   host: process.env.HOST || '0.0.0.0',
   logLevel: process.env.LOG_LEVEL || 'info',
-  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:4200').split(',').map(value => value.trim()),
+  corsOrigins: (process.env.CORS_ORIGINS || DEFAULT_CORS_ORIGINS)
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean),
 
   jwt: {
     secret: process.env.JWT_SECRET || DEV_FALLBACK_JWT_SECRET,

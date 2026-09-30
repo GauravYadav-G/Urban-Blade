@@ -65,7 +65,25 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // ─── 2. CORS & HIGH-CONCURRENCY RATE LIMITING ──────────────────────────────
   await app.register(cors, {
-    origin: config.corsOrigins,
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (config.corsOrigins.includes('*') || config.corsOrigins.includes(origin)) {
+        return cb(null, true);
+      }
+      try {
+        const parsed = new URL(origin);
+        if (
+          parsed.hostname === 'localhost' ||
+          parsed.hostname === '127.0.0.1' ||
+          parsed.hostname.endsWith('urbanblade.shop') ||
+          parsed.hostname.endsWith('urbanblade.in') ||
+          parsed.hostname.endsWith('onrender.com')
+        ) {
+          return cb(null, true);
+        }
+      } catch {}
+      return cb(null, false);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   });

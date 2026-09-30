@@ -40,7 +40,7 @@ services:
       - key: MAX_EVENT_LOOP_DELAY_MS
         value: 2500
       - key: CORS_ORIGINS
-        sync: false
+        value: "https://www.urbanblade.shop,https://urbanblade.shop,https://www.urbanblade.in,https://urbanblade.in,http://localhost:4200"
       - key: REDIS_URL
         sync: false
       - key: RAZORPAY_KEY_ID
