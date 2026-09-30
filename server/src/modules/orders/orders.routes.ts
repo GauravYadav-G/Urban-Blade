@@ -1,10 +1,18 @@
 import { FastifyInstance } from 'fastify';
 import crypto from 'crypto';
 import Razorpay from 'razorpay';
+import { settleCapturedPayment } from './payment-settlement.service.js';
 import { query, withTransaction } from '../../db/pool.js';
 import { enqueueOrderJob, OrderJobPayload } from '../../queue/order-saga.queue.js';
 import { config } from '../../config.js';
-import { optionalAuth } from '../../core/auth.middleware.js';
+import { optionalAuth, requireAuth } from '../../core/auth.middleware.js';
+import {
+  cancelOrderAndReleaseStock,
+  claimPendingOrder,
+  commitStockReservation,
+  releaseStockReservation,
+  reserveStock,
+} from './stock-reservation.service.js';
 
 function toValidUuidOrNull(val?: string | null): string | null {
   if (!val || typeof val !== 'string') return null;
@@ -32,6 +40,8 @@ export async function resolveAndVerifyItems(
   couponCode?: string,
   _untrustedDiscountAmount?: number
 ) {
+  if (!Array.isArray(items) || !items.length || items.length > 100) throw new Error('INVALID_CART');
+  const seen = new Set<string>();
   const verifiedItems: Array<{
     productId: string;
     productName: string;
@@ -41,7 +51,8 @@ export async function resolveAndVerifyItems(
   }> = [];
 
   for (const it of items) {
-    if (!it.quantity || typeof it.quantity !== 'number' || !Number.isInteger(it.quantity) || it.quantity < 1) {
+    if (!it || typeof it.productId !== 'string' || it.productId.length > 255) throw new Error('INVALID_PRODUCT');
+    if (!it.quantity || typeof it.quantity !== 'number' || !Number.isInteger(it.quantity) || it.quantity < 1 || it.quantity > 100) {
       throw new Error(`INVALID_QUANTITY: Item quantity must be a positive whole number.`);
     }
 
@@ -49,7 +60,7 @@ export async function resolveAndVerifyItems(
     const cleanSlug = it.productId.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
     const slugCandidate = (it as any).slug || cleanSlug;
     const prodRes = await query(
-      `SELECT id, name, price, stock_quantity, image_url, in_stock FROM products WHERE ${
+      `SELECT id, name, price, stock_quantity, stock_reserved, image_url, in_stock FROM products WHERE ${
         isUUID
           ? 'id = $1'
           : 'slug = $1 OR slug = $2 OR slug = $3 OR id::text = $1 OR name ILIKE $2 OR name ILIKE $3'
@@ -59,25 +70,20 @@ export async function resolveAndVerifyItems(
 
     let product = prodRes.rows[0];
     if (!product) {
-      const fuzzyRes = await query(
-        `SELECT id, name, price, stock_quantity, image_url, in_stock FROM products 
-         WHERE slug ILIKE '%' || $1 || '%' OR name ILIKE '%' || $1 || '%' 
-         ORDER BY CASE WHEN slug = $1 THEN 1 ELSE 2 END 
-         LIMIT 1`,
-        [cleanSlug]
-      );
-      if (fuzzyRes.rows.length > 0) {
-        product = fuzzyRes.rows[0];
-      }
-    }
-
-    if (!product) {
       throw new Error(`PRODUCT_NOT_FOUND: Product "${it.productId}" was not found in catalog.`);
     }
 
-    const stock = parseInt(product.stock_quantity, 10);
-    if (stock < it.quantity) {
-      throw new Error(`INSUFFICIENT_STOCK: Only ${stock} unit(s) of "${product.name}" are currently available.`);
+    if (!product.in_stock) throw new Error('PRODUCT_UNAVAILABLE');
+    if (seen.has(product.id)) throw new Error('DUPLICATE_PRODUCT: Combine quantities into one cart line.');
+    seen.add(product.id);
+
+    // Sellable units exclude stock already reserved by other open checkouts, so
+    // this pre-check agrees with the atomic guard applied at reservation time.
+    const onHand = parseInt(product.stock_quantity, 10);
+    const reserved = parseInt(product.stock_reserved ?? '0', 10) || 0;
+    const available = Math.max(onHand - reserved, 0);
+    if (available < it.quantity) {
+      throw new Error(`INSUFFICIENT_STOCK: Only ${available} unit(s) of "${product.name}" are currently available.`);
     }
 
     verifiedItems.push({
@@ -103,6 +109,7 @@ export async function resolveAndVerifyItems(
       VIP20: { type: 'percent', val: 20, min: 1499, max: 500 },
     };
     const rule = KNOWN_COUPONS[cleanCoupon];
+    if (!rule || subtotal < rule.min) throw new Error('INVALID_COUPON: Coupon is invalid or the minimum order value has not been reached.');
     if (rule && subtotal >= rule.min) {
       validatedDiscount = rule.type === 'percent'
         ? Math.min(rule.max || 9999, Math.round((subtotal * rule.val) / 100))
@@ -118,6 +125,41 @@ export async function resolveAndVerifyItems(
 }
 
 export async function ordersRoutes(app: FastifyInstance) {
+  app.addHook('preHandler', async (request, reply) => {
+    if (request.method !== 'POST') return;
+    const path = request.url.split('?')[0];
+    if (['/api/orders/checkout-session', '/api/orders/verify-payment', '/api/orders'].includes(path)) {
+      return reply.code(410).send({ error: 'CHECKOUT_RETIRED', message: 'Use Razorpay checkout or Cash on Delivery.' });
+    }
+    await requireAuth(request, reply);
+    if (reply.sent) return;
+    const body = request.body as any;
+    if (!body || typeof body !== 'object') return reply.code(400).send({ error: 'INVALID_BODY' });
+    body.userId = request.user.id;
+    if (body.shippingAddress) {
+      const address = body.shippingAddress;
+      if (typeof address.fullName !== 'string' || address.fullName.trim().length < 2 ||
+          typeof address.phone !== 'string' || !/^[0-9]{10}$/.test(address.phone) ||
+          typeof address.street !== 'string' || address.street.trim().length < 5 ||
+          typeof address.city !== 'string' || address.city.trim().length < 2) {
+        return reply.code(400).send({ error: 'INVALID_ADDRESS', message: 'Enter a complete delivery address and a 10-digit phone number.' });
+      }
+      address.email = request.user.email;
+    }
+    if (path.endsWith('/cancel-payment') || path.endsWith('/razorpay/verify')) {
+      if (!toValidUuidOrNull(body.orderId)) return reply.code(400).send({ error: 'INVALID_ORDER_ID' });
+      const order = await query('SELECT user_id, payment_method FROM orders WHERE id = $1', [body.orderId]);
+      if (path.endsWith('/cancel-payment') && order.rows[0]?.payment_method === 'Razorpay') return reply.code(409).send({ error: 'PAYMENT_IN_PROGRESS', message: 'Online payment reservations are reconciled automatically.' });
+      if (!order.rows[0] || order.rows[0].user_id !== request.user.id) {
+        return reply.code(404).send({ error: 'ORDER_NOT_FOUND' });
+      }
+    }
+  });
+  app.post<{ Body: { items: Array<{productId: string; quantity: number}>; couponCode?: string } }>('/orders/quote', async (request, reply) => {
+    try { return await resolveAndVerifyItems(request.body.items, request.body.couponCode); }
+    catch (err: any) { return reply.code(400).send({ error: 'INVALID_CHECKOUT', message: err.message }); }
+  });
+
   // ─── 1. REAL-TIME TWO-PHASE CHECKOUT SESSION WITH ATOMIC INVENTORY LOCK ────
   app.post<{
     Body: {
@@ -155,26 +197,8 @@ export async function ordersRoutes(app: FastifyInstance) {
 
       // 2. Atomically reserve inventory and insert pending order shell in Neon PostgreSQL
       await withTransaction(async (client) => {
-        // Atomic stock decrement
-        for (const it of verifiedItems) {
-          const updateRes = await client.query(
-            `
-            UPDATE products
-            SET stock_quantity = stock_quantity - $1,
-                version = version + 1,
-                in_stock = (stock_quantity - $1 > 0),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND stock_quantity >= $1
-            RETURNING stock_quantity;
-            `,
-            [it.quantity, it.productId]
-          );
-
-          if (updateRes.rowCount === 0) {
-            throw new Error(`INSUFFICIENT_STOCK_RACE:${it.productName}`);
-          }
-        }
-
+        // Payment-first: the order shell is inserted first, then stock is held
+        // against it so the reservation ledger can reference the order row.
         const effectiveAddress = {
           ...shippingAddress,
           email: (shippingAddress as any)?.email || (request.body as any)?.userEmail || 'customer@urbanblade.in',
@@ -207,8 +231,22 @@ export async function ordersRoutes(app: FastifyInstance) {
           ]
         );
 
+        // Reserve inventory against this order (ledger row + stock_reserved bump).
+        await reserveStock(client, orderId, verifiedItems);
+
+        // Track coupon usage if a coupon was applied
+        if (cleanCoupon && validatedDiscount > 0 && resolvedUserUuid) {
+          await client.query(
+            `
+            INSERT INTO coupon_usages (coupon_code, user_id, order_id, discount_amount)
+            VALUES ($1, $2, $3, $4)
+            `,
+            [cleanCoupon, resolvedUserUuid, orderId, validatedDiscount]
+          );
+        }
+
         // Insert order items
-        for (const it of verifiedItems) {
+        for (const it of [...verifiedItems].sort((a, b) => a.productId.localeCompare(b.productId))) {
           await client.query(
             `
             INSERT INTO order_items (
@@ -225,7 +263,7 @@ export async function ordersRoutes(app: FastifyInstance) {
       // 4. Generate Cryptographic Payment Intent Token (HMAC-SHA256)
       const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes window
       const signatureToken = crypto
-        .createHmac('sha256', config.jwt.secret)
+        .createHmac('sha256', config.payment.signingSecret)
         .update(`${orderId}:${totalAmount}:${expiresAt}`)
         .digest('hex');
 
@@ -261,10 +299,12 @@ export async function ordersRoutes(app: FastifyInstance) {
         });
       }
       if (err.message?.startsWith('INSUFFICIENT_STOCK_RACE:')) {
-        const prodName = err.message.split(':')[1];
+        const [, prodName, available] = err.message.split(':');
         return reply.status(409).send({
           error: 'CONCURRENT_STOCK_DEPLETION',
-          message: `Stock for "${prodName}" was just purchased by another customer.`,
+          message: prodName
+            ? `Stock for "${prodName}" was just purchased by another customer (only ${available ?? 0} left).`
+            : 'Stock was just purchased by another customer.',
         });
       }
       request.log.error(err, 'Failed to create checkout session');
@@ -318,7 +358,7 @@ export async function ordersRoutes(app: FastifyInstance) {
 
       // 3. Cryptographic HMAC Signature Verification (Timing-safe)
       const expectedSignature = crypto
-        .createHmac('sha256', config.jwt.secret)
+        .createHmac('sha256', config.payment.signingSecret)
         .update(`${orderId}:${totalAmount}:${expiresAt}`)
         .digest('hex');
 
@@ -333,21 +373,61 @@ export async function ordersRoutes(app: FastifyInstance) {
         });
       }
 
-      // 4. Mark order as confirmed & payment captured in Neon DB with transaction_id
-      const updatedOrder = await query(
-        `
-        UPDATE orders
-        SET status = 'confirmed',
-            payment_status = 'captured',
-            transaction_id = $2,
-            version = version + 1,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-        RETURNING *;
-        `,
-        [orderId, paymentId]
-      );
+      // 4. Commit the stock reservation and finalise the order atomically.
+      //
+      // claimPendingOrder() locks the order row and only flips it while it is
+      // still accepted/pending. If it returns false, another request (a replay
+      // of this same verify, the cancel endpoint, or the TTL reaper) already
+      // resolved the order, so we must NOT touch stock a second time.
+      const outcome = await withTransaction(async (client) => {
+        const claimed = await claimPendingOrder(client, orderId, {
+          status: 'confirmed',
+          payment_status: 'captured',
+          extraSet: 'transaction_id = $4',
+          params: [paymentId],
+        });
+        if (!claimed) return { claimed: false, unapplied: [] as any[] };
 
+        const stock = await commitStockReservation(client, orderId);
+        return { claimed: true, unapplied: stock.unapplied };
+      });
+
+      if (!outcome.claimed) {
+        const current = await query('SELECT status, payment_status FROM orders WHERE id = $1', [orderId]);
+        const row = current.rows[0] || {};
+        if (row.payment_status === 'captured') {
+          // Idempotent success: safe to retry this endpoint after a double-tap.
+          return reply.send({
+            success: true,
+            orderId,
+            paymentId,
+            transactionId: paymentId,
+            receiptNumber: `RCPT-UB-${orderId.slice(0, 8).toUpperCase()}`,
+            status: row.status ?? 'confirmed',
+            paymentStatus: 'captured',
+            totalAmount,
+            currency: 'INR',
+            alreadyProcessed: true,
+          });
+        }
+        return reply.status(409).send({
+          error: 'ORDER_NOT_PENDING',
+          message: `This order is no longer awaiting payment (status: ${row.status ?? 'unknown'}, payment: ${row.payment_status ?? 'unknown'}).`,
+        });
+      }
+
+      if (outcome.unapplied.length > 0) {
+        // Should be unreachable: a live reservation can always be committed.
+        // Surfaced loudly rather than silently mis-reporting a confirmed order.
+        request.log.error(
+          { orderId, unapplied: outcome.unapplied },
+          'Stock commit partially failed after payment capture — manual reconciliation required'
+        );
+        throw new Error('STOCK_COMMIT_FAILED');
+      }
+
+      // Fetch updated order details
+      const orderDetails = await query('SELECT shipping_address, payment_method FROM orders WHERE id = $1', [orderId]);
       const itemsRes = await query('SELECT * FROM order_items WHERE order_id = $1', [orderId]);
 
       const receiptNumber = `RCPT-UB-${orderId.slice(0, 8).toUpperCase()}`;
@@ -363,9 +443,9 @@ export async function ordersRoutes(app: FastifyInstance) {
         totalAmount,
         currency: 'INR',
         confirmedAt: new Date().toISOString(),
-        shippingAddress: updatedOrder.rows[0].shipping_address,
+        shippingAddress: orderDetails.rows[0]?.shipping_address,
         items: itemsRes.rows,
-        paymentDetails: paymentDetails || { method: updatedOrder.rows[0].payment_method },
+        paymentDetails: paymentDetails || { method: orderDetails.rows[0]?.payment_method },
       });
     } catch (err: any) {
       request.log.error(err, 'Payment verification error');
@@ -390,49 +470,30 @@ export async function ordersRoutes(app: FastifyInstance) {
     }
 
     try {
-      await withTransaction(async (client) => {
-        const orderRes = await client.query('SELECT status, payment_status FROM orders WHERE id = $1', [orderId]);
-        if (orderRes.rows.length === 0) return;
+      // Verify the order actually exists / is releasable before claiming success.
+      const result = await withTransaction(async (client) =>
+        cancelOrderAndReleaseStock(client, orderId, { allowedStatuses: ['accepted', 'processing'] })
+      );
 
-        const { status, payment_status } = orderRes.rows[0];
-        // If already captured or cancelled, do nothing
-        if (payment_status === 'captured' || status === 'cancelled') return;
-
-        // Restore reserved inventory in Neon DB
-        const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1', [orderId]);
-        for (const item of items.rows) {
-          if (item.product_id) {
-            await client.query(
-              `
-              UPDATE products
-              SET stock_quantity = stock_quantity + $1,
-                  in_stock = true,
-                  version = version + 1,
-                  updated_at = CURRENT_TIMESTAMP
-              WHERE id = $2;
-              `,
-              [item.quantity, item.product_id]
-            );
-          }
+      if (!result.cancelled) {
+        const current = await query('SELECT status, payment_status FROM orders WHERE id = $1', [orderId]);
+        if (current.rowCount === 0) {
+          return reply.status(404).send({ error: 'ORDER_NOT_FOUND', message: 'Order not found' });
         }
-
-        await client.query(
-          `
-          UPDATE orders
-          SET status = 'cancelled',
-              payment_status = 'failed',
-              version = version + 1,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $1;
-          `,
-          [orderId]
-        );
-      });
+        const row = current.rows[0];
+        return reply.status(409).send({
+          error: 'ORDER_NOT_CANCELLABLE',
+          message: `This order can no longer be cancelled here (status: ${row.status}, payment: ${row.payment_status}).`,
+          status: row.status,
+          paymentStatus: row.payment_status,
+        });
+      }
 
       return reply.send({
         success: true,
         orderId,
         status: 'cancelled',
+        reservationsReleased: result.released,
         message: 'Order reservation cancelled and inventory restored.',
       });
     } catch (err: any) {
@@ -525,7 +586,18 @@ export async function ordersRoutes(app: FastifyInstance) {
           ]
         );
 
-        for (const it of verifiedItems) {
+        // Track coupon usage if a coupon was applied
+        if (cleanCoupon && discountAmount > 0 && resolvedUserUuid) {
+          await client.query(
+            `
+            INSERT INTO coupon_usages (coupon_code, user_id, order_id, discount_amount)
+            VALUES ($1, $2, $3, $4)
+            `,
+            [cleanCoupon, resolvedUserUuid, orderId, discountAmount]
+          );
+        }
+
+        for (const it of [...verifiedItems].sort((a, b) => a.productId.localeCompare(b.productId))) {
           await client.query(
             `
             INSERT INTO order_items (
@@ -537,9 +609,25 @@ export async function ordersRoutes(app: FastifyInstance) {
             [orderId, it.productId, it.productName, it.unitPrice, it.quantity, it.imageUrl || '']
           );
         }
+        // Reserve inventory against the accepted order so the units are held
+        // while the saga runs; the queue commits them on success and the
+        // reapers release them if the saga never lands.
+        await reserveStock(client, orderId, verifiedItems);
       });
-    } catch {
-      // Memory fallback if DB is temporarily offline
+    } catch (err: any) {
+      // Never acknowledge an order the database did not persist.
+      if (err.message?.startsWith('INSUFFICIENT_STOCK_RACE:')) {
+        const [, prodName, available] = err.message.split(':');
+        return reply.status(409).send({
+          error: 'CONCURRENT_STOCK_DEPLETION',
+          message: `Stock for "${prodName}" was just purchased by another customer (only ${available ?? 0} left).`,
+        });
+      }
+      request.log.error({ err }, 'Failed to persist accepted order');
+      return reply.status(500).send({
+        error: 'ORDER_PERSISTENCE_FAILED',
+        message: 'We could not place this order. Please try again.',
+      });
     }
 
     // 3. Offload Inventory Deduction & Saga Validation to BullMQ Queue
@@ -578,50 +666,23 @@ export async function ordersRoutes(app: FastifyInstance) {
     try {
       const { verifiedItems, subtotal, discountAmount: validatedDiscount, couponCode: cleanCoupon, shippingFee, totalAmount } =
         await resolveAndVerifyItems(items, couponCode, discountAmount);
+      const expectedTotal = (request.body as any).expectedTotal;
+      if (typeof expectedTotal !== 'number' || Math.round(expectedTotal * 100) !== Math.round(totalAmount * 100)) {
+        return reply.code(409).send({ error: 'PRICE_CHANGED', message: 'Prices have changed. Review your cart and try again.' });
+      }
       const amountInPaise = Math.round(totalAmount * 100);
       const orderId = crypto.randomUUID();
 
-      // Create Razorpay Order via official SDK or compliant fallback
-      let razorpayOrderId = `order_${crypto.randomBytes(8).toString('hex')}`;
-      try {
-        if (config.razorpay.keyId && config.razorpay.keySecret && !config.razorpay.keySecret.includes('test_ub2026')) {
-          const rzp = new (Razorpay as any)({
-            key_id: config.razorpay.keyId,
-            key_secret: config.razorpay.keySecret,
-          });
-          const rzpOrder = await rzp.orders.create({
-            amount: amountInPaise,
-            currency: 'INR',
-            receipt: `ub_${orderId.slice(0, 8)}`,
-            notes: { orderId, customer: shippingAddress.fullName, phone: shippingAddress.phone },
-          });
-          if (rzpOrder?.id) {
-            razorpayOrderId = rzpOrder.id;
-          }
-        }
-      } catch (rzpErr: any) {
-        request.log.warn({ err: rzpErr.message }, 'Razorpay API call failed, using sandbox fallback order ID');
+      if (!config.razorpay.keyId || !config.razorpay.keySecret) {
+        return reply.code(503).send({ error: 'PAYMENT_UNAVAILABLE', message: 'Online payments are not configured. Please use Cash on Delivery.' });
       }
+      const rzp = new Razorpay({ key_id: config.razorpay.keyId, key_secret: config.razorpay.keySecret });
+      const gatewayOrder = await rzp.orders.create({ amount: amountInPaise, currency: 'INR', receipt: orderId });
+      const razorpayOrderId = gatewayOrder.id;
+      if (!razorpayOrderId) throw new Error('PAYMENT_GATEWAY_UNAVAILABLE');
 
-      // Atomically lock inventory in Neon PostgreSQL
+      // Atomically reserve inventory in Neon PostgreSQL (payment-first: reserve only)
       await withTransaction(async (client) => {
-        for (const it of verifiedItems) {
-          const updateRes = await client.query(
-            `UPDATE products
-             SET stock_quantity = stock_quantity - $1,
-                 version = version + 1,
-                 in_stock = (stock_quantity - $1 > 0),
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = $2 AND stock_quantity >= $1
-             RETURNING stock_quantity;`,
-            [it.quantity, it.productId]
-          );
-
-          if (updateRes.rowCount === 0) {
-            throw new Error(`Atomic lock failed: Insufficient stock for ${it.productName}`);
-          }
-        }
-
         const effectiveAddress = {
           ...shippingAddress,
           email: (shippingAddress as any).email || (request.body as any).userEmail || 'customer@urbanblade.in',
@@ -648,8 +709,22 @@ export async function ordersRoutes(app: FastifyInstance) {
           ]
         );
 
+        // Track coupon usage if a coupon was applied
+        if (cleanCoupon && validatedDiscount > 0 && resolvedUserUuid) {
+          await client.query(
+            `
+            INSERT INTO coupon_usages (coupon_code, user_id, order_id, discount_amount)
+            VALUES ($1, $2, $3, $4)
+            `,
+            [cleanCoupon, resolvedUserUuid, orderId, validatedDiscount]
+          );
+        }
+
+        // Reserve inventory against this order (ledger row + stock_reserved bump).
+        await reserveStock(client, orderId, verifiedItems);
+
         // Insert order line items
-        for (const it of verifiedItems) {
+        for (const it of [...verifiedItems].sort((a, b) => a.productId.localeCompare(b.productId))) {
           await client.query(
             `INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, quantity, image_url)
              VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)`,
@@ -693,48 +768,24 @@ export async function ordersRoutes(app: FastifyInstance) {
     }
 
     try {
-      // 1. Cryptographic HMAC-SHA256 signature verification
-      const bodyToSign = `${razorpayOrderId}|${razorpayPaymentId}`;
-      const expectedSignature = crypto
-        .createHmac('sha256', config.razorpay.keySecret)
-        .update(bodyToSign)
-        .digest('hex');
-
-      const isRealSignatureValid =
-        razorpaySignature &&
-        expectedSignature.length === razorpaySignature.length &&
-        crypto.timingSafeEqual(Buffer.from(expectedSignature), Buffer.from(razorpaySignature));
-
-      const isTestSignature =
-        !config.isProduction &&
-        (razorpaySignature?.startsWith('test_') || razorpayPaymentId.startsWith('pay_test_') || razorpayPaymentId.startsWith('pay_sim_'));
-
-      if (!isRealSignatureValid && !isTestSignature) {
-        request.log.warn({ orderId, razorpayPaymentId }, 'Tampered or invalid Razorpay signature detected');
-        return reply.status(400).send({
-          error: 'INVALID_SIGNATURE',
-          message: 'Razorpay cryptographic payment verification failed. Potential tampering detected.',
-        });
+      const stored = await query('SELECT * FROM orders WHERE id = $1', [orderId]);
+      const storedOrder = stored.rows[0];
+      if (!storedOrder || storedOrder.payment_method !== 'Razorpay' || storedOrder.idempotency_key !== razorpayOrderId) {
+        return reply.code(400).send({ error: 'ORDER_MISMATCH' });
       }
-
-      // 2. Update order in Neon DB to confirmed & captured with transaction_id
-      const updateRes = await query(
-        `UPDATE orders
-         SET status = 'confirmed',
-             payment_status = 'captured',
-             payment_method = 'Razorpay',
-             transaction_id = $3,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id::text = $1 OR idempotency_key = $2
-         RETURNING *`,
-        [orderId, razorpayOrderId, razorpayPaymentId]
-      );
-
-      if (updateRes.rows.length === 0) {
-        return reply.status(404).send({ error: 'ORDER_NOT_FOUND', message: 'Order not found in Neon DB' });
+      if (!config.razorpay.keySecret) return reply.code(503).send({ error: 'PAYMENT_UNAVAILABLE' });
+      const expectedSignature = crypto.createHmac('sha256', config.razorpay.keySecret)
+        .update(`${storedOrder.idempotency_key}|${razorpayPaymentId}`).digest('hex');
+      if (typeof razorpaySignature !== 'string' || !/^[a-f0-9]{64}$/.test(razorpaySignature) ||
+          !crypto.timingSafeEqual(Buffer.from(expectedSignature), Buffer.from(razorpaySignature))) {
+        return reply.code(400).send({ error: 'INVALID_SIGNATURE', message: 'Payment verification failed.' });
       }
-
-      const order = updateRes.rows[0];
+      await settleCapturedPayment(razorpayPaymentId, orderId);
+      const current = await query('SELECT * FROM orders WHERE id = $1', [orderId]);
+      const order = current.rows[0];
+      if (order.payment_status !== 'captured' || order.razorpay_payment_id !== razorpayPaymentId) {
+        return reply.code(409).send({ error: 'ORDER_NOT_PENDING', message: 'Order requires payment reconciliation. Please contact support.' });
+      }
       const itemsRes = await query(
         `SELECT id, product_name, unit_price, quantity, image_url FROM order_items WHERE order_id = $1`,
         [order.id]
@@ -791,18 +842,23 @@ export async function ordersRoutes(app: FastifyInstance) {
     try {
       const { verifiedItems, subtotal, discountAmount: validatedDiscount, couponCode: cleanCoupon, shippingFee, totalAmount } =
         await resolveAndVerifyItems(items, couponCode, discountAmount);
+      const expectedTotal = (request.body as any).expectedTotal;
+      if (typeof expectedTotal !== 'number' || Math.round(expectedTotal * 100) !== Math.round(totalAmount * 100)) {
+        return reply.code(409).send({ error: 'PRICE_CHANGED', message: 'Prices have changed. Review your cart and try again.' });
+      }
       const orderId = crypto.randomUUID();
 
       await withTransaction(async (client) => {
-        for (const it of verifiedItems) {
+        for (const it of [...verifiedItems].sort((a, b) => a.productId.localeCompare(b.productId))) {
+          // Lock the product row for update
+          await client.query('SELECT 1 FROM products WHERE id = $1 FOR UPDATE', [it.productId]);
           const updateRes = await client.query(
             `UPDATE products
-             SET stock_quantity = stock_quantity - $1,
+             SET stock_reserved = stock_reserved + $1,
                  version = version + 1,
-                 in_stock = (stock_quantity - $1 > 0),
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = $2 AND stock_quantity >= $1
-             RETURNING stock_quantity;`,
+             WHERE id = $2 AND (stock_quantity - stock_reserved) >= $1
+             RETURNING stock_quantity, stock_reserved;`,
             [it.quantity, it.productId]
           );
 
@@ -817,6 +873,22 @@ export async function ordersRoutes(app: FastifyInstance) {
         };
         const resolvedUserUuid = await resolveUserId(userId, effectiveAddress.email);
         const codTxId = `pay_cod_${orderId.slice(0, 8)}`;
+        // Commit stock reservation for COD (confirmed immediately)
+        for (const it of [...verifiedItems].sort((a, b) => a.productId.localeCompare(b.productId))) {
+          await client.query(
+            `
+            UPDATE products
+            SET stock_quantity = stock_quantity - $1,
+                stock_reserved = stock_reserved - $1,
+                in_stock = (stock_quantity - $1 > 0),
+                version = version + 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2;
+            `,
+            [it.quantity, it.productId]
+          );
+        }
+
         await client.query(
           `INSERT INTO orders (
             id, user_id, idempotency_key, status, subtotal, shipping_fee, total_amount, currency,
@@ -836,7 +908,18 @@ export async function ordersRoutes(app: FastifyInstance) {
           ]
         );
 
-        for (const it of verifiedItems) {
+        // Track coupon usage if a coupon was applied
+        if (cleanCoupon && validatedDiscount > 0 && resolvedUserUuid) {
+          await client.query(
+            `
+            INSERT INTO coupon_usages (coupon_code, user_id, order_id, discount_amount)
+            VALUES ($1, $2, $3, $4)
+            `,
+            [cleanCoupon, resolvedUserUuid, orderId, validatedDiscount]
+          );
+        }
+
+        for (const it of [...verifiedItems].sort((a, b) => a.productId.localeCompare(b.productId))) {
           await client.query(
             `INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, quantity, image_url)
              VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)`,
@@ -884,10 +967,17 @@ export async function ordersRoutes(app: FastifyInstance) {
   // ─── GET ORDER BY ID (PROTECTED WITH OWNERSHIP VERIFICATION) ─────────────
   app.get<{ Params: { orderId: string } }>(
     '/orders/:orderId',
-    { preHandler: [optionalAuth] },
+    { preHandler: [requireAuth] },
     async (request, reply) => {
       const { orderId } = request.params;
       const user = request.user;
+
+      if (!user) {
+        return reply.status(401).send({
+          error: 'AUTHENTICATION_REQUIRED',
+          message: 'Please sign in to view order details.',
+        });
+      }
 
       try {
         const orderRes = await query('SELECT * FROM orders WHERE id = $1 LIMIT 1', [orderId]);
@@ -899,8 +989,8 @@ export async function ordersRoutes(app: FastifyInstance) {
         const shipping = typeof order.shipping_address === 'string' ? JSON.parse(order.shipping_address) : order.shipping_address;
 
         // BOLA / IDOR ownership validation
-        if (user && user.role === 'customer') {
-          const isOwner = order.user_id === user.id || shipping?.email?.toLowerCase() === user.email?.toLowerCase();
+        if (user && user.role !== 'admin' && user.role !== 'vendor') {
+          const isOwner = order.user_id === user.id;
           if (!isOwner) {
             return reply.status(403).send({
               error: 'FORBIDDEN',
@@ -909,12 +999,46 @@ export async function ordersRoutes(app: FastifyInstance) {
           }
         }
 
-        const itemsRes = await query('SELECT * FROM order_items WHERE order_id = $1', [orderId]);
+        if (user.role === 'vendor') {
+          const vendorName = (user.vendorName || user.name).trim();
+          const vendorOrder = await query(
+            `SELECT 1
+             FROM order_items oi
+             LEFT JOIN products p ON p.id = oi.product_id
+             WHERE oi.order_id = $1
+               AND LOWER(p.vendor) = LOWER($2)
+             LIMIT 1`,
+            [orderId, vendorName]
+          );
+          if (vendorOrder.rows.length === 0) {
+            return reply.status(403).send({
+              error: 'FORBIDDEN',
+              message: 'This order does not contain products from your vendor account.',
+            });
+          }
+        }
+
+        const itemsRes = user.role === 'vendor'
+          ? await query(
+              `SELECT oi.*, p.vendor
+               FROM order_items oi
+               JOIN products p ON p.id = oi.product_id
+               WHERE oi.order_id = $1 AND LOWER(p.vendor) = LOWER($2)`,
+              [orderId, (user.vendorName || user.name).trim()]
+            )
+          : await query('SELECT * FROM order_items WHERE order_id = $1', [orderId]);
+        const vendorSubtotal = user.role === 'vendor'
+          ? itemsRes.rows.reduce(
+              (sum, item) => sum + Number(item.unit_price) * Number(item.quantity),
+              0
+            )
+          : null;
         return reply.send({
           ...order,
-          subtotal: Number(order.subtotal),
-          total_amount: Number(order.total_amount),
-          discount_amount: Number(order.discount_amount || 0),
+          subtotal: vendorSubtotal ?? Number(order.subtotal),
+          total_amount: vendorSubtotal ?? Number(order.total_amount),
+          discount_amount: user.role === 'vendor' ? 0 : Number(order.discount_amount || 0),
+          coupon_code: user.role === 'vendor' ? null : order.coupon_code,
           shipping_address: shipping,
           items: itemsRes.rows,
         });
@@ -927,7 +1051,7 @@ export async function ordersRoutes(app: FastifyInstance) {
   // ─── GET USER ORDERS HISTORY (SCOPED TO AUTHENTICATED USER) ───────────────
   app.get<{ Querystring: { email?: string; userId?: string } }>(
     '/orders',
-    { preHandler: [optionalAuth] },
+    { preHandler: [requireAuth] },
     async (request, reply) => {
       const { email, userId } = request.query || {};
       const user = request.user;
@@ -937,33 +1061,46 @@ export async function ordersRoutes(app: FastifyInstance) {
       let filterUserId: string | null = null;
       let filterEmail: string | null = null;
 
-      if (user && user.role === 'customer') {
+      if (user && user.role !== 'admin' && user.role !== 'vendor') {
         filterUserId = user.id;
         filterEmail = user.email;
-      } else if (user && (user.role === 'admin' || user.role === 'vendor')) {
+      } else if (user?.role === 'admin') {
         filterUserId = userId || null;
         filterEmail = email || null;
+      } else if (user?.role === 'vendor') {
+        // Vendor scope is applied below from the signed token, never from a
+        // caller-controlled query parameter.
       } else {
-        // Unauthenticated guest: MUST provide their email to view their orders, cannot dump the DB!
-        if (!email && !userId) {
+        // Guests may recover order history by the exact checkout email only.
+        // Arbitrary user IDs are not accepted because they enable enumeration.
+        if (!email) {
           return reply.status(401).send({
             error: 'AUTHENTICATION_REQUIRED',
             message: 'Please sign in or provide your registered order email to view orders.',
           });
         }
         filterEmail = email || null;
-        filterUserId = userId || null;
       }
 
       try {
+        const isVendorView = user?.role === 'vendor';
+        const subtotalSelect = isVendorView
+          ? `COALESCE(SUM(CASE WHEN LOWER(p.vendor) = LOWER($1)
+              THEN oi.unit_price * oi.quantity ELSE 0 END), 0)::numeric`
+          : 'o.subtotal::numeric';
+        const totalSelect = isVendorView
+          ? `COALESCE(SUM(CASE WHEN LOWER(p.vendor) = LOWER($1)
+              THEN oi.unit_price * oi.quantity ELSE 0 END), 0)::numeric`
+          : 'o.total_amount::numeric';
+        const itemScope = isVendorView ? 'AND LOWER(p.vendor) = LOWER($1)' : '';
         let sql = `
           SELECT 
             o.id, 
             o.user_id,
             o.status, 
-            o.subtotal::numeric, 
-            o.total_amount::numeric, 
-            o.discount_amount::numeric,
+            ${subtotalSelect} AS subtotal,
+            ${totalSelect} AS total_amount,
+            ${isVendorView ? '0::numeric' : 'o.discount_amount::numeric'} AS discount_amount,
             o.coupon_code,
             o.tracking_number,
             o.currency,
@@ -981,26 +1118,40 @@ export async function ordersRoutes(app: FastifyInstance) {
                   'product_name', oi.product_name,
                   'unit_price', oi.unit_price::numeric,
                   'quantity', oi.quantity,
-                  'image_url', oi.image_url
+                  'image_url', oi.image_url,
+                  'vendor', p.vendor
                 )
-              ) FILTER (WHERE oi.id IS NOT NULL), '[]'
+              ) FILTER (WHERE oi.id IS NOT NULL ${itemScope}), '[]'
             ) as items
           FROM orders o
           LEFT JOIN order_items oi ON oi.order_id = o.id
+          LEFT JOIN products p ON p.id = oi.product_id
         `;
 
         const params: any[] = [];
         const conditions: string[] = [];
 
         if (filterUserId && filterEmail) {
-          params.push(filterUserId, `%${filterEmail.trim()}%`);
-          conditions.push(`(o.user_id::text = $1 OR o.shipping_address::text ILIKE $2)`);
+          params.push(filterUserId);
+          conditions.push(`o.user_id::text = $1`);
         } else if (filterUserId) {
           params.push(filterUserId);
-          conditions.push(`(o.user_id::text = $1 OR o.shipping_address::text ILIKE '%' || $1 || '%')`);
+          conditions.push(`o.user_id::text = $1`);
         } else if (filterEmail) {
-          params.push(`%${filterEmail.trim()}%`);
-          conditions.push(`(o.shipping_address::text ILIKE $1 OR o.user_id::text ILIKE $1)`);
+          params.push(filterEmail.trim().toLowerCase());
+          conditions.push(`LOWER(COALESCE(o.shipping_address->>'email', '')) = $1`);
+        }
+
+        if (user?.role === 'vendor') {
+          params.push((user.vendorName || user.name).trim());
+          const vendorParam = `$${params.length}`;
+          conditions.push(`EXISTS (
+            SELECT 1
+            FROM order_items vendor_oi
+            LEFT JOIN products vendor_p ON vendor_p.id = vendor_oi.product_id
+            WHERE vendor_oi.order_id = o.id
+              AND LOWER(vendor_p.vendor) = LOWER(${vendorParam})
+          )`);
         }
 
         if (conditions.length > 0) {

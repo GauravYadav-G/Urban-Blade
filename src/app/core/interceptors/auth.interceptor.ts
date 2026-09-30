@@ -8,14 +8,6 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const token = account.getToken();
   const sessionId = account.getSessionId();
 
-  let headers = req.headers;
-  if (!headers.has('x-session-id')) {
-    headers = headers.set('x-session-id', sessionId);
-  }
-  if (token && !headers.has('Authorization')) {
-    headers = headers.set('Authorization', `Bearer ${token}`);
-  }
-
   // Prepend Render API backend URL when running in production (e.g. GoDaddy -> Render)
   let url = req.url;
   const isProd = !isDevMode() || environment.production;
@@ -29,6 +21,13 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     }
   }
 
+  const target = new URL(url, window.location.origin);
+  const allowedOrigins = new Set([window.location.origin, new URL(apiHost).origin]);
+  if (!isProd) allowedOrigins.add('http://localhost:4000');
+  if (!allowedOrigins.has(target.origin) || !target.pathname.startsWith('/api/')) return next(req);
+  let headers = req.headers;
+  if (!headers.has('x-session-id')) headers = headers.set('x-session-id', sessionId);
+  if (token && !headers.has('Authorization')) headers = headers.set('Authorization', `Bearer ${token}`);
   const authReq = req.clone({ url, headers });
   return next(authReq);
 };

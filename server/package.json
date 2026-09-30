@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "cluster": "tsx src/cluster.ts",
-    "build": "tsc && mkdir -p dist/db && cp src/db/*.sql src/db/*.json dist/db/ 2>/dev/null || cp src/db/products.seed.json dist/db/",
+    "build": "tsc && mkdir -p dist/db && cp src/db/*.sql src/db/*.json dist/db/",
     "start": "node dist/server.js",
     "render:build": "npm run build",
     "render:migrate": "node dist/db/migrate.js",
@@ -20,7 +20,8 @@
     "test:flow": "tsx scripts/test-e2e-complete-flow.ts",
     "test:sync": "tsx scripts/test-support-realtime-sync.ts",
     "test:admin": "tsx scripts/test-admin-and-order-fixes.ts",
-    "clean:orders": "tsx scripts/clean-orders.ts"
+    "clean:orders": "tsx scripts/clean-orders.ts",
+    "test": "npm run build && node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

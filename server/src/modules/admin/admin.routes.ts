@@ -1,13 +1,15 @@
+import bcrypt from 'bcryptjs';
 import { FastifyInstance } from 'fastify';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { query } from '../../db/pool.js';
+import { query, withTransaction } from '../../db/pool.js';
 import { invalidateCatalog, getOrSetCache } from '../../redis/cache.service.js';
 import { checkDbHealth } from '../../db/pool.js';
 import { checkRedisHealth } from '../../redis/client.js';
 import { getEventLoopLag, getMemoryUsage } from '../../core/circuit-breaker.js';
 import { syncOrderFromCarrierWebsite } from '../orders/carrier-portal.service.js';
+import { paymentGateway, settleCapturedPayment } from '../orders/payment-settlement.service.js';
 import { generateAiReply } from '../support/support.routes.js';
 import { requireAdmin, requireStaff } from '../../core/auth.middleware.js';
 
@@ -45,7 +47,8 @@ export async function adminRoutes(app: FastifyInstance) {
           COUNT(*)::int as total,
           COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::int as week_orders,
           COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days')::int as prev_week_orders,
-          COUNT(*) FILTER (WHERE status IN ('accepted', 'confirmed', 'pending'))::int as accepted,
+          COUNT(*) FILTER (WHERE status IN ('accepted', 'confirmed', 'pending') AND (payment_method IN ('cash_on_delivery', 'Cash on Delivery') OR payment_status = 'captured'))::int as accepted,
+          COUNT(*) FILTER (WHERE payment_method NOT IN ('cash_on_delivery', 'Cash on Delivery') AND payment_status != 'captured' AND status != 'cancelled')::int as incomplete_payment,
           COUNT(*) FILTER (WHERE status = 'processing')::int as processing,
           COUNT(*) FILTER (WHERE status = 'shipped')::int as shipped,
           COUNT(*) FILTER (WHERE status = 'delivered')::int as delivered,
@@ -105,6 +108,7 @@ export async function adminRoutes(app: FastifyInstance) {
         orders: {
           total: Number(orders.total) || 0,
           accepted: Number(orders.accepted) || 0,
+          incompletePayment: Number(orders.incomplete_payment) || 0,
           processing: Number(orders.processing) || 0,
           shipped: Number(orders.shipped) || 0,
           delivered: Number(orders.delivered) || 0,
@@ -225,12 +229,14 @@ export async function adminRoutes(app: FastifyInstance) {
   }
 
   // ─── 2. FULL PRODUCT INVENTORY & CRUD ─────────────────────────────────────
-  app.get<{ Querystring: { vendor?: string } }>('/admin/products', async (request, reply) => {
-    const { vendor } = request.query || {};
+  app.get<{ Querystring: { vendor?: string; limit?: string; offset?: string } }>('/admin/products', async (request, reply) => {
+    const { vendor, limit = '50', offset = '0' } = request.query || {};
+    const limitNum = Math.min(parseInt(limit, 10) || 50, 200);
+    const offsetNum = parseInt(offset, 10) || 0;
     try {
       let sql = `
-        SELECT id, slug, name, description, long_description, highlights, price, compare_at_price, 
-               currency, image_url, category, kind, vendor, audience, free_delivery, 
+        SELECT id, slug, name, description, long_description, highlights, price, compare_at_price,
+               currency, image_url, category, kind, vendor, audience, free_delivery,
                rating, review_count, badge, in_stock, stock_quantity, created_at
         FROM products
       `;
@@ -239,7 +245,8 @@ export async function adminRoutes(app: FastifyInstance) {
         params.push(vendor);
         sql += ` WHERE vendor ILIKE $1 `;
       }
-      sql += ` ORDER BY created_at DESC `;
+      sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2} `;
+      params.push(limitNum, offsetNum);
 
       const res = await query(sql, params);
       if (res.rows.length > 0) {
@@ -249,7 +256,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const list = seedProducts.filter((p) => !vendor || p.vendor?.toLowerCase().includes(vendor.toLowerCase()));
     return reply.send({
-      data: list.map(formatProductRow),
+      data: list.slice(offsetNum, offsetNum + limitNum).map(formatProductRow),
     });
   });
 
@@ -400,6 +407,22 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.status(400).send({
         error: 'INVALID_PRICE',
         message: 'Product price must be a non-negative number.',
+      });
+    }
+
+    // Allow-list for updatable fields (mass-assignment protection)
+    const allowedUpdateFields = new Set([
+      'name', 'price', 'compareAtPrice', 'compare_at_price',
+      'stockQuantity', 'stock_quantity', 'inStock', 'in_stock',
+      'badge', 'category', 'description', 'longDescription', 'long_description',
+      'imageUrl', 'image_url'
+    ]);
+    const providedFields = Object.keys(b);
+    const invalidFields = providedFields.filter(f => !allowedUpdateFields.has(f));
+    if (invalidFields.length > 0) {
+      return reply.status(400).send({
+        error: 'INVALID_FIELDS',
+        message: `Cannot update fields: ${invalidFields.join(', ')}`
       });
     }
 
@@ -629,87 +652,133 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   // ─── MODERN SEAMLESS ORDER STATE ADVANCEMENT & FULFILLMENT PIPELINE ───────
-  app.put<{ Params: { id: string }; Body: { status: string; trackingNumber?: string; notes?: string } }>(
-    '/admin/orders/:id/status',
-    async (request, reply) => {
+  app.put<{ Params: { id: string }; Body: { status: string; trackingNumber?: string } }>(
+    '/admin/orders/:id/status', { preHandler: [requireAdmin] }, async (request, reply) => {
       const { id } = request.params;
-      const { status, trackingNumber, notes } = request.body;
-
-      const validStatuses = ['accepted', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
-      if (!validStatuses.includes(status)) {
-        return reply.status(400).send({ error: 'INVALID_STATUS', message: `Status must be one of: ${validStatuses.join(', ')}` });
-      }
-
+      const { status, trackingNumber } = request.body;
       try {
-        // 1. If transitioning to cancelled, verify order is not already delivered and automatically restock
-        if (status === 'cancelled') {
-          const currentRes = await query('SELECT status FROM orders WHERE id::text = $1 OR idempotency_key = $1', [id]);
-          if (currentRes.rows.length > 0 && currentRes.rows[0].status === 'delivered') {
-            return reply.status(400).send({
-              error: 'CANNOT_CANCEL_DELIVERED',
-              message: 'Delivered orders cannot be cancelled once fulfilled.',
-            });
-          }
-
-          const itemsRes = await query('SELECT product_id, quantity FROM order_items WHERE order_id::text = $1', [id]);
-          for (const item of itemsRes.rows) {
-            if (item.product_id) {
-              await query(
-                `UPDATE products SET stock_quantity = stock_quantity + $1, in_stock = true, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-                [item.quantity, item.product_id]
-              );
+        const order = await withTransaction(async client => {
+          const result = await client.query('SELECT * FROM orders WHERE id::text = $1 FOR UPDATE', [id]);
+          const current = result.rows[0];
+          if (!current) throw new Error('ORDER_NOT_FOUND');
+          if (current.status === status) return current;
+          const transitions: Record<string, string[]> = {
+            accepted: ['processing', 'confirmed', 'cancelled'],
+            confirmed: ['processing', 'cancelled'],
+            pending: ['processing', 'confirmed', 'cancelled'],
+            processing: ['shipped', 'cancelled'],
+            shipped: ['delivered'],
+          };
+          if (!transitions[current.status]?.includes(status)) throw new Error('INVALID_STATUS_TRANSITION');
+          if (current.payment_method === 'Razorpay' && current.payment_status !== 'captured') throw new Error('PAYMENT_NOT_CAPTURED');
+          if (status === 'cancelled') {
+            if (current.payment_status === 'captured') throw new Error('REFUND_REQUIRED_BEFORE_CANCELLATION');
+            const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1 ORDER BY product_id', [current.id]);
+            for (const item of items.rows) {
+              if (item.product_id) await client.query('UPDATE products SET stock_quantity = stock_quantity + $1, in_stock = TRUE, version = version + 1 WHERE id = $2', [item.quantity, item.product_id]);
             }
           }
+          if (status === 'shipped' && !trackingNumber?.trim()) throw new Error('TRACKING_NUMBER_REQUIRED');
+          const updated = await client.query(`UPDATE orders SET status = $2,
+            tracking_number = COALESCE($3, tracking_number), updated_at = NOW(), version = version + 1
+            WHERE id = $1 RETURNING *`, [current.id, status, trackingNumber?.trim() || null]);
+          return updated.rows[0];
+        });
+        const items = await query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
+        return { ok: true, order: { ...order, items: items.rows }, status: order.status, trackingNumber: order.tracking_number };
+      } catch (err: any) {
+        request.log.warn({ err }, 'Order status update rejected');
+        return reply.code(err.message === 'ORDER_NOT_FOUND' ? 404 : 409).send({ error: err.message, message: 'Order update could not be completed: ' + err.message });
+      }
+    }
+  );
+
+  // ─── REAL-TIME RAZORPAY PAYMENT GATEWAY RECONCILIATION ───────────────────
+  app.post<{ Params: { id: string } }>(
+    '/admin/orders/:id/reconcile-payment',
+    { preHandler: [requireStaff] },
+    async (request, reply) => {
+      const { id } = request.params;
+      try {
+        const orderRes = await query('SELECT * FROM orders WHERE id::text = $1', [id]);
+        if (orderRes.rows.length === 0) {
+          return reply.status(404).send({ error: 'ORDER_NOT_FOUND', message: 'Order not found' });
         }
+        const order = orderRes.rows[0];
 
-        // 2. Generate tracking number if transitioning to shipped/delivered
-        const cleanTracking = trackingNumber || (status === 'shipped' || status === 'delivered'
-          ? `TRK-UB-${id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
-          : null);
-
-        // 3. Atomically update orders table
-        const res = await query(
-          `
-          UPDATE orders 
-          SET status = $1,
-              tracking_number = COALESCE($2, tracking_number),
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id::text = $3 OR idempotency_key = $3
-          RETURNING *;
-          `,
-          [status, cleanTracking, id]
-        );
-
-        if (res.rows.length > 0) {
-          const updated = res.rows[0];
-          const itemsRes = await query('SELECT * FROM order_items WHERE order_id = $1', [updated.id]);
-          const completeOrder = {
-            ...updated,
-            subtotal: Number(updated.subtotal),
-            total_amount: Number(updated.total_amount),
-            discount_amount: Number(updated.discount_amount || 0),
-            items: itemsRes.rows.map((oi) => ({
-              id: oi.id,
-              product_id: oi.product_id,
-              product_name: oi.product_name,
-              unit_price: Number(oi.unit_price),
-              quantity: oi.quantity,
-              image_url: oi.image_url,
-            })),
-          };
+        if (order.payment_status === 'captured') {
+          const itemsRes = await query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
           return reply.send({
             ok: true,
-            order: completeOrder,
-            status: updated.status,
-            trackingNumber: updated.tracking_number,
-            updatedAt: updated.updated_at,
+            updated: false,
+            paymentStatus: 'captured',
+            order: { ...order, items: itemsRes.rows },
+            message: 'Payment is already captured and settled in database.',
           });
         }
-      } catch (err: any) {
-        request.log.error(err, 'Failed to advance order status');
-      }
 
-      return reply.send({ ok: true, id, status, trackingNumber });
+        if (order.payment_method !== 'Razorpay') {
+          return reply.send({
+            ok: true,
+            updated: false,
+            paymentStatus: order.payment_status,
+            message: `Order uses ${order.payment_method}. Gateway verification applies to Razorpay checkouts.`,
+          });
+        }
+
+        let gateway;
+        try {
+          gateway = paymentGateway();
+        } catch {
+          return reply.status(503).send({
+            error: 'GATEWAY_UNAVAILABLE',
+            message: 'Razorpay API credentials not configured in server/.env',
+          });
+        }
+
+        const payments = await gateway.orders.fetchPayments(order.idempotency_key);
+        const captured = payments.items?.find((p: any) => p.status === 'captured');
+
+        if (captured) {
+          await settleCapturedPayment(captured.id, order.id);
+          const updated = await query('SELECT * FROM orders WHERE id = $1', [order.id]);
+          const items = await query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
+          return reply.send({
+            ok: true,
+            updated: true,
+            paymentStatus: 'captured',
+            order: { ...updated.rows[0], items: items.rows },
+            message: `🎉 Payment confirmed on Razorpay (Payment ID: ${captured.id})! Order is now confirmed.`,
+          });
+        }
+
+        const failed = payments.items?.find((p: any) => p.status === 'failed');
+        if (failed && order.payment_status !== 'failed') {
+          await query("UPDATE orders SET payment_status = 'failed', updated_at = NOW() WHERE id = $1", [order.id]);
+          const updated = await query('SELECT * FROM orders WHERE id = $1', [order.id]);
+          const items = await query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
+          return reply.send({
+            ok: true,
+            updated: true,
+            paymentStatus: 'failed',
+            order: { ...updated.rows[0], items: items.rows },
+            message: 'Razorpay confirmed the customer payment attempt failed.',
+          });
+        }
+
+        return reply.send({
+          ok: true,
+          updated: false,
+          paymentStatus: order.payment_status,
+          message: 'Razorpay reports no captured payment for this order yet. It remains pending/incomplete.',
+        });
+      } catch (err: any) {
+        request.log.error(err, 'Payment reconciliation error');
+        return reply.status(500).send({
+          error: 'RECONCILIATION_ERROR',
+          message: err.message || 'Failed to reconcile payment with Razorpay.',
+        });
+      }
     }
   );
 
@@ -819,7 +888,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const b = request.body || {};
     const customerName = b.customerName || b.customer_name || 'Salon Guest';
     const customerEmail = b.customerEmail || b.customer_email || 'client@urbanblade.in';
-    const customerPhone = b.customerPhone || b.customer_phone || '9015618265';
+    const customerPhone = b.customerPhone || b.customer_phone || null;
     const bookingDate = b.bookingDate || b.booking_date || new Date().toISOString().split('T')[0];
     const timeSlot = b.timeSlot || b.time_slot || '11:00 AM';
     const totalPrice = Number(b.totalPrice ?? b.total_price ?? 499);
@@ -1064,7 +1133,8 @@ export async function adminRoutes(app: FastifyInstance) {
     const v = request.body;
     const slug = v.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const id = `vnd-${slug}`;
-    const password = v.password || 'Vendor@2026';
+    if (!v.password || v.password.length < 10 || Buffer.byteLength(v.password) > 72) return reply.code(400).send({ error: 'STRONG_PASSWORD_REQUIRED' });
+    const password = await bcrypt.hash(v.password, 12);
 
     try {
       const res = await query(
@@ -1096,7 +1166,7 @@ export async function adminRoutes(app: FastifyInstance) {
           JSON.stringify(v.payoutAccount || { bank: 'HDFC Bank', accountNo: 'XXXXXX1234', ifsc: 'HDFC0001234', upi: `${slug}@upi` }),
         ]
       );
-      return reply.status(201).send({ ok: true, vendor: res.rows[0] });
+      return reply.status(201).send({ ok: true, vendor: { ...res.rows[0], password: undefined } });
     } catch (err: any) {
       return reply.status(500).send({ error: 'FAILED_TO_CREATE_VENDOR', message: err.message });
     }
@@ -1145,7 +1215,7 @@ export async function adminRoutes(app: FastifyInstance) {
         ]
       );
       if (res.rows.length === 0) return reply.status(404).send({ error: 'VENDOR_NOT_FOUND' });
-      return reply.send({ ok: true, vendor: res.rows[0] });
+      return reply.send({ ok: true, vendor: { ...res.rows[0], password: undefined } });
     } catch (err: any) {
       return reply.status(500).send({ error: 'FAILED_TO_UPDATE_VENDOR', message: err.message });
     }
@@ -1153,15 +1223,14 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post<{
     Body: { email: string; password: string };
-  }>('/admin/vendors/login', async (request, reply) => {
+  }>('/admin/vendors/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
     const { email, password } = request.body;
     try {
-      const res = await query('SELECT * FROM vendors WHERE LOWER(email) = LOWER($1) AND password = $2 AND status = $3', [
+      const res = await query('SELECT * FROM vendors WHERE LOWER(email) = LOWER($1) AND status = $2', [
         email.trim().toLowerCase(),
-        password,
         'active',
       ]);
-      if (res.rows.length > 0) {
+      if (res.rows.length > 0 && await bcrypt.compare(password, res.rows[0].password)) {
         const vendor = res.rows[0];
         const token = app.jwt.sign(
           {

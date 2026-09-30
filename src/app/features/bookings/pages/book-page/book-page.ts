@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { CatalogService } from '@core/services/catalog.service';
@@ -21,7 +21,7 @@ export class BookPage {
 
   readonly salon = SALON;
   readonly settings = this.siteSettings.settings;
-  readonly services = this.catalog.byCategory('services');
+  readonly services = computed(() => this.catalog.byCategory('services'));
   submitted = false;
   lastBooking: AdminBooking | null = null;
 
@@ -39,7 +39,7 @@ export class BookPage {
     }
 
     const val = this.form.getRawValue();
-    const serviceMatch = this.services.find((s: any) => s.name === val.service);
+    const serviceMatch = this.services().find((s: any) => s.name === val.service);
 
     const booking: AdminBooking = {
       id: `bk-ub-${Date.now().toString().slice(-5)}`,
@@ -65,7 +65,7 @@ export class BookPage {
     this.form.reset({
       name: '',
       phone: '',
-      service: this.services[0]?.name ?? 'Skin-Fade Haircut & Beard Trim',
+      service: this.services()[0]?.name ?? 'Skin-Fade Haircut & Beard Trim',
       date: '',
     });
   }

@@ -4,15 +4,20 @@ import { config } from '../config.js';
 const { Pool } = pg;
 
 // High-performance connection pool configuration with Neon / SSL support
+const databaseUrl = new URL(config.database.url);
 const connectionString = config.database.url;
 const isNeonOrSsl =
   connectionString.includes('neon.tech') ||
   connectionString.includes('sslmode=require') ||
   process.env.NODE_ENV === 'production';
 
+if (isNeonOrSsl) {
+  for (const key of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert']) databaseUrl.searchParams.delete(key);
+}
+
 export const pool = new Pool({
-  connectionString,
-  ssl: isNeonOrSsl ? { rejectUnauthorized: false } : false,
+  connectionString: databaseUrl.toString(),
+  ssl: isNeonOrSsl ? { rejectUnauthorized: true, ...(process.env.DATABASE_CA_CERT ? { ca: process.env.DATABASE_CA_CERT } : {}) } : false,
   min: config.database.poolMin,
   max: config.database.poolMax,
   idleTimeoutMillis: 30000,

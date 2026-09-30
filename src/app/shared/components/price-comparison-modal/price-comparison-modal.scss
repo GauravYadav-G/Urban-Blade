@@ -1,0 +1,477 @@
+.price-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.price-modal {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+  max-width: 900px;
+  width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.25s ease-out;
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Header */
+.price-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.price-modal__product {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.price-modal__product-img {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid #e2e8f0;
+}
+
+.price-modal__product-info {
+  min-width: 0;
+}
+
+.price-modal__product-name {
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.price-modal__product-tagline {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.price-modal__close {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    color: #0f172a;
+  }
+}
+
+/* Best Price Summary */
+.price-modal__best-price {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  flex-shrink: 0;
+}
+
+.price-modal__best-price.best-is-us {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border-bottom-color: #a7f3d0;
+}
+
+.best-price__label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+.best-price__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.875rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.best-price__badge--us {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.best-price__badge--marketplace {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.best-price__amount {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.best-price__savings {
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #059669;
+  margin-top: 0.375rem;
+}
+
+.best-price__savings--negative {
+  color: #dc2626;
+}
+
+.best-price__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 0.75rem auto 0;
+  padding: 0.625rem 1.25rem;
+  background: #0f172a;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.825rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: #1e293b;
+  }
+}
+
+/* Table Container */
+.price-modal__table-container {
+  flex: 1;
+  overflow: auto;
+  padding: 0.75rem 1.5rem 1.5rem;
+}
+
+/* Table */
+.price-modal__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.price-modal__table th {
+  text-align: left;
+  padding: 0.75rem 0.5rem;
+  font-weight: 700;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.price-modal__table td {
+  padding: 0.875rem 0.5rem;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.price-modal__table tbody tr {
+  transition: background 0.1s ease;
+}
+
+.price-modal__table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.price-modal__table tbody tr.best-row {
+  background: #fefce8;
+}
+
+.price-modal__table tbody tr.best-row:hover {
+  background: #fef9c3;
+}
+
+/* Marketplace Cell */
+.price-modal__marketplace {
+  min-width: 180px;
+}
+
+.marketplace-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.marketplace-cell--us {
+  color: #0f172a;
+}
+
+.marketplace__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.marketplace-cell--us .marketplace__icon {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.marketplace__name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Price Cell */
+.price-modal__price {
+  min-width: 100px;
+}
+
+.price-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.price-cell--us .price-cell__current {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.price-cell__current {
+  font-weight: 700;
+  color: #1e293b;
+  font-size: 0.95rem;
+}
+
+.price-cell__compare {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  text-decoration: line-through;
+}
+
+.price-cell__na {
+  color: #94a3b8;
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+/* Status Badge */
+.price-modal__status {
+  min-width: 110px;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.status-success {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.status-rate-limited {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.status-failed {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.status-badge--us {
+  background: #e0e7ff;
+  color: #3730a3;
+  border: 1px solid #c7d2fe;
+}
+
+/* Updated Column */
+.price-modal__updated {
+  min-width: 100px;
+}
+
+.updated-text {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+/* Action Column */
+.price-modal__action {
+  min-width: 80px;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.725rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+
+  &:hover {
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+    color: #0f172a;
+  }
+
+  svg {
+    flex-shrink: 0;
+  }
+}
+
+.action-na {
+  font-size: 0.725rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* Footer */
+.price-modal__footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+
+.price-modal__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.5;
+
+  svg {
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+    color: #94a3b8;
+  }
+}
+
+.price-modal__last-refresh {
+  margin: 0;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  text-align: right;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .price-modal {
+    max-height: 95vh;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .price-modal__header {
+    padding: 1rem;
+  }
+
+  .price-modal__best-price {
+    padding: 1rem;
+  }
+
+  .price-modal__table-container {
+    padding: 0.5rem 1rem 1rem;
+  }
+
+  .price-modal__table {
+    font-size: 0.78rem;
+  }
+
+  .price-modal__table th,
+  .price-modal__table td {
+    padding: 0.625rem 0.375rem;
+  }
+
+  .marketplace__name {
+    font-size: 0.8rem;
+  }
+
+  .price-modal__footer {
+    padding: 0.75rem 1rem;
+  }
+
+  .best-price__amount {
+    font-size: 1.5rem;
+  }
+}

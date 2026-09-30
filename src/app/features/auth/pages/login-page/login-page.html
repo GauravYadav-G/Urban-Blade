@@ -42,9 +42,9 @@
 
         <p class="auth-card__visual-desc">
           @if (mode() === 'login') {
-            Access your orders, track shipments, book salon chairs, and unlock member rewards.
+            Access your orders, track shipments, and book salon chairs.
           } @else {
-            Register for exclusive VIP member pricing, priority chair booking, and genuine salon formulas.
+            Register for priority chair booking and genuine salon formulas.
           }
         </p>
 
@@ -65,10 +65,10 @@
             </div>
           </li>
           <li class="perk-item">
-            <span class="perk-icon">💎</span>
+            <span class="perk-icon">⚡</span>
             <div>
-              <strong>Blade Club Privileges</strong>
-              <p>Earn reward coins on every order and unlock private seasonal drops.</p>
+              <strong>Direct Express Delivery</strong>
+              <p>Fast doorstep delivery with live tracking on all grooming products.</p>
             </div>
           </li>
         </ul>
@@ -105,7 +105,7 @@
         <p class="panel-subtitle">
           {{ mode() === 'login' 
             ? 'Sign in to access your curated bag, order history & appointments.' 
-            : 'Experience premium salon products & member benefits in minutes.' }}
+            : 'Experience premium salon products & salon bookings in minutes.' }}
         </p>
 
         <!-- Segmented Tab Switcher (Figma Inspired) -->
@@ -138,44 +138,6 @@
               <line x1="23" y1="11" x2="17" y2="11"/>
             </svg>
             Create Account
-          </button>
-        </div>
-      </div>
-
-      <!-- Quick 1-Click Demo Accounts Banner -->
-      <div class="demo-box">
-        <div class="demo-box__header">
-          <span class="demo-icon">⚡</span>
-          <span class="demo-label">1-Click Quick Demo Login:</span>
-          @if (demoFilledBadge()) {
-            <span class="demo-badge-active">{{ demoFilledBadge() }}</span>
-          }
-        </div>
-        <div class="demo-box__chips">
-          <button
-            type="button"
-            class="demo-chip demo-chip--customer"
-            (click)="fillCustomerDemo()"
-            title="Autofill standard customer credentials"
-          >
-            <span class="chip-avatar">👤</span>
-            <div class="chip-text">
-              <strong>Customer Demo</strong>
-              <small>{{ demoCustomer.email }}</small>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            class="demo-chip demo-chip--admin"
-            (click)="fillAdminDemo()"
-            title="Autofill master admin credentials"
-          >
-            <span class="chip-avatar">🛡️</span>
-            <div class="chip-text">
-              <strong>Master Admin</strong>
-              <small>{{ demoAdmin.email }}</small>
-            </div>
           </button>
         </div>
       </div>
@@ -403,7 +365,7 @@
                 [type]="showPassword() ? 'text' : 'password'"
                 formControlName="password"
                 autocomplete="new-password"
-                placeholder="At least 6 characters"
+                placeholder="At least 10 characters"
                 required
               />
               <button
@@ -446,7 +408,7 @@
             }
 
             @if (registerForm.controls.password.touched && registerForm.controls.password.invalid) {
-              <p class="field-error">Password must be at least 6 characters.</p>
+              <p class="field-error">Password must be at least 10 characters.</p>
             }
           </div>
 

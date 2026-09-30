@@ -1,4 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -42,8 +43,8 @@ export class LoginPage {
 
   // Sign In Form
   readonly loginForm = this.fb.nonNullable.group({
-    email: [DEMO_ACCOUNT.email as string, [Validators.required, Validators.email]],
-    password: [DEMO_ACCOUNT.password as string, [Validators.required, Validators.minLength(4)]],
+    email: ['', [Validators.required, Validators.email]],
+    password: ['', [Validators.required, Validators.minLength(4)]],
     rememberMe: [true],
   });
 
@@ -52,14 +53,16 @@ export class LoginPage {
     name: ['', [Validators.required, Validators.minLength(2)]],
     email: ['', [Validators.required, Validators.email]],
     phone: ['', [Validators.pattern(/^(\+91[\s-]?)?[6-9]\d{9}$/)]],
-    password: ['', [Validators.required, Validators.minLength(6)]],
+    password: ['', [Validators.required, Validators.minLength(10)]],
     confirmPassword: ['', [Validators.required]],
     agreeTerms: [true, [Validators.requiredTrue]],
   });
 
+  readonly registrationValues = toSignal(this.registerForm.valueChanges, { initialValue: this.registerForm.getRawValue() });
+
   // Dynamic Password Strength Meter
   readonly passwordStrength = computed(() => {
-    const pwd = this.registerForm.controls.password.value;
+    const pwd = this.registrationValues().password || '';
     if (!pwd) return { score: 0, label: 'None', textClass: '', bars: [false, false, false, false] };
 
     let score = 0;
@@ -91,8 +94,8 @@ export class LoginPage {
 
   // Dynamic Confirm Password Match
   readonly passwordsMatch = computed(() => {
-    const pwd = this.registerForm.controls.password.value;
-    const confirm = this.registerForm.controls.confirmPassword.value;
+    const pwd = this.registrationValues().password || '';
+    const confirm = this.registrationValues().confirmPassword || '';
     if (!confirm) return null;
     return pwd === confirm;
   });

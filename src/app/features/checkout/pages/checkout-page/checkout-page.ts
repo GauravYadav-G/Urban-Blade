@@ -56,12 +56,12 @@ export class CheckoutPage implements OnInit {
   readonly hasActiveCoupons = computed(() => this.couponService.coupons().some((c) => c.isActive));
 
   // Reactive ecommerce rules from Admin Settings
-  readonly freeShippingThreshold = computed(() => this.settings().ecommerce.freeShippingThreshold);
-  readonly standardShippingFee = computed(() => this.settings().ecommerce.standardShippingFee);
-  readonly freeShippingEnabled = computed(() => this.settings().ecommerce.freeShippingEnabled ?? true);
+  readonly freeShippingThreshold = computed(() => 999);
+  readonly standardShippingFee = computed(() => 99);
+  readonly freeShippingEnabled = computed(() => true);
   readonly taxRatePercent = computed(() => this.settings().ecommerce.taxRatePercent);
   readonly taxEnabled = computed(() => this.settings().ecommerce.taxEnabled ?? true);
-  readonly taxInclusive = computed(() => this.settings().ecommerce.taxInclusive ?? true);
+  readonly taxInclusive = computed(() => true);
 
   readonly deliveryFee = computed(() => {
     const sub = this.cart.subtotal();
@@ -268,6 +268,30 @@ export class CheckoutPage implements OnInit {
   }
 
   initiateCheckout(event?: Event): void {
+    event?.preventDefault();
+    if (this.isInitiating() || this.placed()) return;
+    if (this.form.invalid || !this.cart.lines().length) {
+      this.form.markAllAsTouched();
+      this.toast.error('Complete your delivery details and add products before checkout.');
+      return;
+    }
+    this.isInitiating.set(true);
+    const items = this.cart.lines().map(line => ({ productId: line.productId, quantity: line.qty }));
+    this.paymentService.quoteOrder(items, this.appliedCoupon()?.code).subscribe({
+      next: quote => {
+        const changed = Math.round(quote.totalAmount * 100) !== Math.round(this.estimatedTotal() * 100);
+        this.cart.updatePrices(quote.verifiedItems);
+        this.couponDiscount.set(quote.discountAmount);
+        this.isInitiating.set(false);
+        if (changed) { this.toast.info('Your order total has been updated. Please review it and place your order again.'); return; }
+        this.placeOrder();
+      },
+      error: err => { this.isInitiating.set(false); this.toast.error(err.error?.message || 'Unable to check current prices and stock.'); },
+    });
+  }
+
+  private placeOrder(event?: Event): void {
+    if (this.isInitiating() || this.placed()) return;
     if (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -327,10 +351,10 @@ export class CheckoutPage implements OnInit {
 
     if (val.payment === 'cod') {
       // 1-Click Cash on Delivery
-      this.paymentService.placeCodOrder({ items, shippingAddress, userId, couponCode, discountAmount }).subscribe({
+      this.paymentService.placeCodOrder({ items, shippingAddress, userId, couponCode, discountAmount, expectedTotal: this.estimatedTotal() }).subscribe({
         next: (receipt) => {
           this.isInitiating.set(false);
-          this.toast.success(`🎉 COD Order #${receipt.receiptNumber} confirmed in Neon PostgreSQL!`);
+          this.toast.success(`🎉 COD Order #${receipt.receiptNumber} confirmed!`);
           this.onPaymentSuccess(receipt);
         },
         error: (err) => {
@@ -343,15 +367,14 @@ export class CheckoutPage implements OnInit {
     }
 
     // Official Razorpay Standard Checkout
-    this.paymentService.createRazorpayOrder({ items, shippingAddress, userId, couponCode, discountAmount }).subscribe({
+    this.paymentService.createRazorpayOrder({ items, shippingAddress, userId, couponCode, discountAmount, expectedTotal: this.estimatedTotal() }).subscribe({
       next: (orderData) => {
-        this.isInitiating.set(false);
         this.toast.info('Launching official Razorpay payment gateway...');
 
         this.paymentService.launchRazorpayCheckout(orderData, {
           onSuccess: (rzpResp) => {
             this.isInitiating.set(true);
-            this.toast.info('Cryptographically verifying payment with Neon PostgreSQL...');
+            this.toast.info('Confirming your payment...');
 
             this.paymentService
               .verifyRazorpayPayment({

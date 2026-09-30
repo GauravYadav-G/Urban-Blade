@@ -27,6 +27,7 @@ export interface AdminMetrics {
     shipped: number;
     delivered: number;
     cancelled: number;
+    incompletePayment: number;
     trendPercent: number;
   };
   bookings: {
@@ -247,62 +248,61 @@ export class AdminService {
     this.http.post(`${API_BASE}/bookings`, booking).subscribe({ error: () => {} });
   }
 
-  // ─── ORDER MANAGEMENT MUTATIONS ───────────────────────────────────────────
+  // ─── ORDER MANAGEMENT MUTATIONS & PAYMENT STATUS HELPERS ───────────────────
+
+  isPaymentIncomplete(order: { payment_method?: string; payment_status?: string; status?: string } | null | undefined): boolean {
+    if (!order) return false;
+    const isCod = order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery';
+    if (isCod) return false;
+    const ps = (order.payment_status || '').toLowerCase().trim();
+    return ps === 'pending' || ps === 'failed' || ps === 'incomplete';
+  }
+
+  isPaymentPaid(order: { payment_method?: string; payment_status?: string; status?: string } | null | undefined): boolean {
+    if (!order) return false;
+    const ps = (order.payment_status || '').toLowerCase().trim();
+    if (ps === 'captured' || ps === 'paid') return true;
+    const isCod = order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery';
+    return isCod && order.status === 'delivered';
+  }
+
+  isPaymentFailed(order: { payment_method?: string; payment_status?: string; status?: string } | null | undefined): boolean {
+    if (!order) return false;
+    return (order.payment_status || '').toLowerCase().trim() === 'failed';
+  }
+
+  getPaymentStatusLabel(order: { payment_method?: string; payment_status?: string; status?: string } | null | undefined): string {
+    if (!order) return 'Unknown';
+    const isCod = order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery';
+    const ps = (order.payment_status || '').toLowerCase().trim();
+    if (isCod) {
+      return ps === 'captured' || ps === 'paid' ? 'COD Collected' : 'COD (Due on Delivery)';
+    }
+    if (ps === 'captured' || ps === 'paid') return 'Paid';
+    if (ps === 'failed') return 'Payment Failed';
+    if (ps === 'refunded') return 'Refunded';
+    return 'Payment Incomplete';
+  }
 
   updateOrderStatus(orderId: string, status: AdminOrder['status'], trackingNumber?: string): void {
-    let generatedTracking = trackingNumber;
-    if (!generatedTracking && (status === 'shipped' || status === 'delivered')) {
-      generatedTracking = `TRK-UB-${orderId.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    const existing = this.orders().find((o) => o.id === orderId);
+    if (existing && this.isPaymentIncomplete(existing) && (status === 'processing' || status === 'shipped' || status === 'delivered')) {
+      this.toast.error(`Cannot advance order #${orderId.slice(0, 8)}: Customer payment is incomplete (${existing.payment_status}).`);
+      return;
     }
 
-    this.orders.update((list) =>
-      list.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              status,
-              tracking_number: generatedTracking || o.tracking_number,
-              updated_at: new Date().toISOString(),
-            }
-          : o
-      )
-    );
-    this.saveOrders(this.orders());
-    this.recomputeAndPersistMetrics();
-
-    const stageLabels: Record<string, string> = {
-      processing: 'PACKING & QA (Stage 2)',
-      shipped: 'DISPATCHED & IN TRANSIT (Stage 3)',
-      delivered: 'DELIVERY COMPLETED (Stage 4)',
-      confirmed: 'CONFIRMED (Stage 1)',
-      accepted: 'ACCEPTED (Stage 1)',
-    };
-    const label = stageLabels[status] || status.toUpperCase();
-    this.toast.success(`⚡ Order #${orderId.slice(0, 8).toUpperCase()} advanced to ${label}!`);
-
-    this.http
-      .put<{ ok: boolean; order?: AdminOrder; status: string; trackingNumber?: string }>(
-        `${API_BASE}/orders/${orderId}/status`,
-        { status, trackingNumber: generatedTracking }
-      )
-      .subscribe({
-        next: (res) => {
-          if (res?.order) {
-            this.orders.update((list) =>
-              list.map((o) => (o.id === orderId ? { ...o, ...res.order } : o))
-            );
-          } else if (res?.trackingNumber) {
-            this.orders.update((list) =>
-              list.map((o) => (o.id === orderId ? { ...o, tracking_number: res.trackingNumber } : o))
-            );
-          }
-          this.saveOrders(this.orders());
-          this.recomputeAndPersistMetrics();
-        },
-        error: (err) => {
-          console.warn('Status update sync error:', err.message);
-        },
-      });
+    this.http.put<{ ok: boolean; order: AdminOrder }>(
+      `${API_BASE}/orders/${orderId}/status`, { status, trackingNumber }
+    ).subscribe({
+      next: (res) => {
+        if (!res.ok || !res.order) { this.toast.error('The server did not confirm this update.'); return; }
+        this.orders.update(list => list.map(order => order.id === orderId ? { ...order, ...res.order } : order));
+        this.saveOrders(this.orders());
+        this.recomputeAndPersistMetrics();
+        this.toast.success('Order status updated.');
+      },
+      error: (err) => this.toast.error(err.error?.message || 'Unable to update order. Please try again.'),
+    });
   }
 
   updateOrderDetails(orderId: string, updates: Partial<AdminOrder>): void {
@@ -330,6 +330,37 @@ export class AdminService {
         })
         .subscribe({ error: () => {} });
     }
+  }
+
+  reconcilePayment(orderId: string): Observable<{ ok: boolean; updated: boolean; paymentStatus: string; order?: AdminOrder; message: string }> {
+    return this.http
+      .post<{ ok: boolean; updated: boolean; paymentStatus: string; order?: any; message: string }>(
+        `${API_BASE}/orders/${orderId}/reconcile-payment`,
+        {}
+      )
+      .pipe(
+        tap((res) => {
+          if (res.ok && res.order) {
+            const mappedOrder: AdminOrder = {
+              ...res.order,
+              subtotal: Number(res.order.subtotal) || Number(res.order.total_amount) || 0,
+              total_amount: Number(res.order.total_amount) || 0,
+              items: (res.order.items || []).map((it: any) => ({
+                product_name: it.product_name || 'Item',
+                unit_price: Number(it.unit_price) || 0,
+                quantity: Number(it.quantity) || 1,
+                image_url: it.image_url,
+                vendor: it.vendor,
+              })),
+            };
+            this.orders.update((list) =>
+              list.map((o) => (o.id === mappedOrder.id ? mappedOrder : o))
+            );
+            this.saveOrders(this.orders());
+            this.recomputeAndPersistMetrics();
+          }
+        })
+      );
   }
 
   fetchCarrierWebsiteStatus(orderIdOrNumber: string, carrier?: string): Observable<{ ok: boolean; order?: AdminOrder; websiteData: any }> {
@@ -687,7 +718,10 @@ export class AdminService {
     const todayOrders = nonCancelledOrders.filter((o) => o.created_at.startsWith(todayStr));
     const todayRev = todayOrders.reduce((sum, o) => sum + o.total_amount, 0) || Math.round(totalRev * 0.35);
 
-    const accepted = ordersList.filter((o) => o.status === 'accepted' || o.status === 'confirmed' || o.status === 'pending').length;
+    const incompletePayment = ordersList.filter((o) => this.isPaymentIncomplete(o)).length;
+    const accepted = ordersList.filter(
+      (o) => (o.status === 'accepted' || o.status === 'confirmed' || o.status === 'pending') && !this.isPaymentIncomplete(o)
+    ).length;
     const processing = ordersList.filter((o) => o.status === 'processing').length;
     const shipped = ordersList.filter((o) => o.status === 'shipped').length;
     const delivered = ordersList.filter((o) => o.status === 'delivered').length;
@@ -715,6 +749,7 @@ export class AdminService {
         shipped,
         delivered,
         cancelled,
+        incompletePayment,
         trendPercent: 11.2,
       },
       bookings: {
@@ -776,7 +811,7 @@ export class AdminService {
     this.http.get<{ data: any[] }>(`${API_BASE}/orders`).subscribe({
       next: (res) => {
         this.isSyncing.set(false);
-        if (res?.data && res.data.length > 0) {
+        if (Array.isArray(res?.data)) {
           const mapped: AdminOrder[] = res.data.map((o) => ({
             id: o.id,
             status: ((o.status || 'accepted').toLowerCase().trim()) as AdminOrder['status'],
@@ -797,6 +832,7 @@ export class AdminService {
               unit_price: Number(i.unit_price) || 0,
               quantity: Number(i.quantity) || 1,
               image_url: i.image_url || '/images/products/hc-hair-serum.jpg',
+              vendor: i.vendor || undefined,
             })),
             tracking_number:
               o.tracking_number ||
@@ -812,8 +848,6 @@ export class AdminService {
           if (notify) {
             this.toast.success(`⚡ Synced ${mapped.length} live orders from Neon PostgreSQL.`);
           }
-        } else if (notify) {
-          this.toast.info('Orders synchronized with database.');
         }
       },
       error: (err) => {
@@ -1009,9 +1043,9 @@ export class AdminService {
       created_at: new Date().toISOString(),
     };
 
-    this.vendors.update((list) => [newVendor, ...list]);
+    const previousVendor = this.vendors().find((v) => v.id === newVendor.id);
+    this.vendors.update((list) => [newVendor, ...list.filter((v) => v.id !== newVendor.id)]);
     this.saveVendors(this.vendors());
-    this.toast.success(`🏢 Vendor Business Account "${newVendor.name}" registered successfully!`);
 
     this.http.post<{ ok: boolean; vendor?: VendorAccount }>(`${API_BASE}/vendors`, newVendor).subscribe({
       next: (res) => {
@@ -1019,19 +1053,42 @@ export class AdminService {
           this.vendors.update((list) => list.map((v) => (v.id === newVendor.id ? res.vendor! : v)));
           this.saveVendors(this.vendors());
         }
+        this.toast.success(`🏢 Vendor Business Account "${newVendor.name}" registered successfully!`);
       },
-      error: () => {},
+      error: (err) => {
+        this.vendors.update((list) => {
+          const withoutFailedVendor = list.filter((v) => v.id !== newVendor.id);
+          return previousVendor ? [previousVendor, ...withoutFailedVendor] : withoutFailedVendor;
+        });
+        this.saveVendors(this.vendors());
+        this.toast.error(err?.error?.message || 'Vendor account could not be saved. Please try again.');
+      },
     });
   }
 
   updateVendor(id: string, updates: Partial<VendorAccount>): void {
+    const previous = this.vendors().find((v) => v.id === id);
     this.vendors.update((list) =>
       list.map((v) => (v.id === id ? { ...v, ...updates, updated_at: new Date().toISOString() } : v))
     );
     this.saveVendors(this.vendors());
-    this.toast.success('Vendor profile updated.');
 
-    this.http.put(`${API_BASE}/vendors/${id}`, updates).subscribe({ error: () => {} });
+    this.http.put<{ ok: boolean; vendor?: VendorAccount }>(`${API_BASE}/vendors/${id}`, updates).subscribe({
+      next: (res) => {
+        if (res?.vendor) {
+          this.vendors.update((list) => list.map((v) => (v.id === id ? res.vendor! : v)));
+          this.saveVendors(this.vendors());
+        }
+        this.toast.success('Vendor profile updated.');
+      },
+      error: (err) => {
+        if (previous) {
+          this.vendors.update((list) => list.map((v) => (v.id === id ? previous : v)));
+          this.saveVendors(this.vendors());
+        }
+        this.toast.error(err?.error?.message || 'Vendor profile update failed.');
+      },
+    });
   }
 
   toggleVendorStatus(id: string): void {
@@ -1039,7 +1096,6 @@ export class AdminService {
     if (!current) return;
     const nextStatus = current.status === 'active' ? 'suspended' : 'active';
     this.updateVendor(id, { status: nextStatus });
-    this.toast.info(`Vendor "${current.name}" status changed to ${nextStatus.toUpperCase()}`);
   }
 
   // ─── TASK OPERATIONS METHODS ──────────────────────────────────────────────

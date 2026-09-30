@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject } from '@angular/core';
+import { Component, computed, DestroyRef, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { Product } from '@core/models/product.model';
 import { CartService } from '@core/services/cart.service';
@@ -34,11 +34,11 @@ export class HomePage {
   private readonly cart = inject(CartService);
   private paused = false;
 
-  readonly deals = this.catalog.deals();
-  readonly bestsellers = this.catalog.bestsellers();
-  readonly hair = this.catalog.byCategory('hair');
-  readonly beard = this.catalog.byCategory('beard');
-  readonly services = this.catalog.byCategory('services');
+  readonly deals = computed(() => this.catalog.deals());
+  readonly bestsellers = computed(() => this.catalog.bestsellers());
+  readonly hair = computed(() => this.catalog.byCategory('hair'));
+  readonly beard = computed(() => this.catalog.byCategory('beard'));
+  readonly services = computed(() => this.catalog.byCategory('services'));
   readonly relatedPicks = [
     'hc-hair-serum',
     'beard-oil',

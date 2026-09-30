@@ -1,0 +1,169 @@
+@if (comparison()) {
+  <div class="price-modal-backdrop" (click)="onBackdropClick($event)" role="dialog" aria-modal="true" aria-labelledby="price-modal-title">
+    <div class="price-modal">
+      
+      <!-- Header -->
+      <header class="price-modal__header">
+        <div class="price-modal__product">
+          <img [src]="productImage()" [alt]="productName()" class="price-modal__product-img" width="64" height="64" />
+          <div class="price-modal__product-info">
+            <h2 id="price-modal-title" class="price-modal__product-name">{{ productName() }}</h2>
+            <p class="price-modal__product-tagline">Price Comparison Across Marketplaces</p>
+          </div>
+        </div>
+        <button type="button" class="price-modal__close" (click)="close.emit()" aria-label="Close price comparison">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </header>
+
+      <!-- Best Price Summary -->
+      @if (bestPrice()) {
+        <div class="price-modal__best-price" [class.best-is-us]="bestPrice()!.source === 'Urban Blade'">
+          <div class="best-price__label">
+            @if (bestPrice()!.source === 'Urban Blade') {
+              <span class="best-price__badge best-price__badge--us">Best Price: Urban Blade</span>
+            } @else {
+              <span class="best-price__badge best-price__badge--marketplace">
+                Best Price: {{ bestPrice()!.source }}
+              </span>
+            }
+          </div>
+          <div class="best-price__amount">{{ bestPrice()!.price | inr }}</div>
+          @if (savings() > 0) {
+            <div class="best-price__savings">You save {{ savings() | inr }} vs other marketplaces</div>
+          } @else if (bestPrice()!.source !== 'Urban Blade') {
+            <div class="best-price__savings best-price__savings--negative">
+              {{ bestPrice()!.source }} is {{ savings() * -1 | inr }} cheaper
+            </div>
+          }
+          @if (bestPrice()!.url) {
+            <button type="button" class="best-price__btn" (click)="openMarketplace(bestPrice()!.url!)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
+              View on {{ bestPrice()!.source }}
+            </button>
+          }
+        </div>
+      }
+
+      <!-- Price Comparison Table -->
+      <div class="price-modal__table-container">
+        <table class="price-modal__table" role="table">
+          <thead>
+            <tr>
+              <th scope="col">Marketplace</th>
+              <th scope="col">Price</th>
+              <th scope="col">Status</th>
+              <th scope="col">Last Updated</th>
+              <th scope="col">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (item of sortedPrices(); track item.source + '_' + $any(item.data).marketplace) {
+              <tr [class.best-row]="item.source !== 'us' && bestPrice() && $any(item.data).price === bestPrice()!.price">
+                <td class="price-modal__marketplace">
+                  @if (item.source === 'us') {
+                    <div class="marketplace-cell marketplace-cell--us">
+                      <span class="marketplace__icon">🏪</span>
+                      <span class="marketplace__name">Urban Blade (Our Store)</span>
+                    </div>
+                  } @else {
+                    @let mp = $any(item.data);
+                    @let info = getMarketplaceInfo(mp.marketplace);
+                    <div class="marketplace-cell" [style.--marketplace-color]="info.color">
+                      <span class="marketplace__icon" [style.background]="info.color">{{ info.icon }}</span>
+                      <span class="marketplace__name">{{ info.name }}</span>
+                    </div>
+                  }
+                </td>
+                <td class="price-modal__price">
+                  @if (item.source === 'us') {
+                    <div class="price-cell price-cell--us">
+                      <span class="price-cell__current">{{ $any(item.data).price | inr }}</span>
+                      @if ($any(item.data).compareAtPrice) {
+                        <span class="price-cell__compare">{{ $any(item.data).compareAtPrice | inr }}</span>
+                      }
+                    </div>
+                  } @else {
+                    @let mp = $any(item.data);
+                    @if (mp.price !== null) {
+                      <span class="price-cell__current">{{ mp.price | inr }}</span>
+                    } @else {
+                      <span class="price-cell__na">—</span>
+                    }
+                  }
+                </td>
+                <td class="price-modal__status">
+                  @if (item.source === 'us') {
+                    <span class="status-badge status-badge--us">Our Price</span>
+                  } @else {
+                    @let mp = $any(item.data);
+                    <span class="status-badge" [class]="getStatusClass(mp.status)">
+                      {{ getStatusLabel(mp.status) }}
+                    </span>
+                  }
+                </td>
+                <td class="price-modal__updated">
+                  @if (item.source === 'us') {
+                    <span class="updated-text">Live</span>
+                  } @else {
+                    @let mp = $any(item.data);
+                    <span class="updated-text">{{ formatLastChecked(mp.lastChecked) }}</span>
+                  }
+                </td>
+                <td class="price-modal__action">
+                  @if (item.source !== 'us') {
+                    @let mp = $any(item.data);
+                    @if (mp.url) {
+                      <button 
+                        type="button" 
+                        class="action-btn" 
+                        (click)="openMarketplace(mp.url)"
+                        [attr.aria-label]="'View on ' + getMarketplaceName(mp.marketplace)"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                          <polyline points="15 3 21 3 21 9"></polyline>
+                          <line x1="10" y1="14" x2="21" y2="3"></line>
+                        </svg>
+                        View
+                      </button>
+                    } @else {
+                      <span class="action-na">No link</span>
+                    }
+                  } @else {
+                    <span class="action-na">Current</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Footer Note -->
+      <footer class="price-modal__footer">
+        <p class="price-modal__note">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          Prices are fetched periodically and may not reflect real-time marketplace prices. 
+          Click "View" to check current price on the marketplace.
+        </p>
+        @if (comparison()!.lastRefreshed) {
+          <p class="price-modal__last-refresh">
+            Last refreshed: {{ formatLastChecked(comparison()!.lastRefreshed) }}
+          </p>
+        }
+      </footer>
+    </div>
+  </div>
+}

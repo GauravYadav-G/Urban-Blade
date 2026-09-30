@@ -19,6 +19,8 @@ export async function seedDatabase(): Promise<boolean> {
   try {
     console.log('🌱 Starting database seeding...');
 
+    if (process.env.NODE_ENV === 'production') throw new Error('Demo seeding is disabled in production. Provision accounts explicitly.');
+
     // 1. Seed Demo & Master Admin Users
     const demoPasswordHash = await bcrypt.hash('Blade@123', 10);
     await client.query(
@@ -26,7 +28,7 @@ export async function seedDatabase(): Promise<boolean> {
       INSERT INTO users (email, password_hash, name, role)
       VALUES ($1, $2, $3, $4)
       ON CONFLICT (email) 
-      DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role = EXCLUDED.role
+      DO NOTHING
       RETURNING id, email, name;
       `,
       ['demo@urbanblade.in', demoPasswordHash, 'Demo Guest', 'customer']
@@ -39,14 +41,46 @@ export async function seedDatabase(): Promise<boolean> {
       INSERT INTO users (email, password_hash, name, role)
       VALUES ($1, $2, $3, $4)
       ON CONFLICT (email) 
-      DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role = EXCLUDED.role
+      DO NOTHING
       RETURNING id, email, name;
       `,
       ['admin@urbanblade.in', adminPasswordHash, 'Master Admin', 'admin']
     );
     console.log('✅ Admin user seeded: admin@urbanblade.in / Admin@2026');
 
-    // 2. Seed Stylists
+    // 2. Seed the vendor directory used by the admin hub and vendor login.
+    const vendors = [
+      ['vnd-lab', 'Urban Blade Lab', 'urban-blade-lab', 'lab@urbanblade.in'],
+      ['vnd-grooming', 'Urban Blade Grooming', 'urban-blade-grooming', 'grooming@urbanblade.in'],
+      ['vnd-tools', 'Urban Blade Tools', 'urban-blade-tools', 'tools@urbanblade.in'],
+      ['vnd-skin', 'Urban Blade Skin', 'urban-blade-skin', 'skin@urbanblade.in'],
+      ['vnd-salon', 'Urban Blade Salon', 'urban-blade-salon', 'salon@urbanblade.in'],
+    ];
+    for (const [id, name, slug, email] of vendors) {
+      await client.query(
+        `INSERT INTO vendors (
+           id, name, slug, email, password, contact_person, phone,
+           commission_rate, status, payout_account
+         ) VALUES ($1, $2, $3, $4, $6, 'Operations Lead', '9015618265',
+                   12, 'active', $5::jsonb)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name,
+           slug = EXCLUDED.slug,
+           email = EXCLUDED.email,
+           updated_at = CURRENT_TIMESTAMP`,
+        [
+          id,
+          name,
+          slug,
+          email,
+          JSON.stringify({}),
+          await bcrypt.hash(process.env.SEED_VENDOR_PASSWORD || 'Vendor@2026', 12),
+        ]
+      );
+    }
+    console.log(`✅ ${vendors.length} vendor business accounts seeded.`);
+
+    // 3. Seed Stylists
     const stylists = [
       {
         name: 'Vikram Sharma',
@@ -83,7 +117,7 @@ export async function seedDatabase(): Promise<boolean> {
     }
     console.log(`✅ ${stylists.length} salon stylists seeded.`);
 
-    // 3. Seed Products
+    // 4. Seed Products
     const seedCandidates = [
       path.resolve(__dirname, 'products.seed.json'),
       path.resolve(__dirname, '../../src/db/products.seed.json'),

@@ -104,44 +104,18 @@ export class OrdersPage implements OnInit {
     this.http.get<DisplayOrder[]>(url).subscribe({
       next: (data) => {
         this.loading.set(false);
-        if (Array.isArray(data) && data.length > 0) {
-          this.orders.set(data);
-        } else {
-          // Fall back to local admin store if user has recently placed orders
-          const adminOrders = this.admin.orders();
-          if (adminOrders.length > 0) {
-            const mapped: DisplayOrder[] = adminOrders.map((o) => ({
-              id: o.id,
-              status: o.status,
-              subtotal: o.subtotal,
-              total_amount: o.total_amount,
-              discount_amount: o.discount_amount,
-              coupon_code: o.coupon_code,
-              tracking_number: o.tracking_number,
-              currency: o.currency || 'INR',
-              payment_method: o.payment_method,
-              payment_status: o.payment_status,
-              created_at: o.created_at,
-              shipping_address: o.shipping_address,
-              items: o.items.map((it) => ({
-                product_name: it.product_name,
-                unit_price: it.unit_price,
-                quantity: it.quantity,
-                image_url: it.image_url,
-              })),
-            }));
-            this.orders.set(mapped);
-          } else {
-            this.orders.set([]);
-          }
-        }
+        this.orders.set(Array.isArray(data) ? data : []);
       },
       error: () => {
         this.loading.set(false);
-        // Fall back to local admin store if backend is unreachable
-        const adminOrders = this.admin.orders();
-        if (adminOrders.length > 0) {
-          const mapped: DisplayOrder[] = adminOrders.map((o) => ({
+        // Offline data is only safe when its customer email exactly matches.
+        const normalizedEmail = email?.trim().toLowerCase();
+        const adminOrders = normalizedEmail
+          ? this.admin.orders().filter(
+              (o) => o.shipping_address?.email?.trim().toLowerCase() === normalizedEmail
+            )
+          : [];
+        const mapped: DisplayOrder[] = adminOrders.map((o) => ({
             id: o.id,
             status: o.status,
             subtotal: o.subtotal,
@@ -161,8 +135,7 @@ export class OrdersPage implements OnInit {
               image_url: it.image_url,
             })),
           }));
-          this.orders.set(mapped);
-        }
+        this.orders.set(mapped);
       },
     });
   }

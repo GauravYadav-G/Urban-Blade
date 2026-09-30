@@ -7,14 +7,11 @@ import { seedDatabase } from './db/seed.js';
 
 async function start() {
   try {
-    // Zero-Touch Startup: Automatically apply schema & seed data (no paid shell needed!)
-    try {
-      console.log('🔄 Checking database & auto-applying migrations on startup...');
-      await runMigrations();
-      await seedDatabase();
-    } catch (dbErr: any) {
-      console.warn('⚠️ Startup DB initialization notice:', dbErr.message);
+    // Schema changes and demo data are explicit operator actions.
+    if (process.env.AUTO_MIGRATE === 'true') {
+      if (!await runMigrations()) throw new Error('Database migration failed');
     }
+    if (process.env.SEED_DEMO_DATA === 'true' && !config.isProduction) await seedDatabase();
 
     const app = await buildApp();
 

@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { randomBytes } from 'node:crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -8,15 +9,22 @@ const __dirname = path.dirname(__filename);
 // Load .env from server root
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters');
+  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
+  if (!process.env.CORS_ORIGINS) throw new Error('CORS_ORIGINS must list trusted storefront origins');
+}
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
   port: parseInt(process.env.PORT || '4000', 10),
   host: process.env.HOST || '0.0.0.0',
   logLevel: process.env.LOG_LEVEL || 'info',
+  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:4200').split(',').map(value => value.trim()),
 
   jwt: {
-    secret: process.env.JWT_SECRET || 'urbanblade-super-secret-jwt-key-change-in-prod',
+    secret: process.env.JWT_SECRET || randomBytes(48).toString('hex'),
     expiresIn: process.env.JWT_EXPIRES_IN || '15m',
   },
 
@@ -45,7 +53,13 @@ export const config = {
   },
 
   razorpay: {
-    keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_TZtC5tBbAEEppP',
-    keySecret: process.env.RAZORPAY_KEY_SECRET || 'bSQij93encYPYkJK6yLzy8xm',
+    keyId: process.env.RAZORPAY_KEY_ID || '',
+    keySecret: process.env.RAZORPAY_KEY_SECRET || '',
+    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || '',
+  },
+
+  // Separate secret for payment HMAC signatures (distinct from JWT secret)
+  payment: {
+    signingSecret: process.env.PAYMENT_SIGNING_SECRET || process.env.RAZORPAY_KEY_SECRET || '',
   },
 };

@@ -574,7 +574,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
 
     const user = this.account.user();
     const finalName = (form.customerName || user?.name || 'Valued Guest').trim();
-    const finalPhone = (form.customerPhone || (user as any)?.phone || '9015618265').trim();
+    const finalPhone = (form.customerPhone || user?.phone || '').trim();
     const finalEmail = user?.email || form.customerEmail || 'client@urbanblade.in';
 
     this.isSubmittingBooking.update((map) => ({ ...map, [msgId]: true }));

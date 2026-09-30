@@ -10,7 +10,7 @@ export async function healthRoutes(app: FastifyInstance) {
     const eventLoopLagMs = getEventLoopLag();
     const memory = getMemoryUsage();
 
-    const isHealthy = eventLoopLagMs < 200;
+    const isHealthy = dbHealth.ok && eventLoopLagMs < 200;
 
     const payload = {
       status: isHealthy ? 'healthy' : 'degraded',

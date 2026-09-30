@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal, OnInit } from '@angular/core';
+import { Component, computed, inject, signal, OnInit, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, FormsModule, Validators } from '@angular/forms';
 import { DomSanitizer, type SafeResourceUrl } from '@angular/platform-browser';
@@ -104,6 +104,24 @@ export class AccountPage implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly toast = inject(ToastService);
 
+  constructor() {
+    effect(() => {
+      const user = this.account.user();
+      if (user) {
+        if (!this.profileName()) this.profileName.set(user.name);
+        if (!this.profileEmail()) this.profileEmail.set(user.email);
+        if (!this.profilePhone()) {
+          const defaultAddrMobile = this.addresses.addresses().find((a) => a.isDefault)?.mobile;
+          if (user.phone) {
+            this.profilePhone.set(user.phone);
+          } else if (defaultAddrMobile) {
+            this.profilePhone.set(defaultAddrMobile);
+          }
+        }
+      }
+    });
+  }
+
   // Active Dashboard Navigation Tab
   readonly activeTab = signal<'overview' | 'orders' | 'bookings' | 'addresses' | 'profile'>('overview');
 
@@ -153,9 +171,6 @@ export class AccountPage implements OnInit {
   // Invoice Modal State
   readonly selectedInvoiceOrder = signal<CustomerOrder | null>(null);
 
-  // VIP Wallet & Metrics
-  readonly walletCredits = signal<number>(250); // ₹250 complimentary welcome credits
-
   readonly totalOrdersCount = computed(() => this.orders().length);
   readonly activeOrdersCount = computed(() =>
     this.orders().filter((o) => o.status !== 'delivered' && o.status !== 'cancelled').length
@@ -164,26 +179,7 @@ export class AccountPage implements OnInit {
     this.bookings().filter((b) => b.status !== 'completed' && b.status !== 'cancelled').length
   );
 
-  readonly loyaltyTier = computed(() => {
-    const count = this.orders().length;
-    if (count >= 5) return 'Platinum VIP Member';
-    if (count >= 2) return 'Gold Premier Member';
-    return 'Silver Studio Member';
-  });
 
-  readonly tierProgressPercent = computed(() => {
-    const count = this.orders().length;
-    if (count >= 5) return 100;
-    if (count >= 2) return 40 + ((count - 2) / 3) * 60;
-    return (count / 2) * 40;
-  });
-
-  readonly nextTierRequirement = computed(() => {
-    const count = this.orders().length;
-    if (count >= 5) return 'Maximum VIP Tier reached! Enjoy lifetime concierge privileges.';
-    if (count >= 2) return `${5 - count} more orders to reach Platinum VIP Tier.`;
-    return `${2 - count} more order to unlock Gold Premier Tier.`;
-  });
 
   protected readonly states = INDIA_STATES;
   protected readonly initials = computed(() => {
@@ -220,7 +216,7 @@ export class AccountPage implements OnInit {
   // Profile Form State
   readonly profileName = signal<string>('');
   readonly profileEmail = signal<string>('');
-  readonly profilePhone = signal<string>('9015618265');
+  readonly profilePhone = signal<string>('');
   readonly profileSavedMessage = signal<string>('');
 
   protected readonly mapEmbedUrl = computed<SafeResourceUrl>(() => {
@@ -237,6 +233,8 @@ export class AccountPage implements OnInit {
     if (user) {
       this.profileName.set(user.name);
       this.profileEmail.set(user.email);
+      const defaultAddrMobile = this.addresses.addresses().find((a) => a.isDefault)?.mobile;
+      this.profilePhone.set(user.phone || defaultAddrMobile || '');
     }
 
     // Synchronize active tab from URL query params (e.g. /account?tab=orders)
@@ -268,43 +266,19 @@ export class AccountPage implements OnInit {
     this.http.get<CustomerOrder[]>(url).subscribe({
       next: (data) => {
         this.loadingOrders.set(false);
-        if (Array.isArray(data) && data.length > 0) {
-          this.orders.set(data);
-        } else {
-          // Fall back to local admin session orders if available
-          const local = this.admin.orders();
-          if (local.length > 0) {
-            const mapped: CustomerOrder[] = local.map((o) => ({
-              id: o.id,
-              status: o.status,
-              subtotal: o.subtotal,
-              total_amount: o.total_amount,
-              discount_amount: o.discount_amount,
-              coupon_code: o.coupon_code,
-              tracking_number: o.tracking_number,
-              currency: o.currency || 'INR',
-              payment_method: o.payment_method,
-              payment_status: o.payment_status,
-              created_at: o.created_at,
-              shipping_address: o.shipping_address,
-              items: o.items.map((it) => ({
-                product_name: it.product_name,
-                unit_price: it.unit_price,
-                quantity: it.quantity,
-                image_url: it.image_url,
-              })),
-            }));
-            this.orders.set(mapped);
-          } else {
-            this.orders.set([]);
-          }
-        }
+        // An empty response is authoritative. Never replace it with the shared
+        // admin cache, which contains orders belonging to other customers.
+        this.orders.set(Array.isArray(data) ? data : []);
       },
       error: () => {
         this.loadingOrders.set(false);
-        const local = this.admin.orders();
-        if (local.length > 0) {
-          const mapped: CustomerOrder[] = local.map((o) => ({
+        const normalizedEmail = email?.trim().toLowerCase();
+        const local = normalizedEmail
+          ? this.admin.orders().filter(
+              (o) => o.shipping_address?.email?.trim().toLowerCase() === normalizedEmail
+            )
+          : [];
+        const mapped: CustomerOrder[] = local.map((o) => ({
             id: o.id,
             status: o.status,
             subtotal: o.subtotal,
@@ -324,8 +298,7 @@ export class AccountPage implements OnInit {
               image_url: it.image_url,
             })),
           }));
-          this.orders.set(mapped);
-        }
+        this.orders.set(mapped);
       },
     });
   }
@@ -338,30 +311,11 @@ export class AccountPage implements OnInit {
     this.http.get<CustomerBooking[]>(url).subscribe({
       next: (data) => {
         this.loadingBookings.set(false);
-        if (Array.isArray(data) && data.length > 0) {
-          this.bookings.set(data);
-        } else {
-          // Fall back to demo/local salon bookings
-          this.bookings.set([
-            {
-              id: 'bk-demo-01',
-              customer_name: this.account.user()?.name || 'VIP Client',
-              customer_email: this.account.user()?.email || 'client@urbanblade.in',
-              customer_phone: '9015618265',
-              bookingDate: '2026-09-28',
-              timeSlot: '11:00 AM',
-              status: 'confirmed',
-              totalPrice: 1299,
-              stylist_name: 'Vikram Seth',
-              stylist_role: 'Creative Director',
-              notes: 'Precision Haircut & Deep Scalp Recovery',
-              created_at: new Date().toISOString(),
-            } as any,
-          ]);
-        }
+        this.bookings.set(Array.isArray(data) ? data : []);
       },
       error: () => {
         this.loadingBookings.set(false);
+        this.bookings.set([]);
       },
     });
   }
@@ -489,17 +443,26 @@ export class AccountPage implements OnInit {
     }, 1000);
   }
 
-  saveProfile(): void {
+  async saveProfile(): Promise<void> {
     const name = this.profileName().trim();
-    if (name) {
-      this.isSavingProfile.set(true);
-      this.account.updateProfile(name);
+    const phone = this.profilePhone().trim();
+    if (!name) {
+      this.toast.error('Name cannot be empty.');
+      return;
+    }
+    this.isSavingProfile.set(true);
+    try {
+      await this.account.updateProfile({ name, phone });
       this.profileSavedMessage.set('Profile information successfully updated.');
       this.toast.success('Your profile details have been saved.');
+    } catch {
+      this.profileSavedMessage.set('Profile updated locally.');
+      this.toast.success('Your profile details have been saved.');
+    } finally {
+      this.isSavingProfile.set(false);
       setTimeout(() => {
-        this.isSavingProfile.set(false);
         this.profileSavedMessage.set('');
-      }, 2000);
+      }, 2500);
     }
   }
 

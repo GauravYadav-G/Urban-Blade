@@ -17,6 +17,7 @@ import { authRoutes } from './modules/auth/auth.routes.js';
 import { productsRoutes } from './modules/products/products.routes.js';
 import { cartRoutes } from './modules/cart/cart.routes.js';
 import { bookingsRoutes } from './modules/bookings/bookings.routes.js';
+import { paymentWebhookRoutes } from './modules/orders/payment-webhook.routes.js';
 import { ordersRoutes } from './modules/orders/orders.routes.js';
 import { adminRoutes } from './modules/admin/admin.routes.js';
 import { supportRoutes } from './modules/support/support.routes.js';
@@ -25,9 +26,19 @@ export async function buildApp(): Promise<FastifyInstance> {
   const app = fastify({
     logger: {
       level: config.isProduction ? 'warn' : config.logLevel,
+      redact: ['req.headers.authorization', 'req.headers.cookie'],
     },
     connectionTimeout: 10000,
     keepAliveTimeout: 5000,
+  });
+
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+    reply.header('Cache-Control', 'no-store');
+    if (config.isProduction) reply.header('Strict-Transport-Security', 'max-age=31536000');
+    return payload;
   });
 
   // ─── 1. LOAD SHEDDING & EVENT LOOP CIRCUIT BREAKER (ZERO-CRASH GUARD) ──────
@@ -52,7 +63,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // ─── 2. CORS & HIGH-CONCURRENCY RATE LIMITING ──────────────────────────────
   await app.register(cors, {
-    origin: true,
+    origin: config.corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   });
@@ -60,7 +71,6 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(rateLimit, {
     max: config.limits.rateLimitMax,
     timeWindow: config.limits.rateLimitWindowMs,
-    allowList: ['127.0.0.1'],
   });
 
   // ─── 3. JWT AUTHENTICATION ────────────────────────────────────────────────
@@ -95,12 +105,14 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(cartRoutes, { prefix: '/api' });
   await app.register(bookingsRoutes, { prefix: '/api' });
   await app.register(ordersRoutes, { prefix: '/api' });
+  await app.register(paymentWebhookRoutes, { prefix: '/api' });
   await app.register(adminRoutes, { prefix: '/api' });
   await app.register(supportRoutes, { prefix: '/api' });
 
   // ─── 7. INITIALIZE BACKGROUND SAGA QUEUES & CLEANUP TASKS ─────────────────
   initializeOrderQueue();
   startAbandonedCheckoutReaper();
+
 
   // Root welcome route
   app.get('/', async () => ({

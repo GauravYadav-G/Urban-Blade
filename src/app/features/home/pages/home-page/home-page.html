@@ -70,10 +70,10 @@
   </div>
 
   <app-product-slider title="Related items" [products]="relatedPicks" />
-  <app-product-shelf title="Today's deals" [products]="deals" seeAllLink="/shop" [seeAllQuery]="{ deals: '1' }" />
-  <app-hair-care-section [products]="hair" />
+  <app-product-shelf title="Today's deals" [products]="deals()" seeAllLink="/shop" [seeAllQuery]="{ deals: '1' }" />
+  <app-hair-care-section [products]="hair()" />
   <app-hair-care-section
-    [products]="beard"
+    [products]="beard()"
     title="Beard & Moustache"
     kicker="Barber shelf"
     lede="Oil, balm, wax, wash, and tools — the full Urban Blade beard and moustache line."
@@ -81,6 +81,6 @@
     seeAllLabel="See all Beard & Moustache"
     sectionId="beard-moustache"
   />
-  <app-product-slider title="Bestsellers" [products]="bestsellers" seeAllLink="/shop" />
-  <app-product-shelf title="Book a salon service" [products]="services" seeAllLink="/book" />
+  <app-product-slider title="Bestsellers" [products]="bestsellers()" seeAllLink="/shop" />
+  <app-product-shelf title="Book a salon service" [products]="services()" seeAllLink="/book" />
 </div>

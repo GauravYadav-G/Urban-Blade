@@ -36,7 +36,12 @@
       </label>
     </header>
 
-    @if (products().length === 0) {
+    @if (catalog.loading()) {
+      <p role="status">Loading products…</p>
+    } @else if (catalog.loadError()) {
+      <p role="alert">{{ catalog.loadError() }}</p>
+      <button type="button" (click)="catalog.refreshCatalog()">Try again</button>
+    } @else if (products().length === 0) {
       <p class="empty">No matches. Try another department or clear search.</p>
     } @else {
       <div class="catalog__grid">

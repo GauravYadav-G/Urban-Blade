@@ -520,9 +520,11 @@
     border-radius: 50%;
 
     &.accepted { background: #f59e0b; }
+    &.incomplete { background: #f43f5e; }
     &.processing { background: #06b6d4; }
     &.shipped { background: #8b5cf6; }
     &.delivered { background: #10b981; }
+    &.cancelled { background: #94a3b8; }
   }
 
   .tab-badge {
@@ -3409,3 +3411,234 @@
     margin-bottom: 2rem;
   }
 }
+
+/* Incomplete Payment Indicator Styles */
+.tab-btn--incomplete {
+  &.active {
+    background: #fff1f2 !important;
+    color: #be123c !important;
+    border-color: #fecdd3 !important;
+
+    .tab-badge {
+      background: #fecdd3 !important;
+      color: #9f1239 !important;
+    }
+  }
+}
+
+.sub-filter-pills button.has-incomplete {
+  border-color: #fecdd3;
+  color: #be123c;
+}
+
+.order-row.is-incomplete-payment {
+  background: #fffdfd;
+  box-shadow: inset 3px 0 0 #f43f5e;
+}
+
+.unpaid-badge {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #be123c;
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.pay-method-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.pay-status-pill {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+
+  &--incomplete {
+    background: #fff1f2;
+    color: #e11d48;
+    border: 1px solid #fecdd3;
+  }
+
+  &--failed {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+  }
+
+  &--paid {
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
+  }
+
+  &--cod {
+    background: #f8fafc;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+  }
+}
+
+.status-pill--awaiting-payment {
+  background: #fff1f2 !important;
+  color: #e11d48 !important;
+  border: 1px solid #fecdd3 !important;
+  font-weight: 800 !important;
+}
+
+.pipeline-track--incomplete {
+  .p-dot.unpaid {
+    background: #f43f5e !important;
+    border-color: #fda4af !important;
+    box-shadow: 0 0 6px rgba(244, 63, 94, 0.6);
+  }
+}
+
+.unpaid-action-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: #fff1f2;
+  color: #be123c;
+  border: 1px solid #fecdd3;
+  cursor: not-allowed;
+}
+
+.inspector-unpaid-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.25rem;
+
+  .banner-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+
+  .banner-title {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #9f1239;
+    margin-bottom: 0.25rem;
+  }
+
+  .banner-desc {
+    font-size: 0.78rem;
+    color: #881337;
+    line-height: 1.45;
+    margin: 0;
+
+    strong {
+      color: #9f1239;
+    }
+  }
+}
+
+.btn-fast-advance.unpaid-blocked {
+  background: #fff1f2 !important;
+  color: #be123c !important;
+  border: 1px solid #fecdd3 !important;
+  cursor: not-allowed;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.modal-action-btn.advance.unpaid-locked {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+  border: 1px solid #cbd5e1 !important;
+  cursor: not-allowed !important;
+  opacity: 0.85;
+}
+
+.val.amber {
+  color: #d97706 !important;
+  font-weight: 800;
+}
+
+.val.red {
+  color: #dc2626 !important;
+  font-weight: 800;
+}
+
+.val-unpaid {
+  color: #e11d48 !important;
+}
+
+.inv-unpaid-warn {
+  color: #e11d48;
+  font-weight: 800;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.btn-reconcile-gateway {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: #be123c;
+  color: #ffffff;
+  border: none;
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 0.65rem;
+  transition: all 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: #9f1239;
+  }
+
+  &:disabled {
+    opacity: 0.65;
+    cursor: wait;
+  }
+}
+
+.micro-reconcile-btn {
+  display: inline-flex;
+  align-items: center;
+  background: #fff1f2;
+  color: #be123c;
+  border: 1px solid #fecdd3;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 0.25rem;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: #ffe4e6;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+}
+

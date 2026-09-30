@@ -20,10 +20,16 @@ export class AdminOrders implements OnInit, OnDestroy {
   // Filter Signals
   readonly selectedTab = signal<string>('all');
   readonly selectedVendorFilter = signal<string>('all');
-  readonly selectedPaymentFilter = signal<'all' | 'prepaid' | 'cod'>('all');
+  readonly selectedPaymentFilter = signal<'all' | 'prepaid' | 'cod' | 'incomplete' | 'paid'>('all');
   readonly selectedTimeFilter = signal<'all' | 'today' | '7days' | 'month'>('all');
   readonly selectedUrgencyFilter = signal<'all' | 'delayed' | 'high_value'>('all');
   readonly searchQuery = signal<string>('');
+  readonly incompleteOrdersCount = computed(() =>
+    this.admin.orders().filter((o) => this.admin.isPaymentIncomplete(o)).length
+  );
+  readonly paidOrdersCount = computed(() =>
+    this.admin.orders().filter((o) => this.admin.isPaymentPaid(o)).length
+  );
 
   // Selection & Modal States
   readonly selectedOrder = signal<AdminOrder | null>(null);
@@ -38,6 +44,7 @@ export class AdminOrders implements OnInit, OnDestroy {
   readonly carrierSyncQuery = signal<string>('');
   readonly selectedCarrierPortal = signal<string>('auto');
   readonly isFetchingWebsite = signal<boolean>(false);
+  readonly isReconciling = signal<boolean>(false);
   readonly websiteTelemetryModal = signal<{ order: AdminOrder; websiteData: any } | null>(null);
 
   // Inspector Edits
@@ -116,6 +123,7 @@ export class AdminOrders implements OnInit, OnDestroy {
     const deliveredCount = list.filter((o) => (o.status || '').toLowerCase() === 'delivered').length;
     const delayedSlaCount = list.filter((o) => this.isDelayed(o)).length;
     const highValueCount = list.filter((o) => this.isHighValue(o)).length;
+    const incompletePaymentsCount = list.filter((o) => this.admin.isPaymentIncomplete(o)).length;
 
     return {
       totalOrders: list.length,
@@ -125,6 +133,7 @@ export class AdminOrders implements OnInit, OnDestroy {
       deliveredCount,
       delayedSlaCount,
       highValueCount,
+      incompletePaymentsCount,
     };
   });
 
@@ -181,18 +190,26 @@ export class AdminOrders implements OnInit, OnDestroy {
 
     // 2. Status Tab
     if (tab !== 'all') {
-      if (tab === 'confirmed' || tab === 'accepted') {
-        list = list.filter((o) => o.status === 'confirmed' || o.status === 'accepted' || o.status === 'pending');
+      if (tab === 'incomplete') {
+        list = list.filter((o) => this.admin.isPaymentIncomplete(o));
+      } else if (tab === 'confirmed' || tab === 'accepted') {
+        list = list.filter(
+          (o) => (o.status === 'confirmed' || o.status === 'accepted' || o.status === 'pending') && !this.admin.isPaymentIncomplete(o)
+        );
       } else {
         list = list.filter((o) => o.status === tab);
       }
     }
 
-    // 3. Payment Method Filter
+    // 3. Payment Method & Status Filter
     if (payFilter === 'cod') {
       list = list.filter((o) => o.payment_method === 'cash_on_delivery' || o.payment_method === 'Cash on Delivery');
     } else if (payFilter === 'prepaid') {
       list = list.filter((o) => o.payment_method !== 'cash_on_delivery' && o.payment_method !== 'Cash on Delivery');
+    } else if (payFilter === 'incomplete') {
+      list = list.filter((o) => this.admin.isPaymentIncomplete(o));
+    } else if (payFilter === 'paid') {
+      list = list.filter((o) => this.admin.isPaymentPaid(o));
     }
 
     // 4. Timeframe Filter
@@ -487,6 +504,9 @@ export class AdminOrders implements OnInit, OnDestroy {
   }
 
   getNextStageAction(order: AdminOrder): { label: string; icon: string; nextStatus: AdminOrder['status'] | null; badgeClass: string } {
+    if (this.admin.isPaymentIncomplete(order)) {
+      return { label: '⚠️ Payment Incomplete', icon: '⚠️', nextStatus: null, badgeClass: 'unpaid' };
+    }
     const s = (order?.status || '').toLowerCase().trim();
     switch (s) {
       case 'pending':
@@ -508,6 +528,10 @@ export class AdminOrders implements OnInit, OnDestroy {
 
   advanceStatus(order: AdminOrder, event?: Event): void {
     event?.stopPropagation();
+    if (this.admin.isPaymentIncomplete(order)) {
+      this.toast.error(`Cannot advance order #${order.id.slice(0, 8)}: Customer payment is incomplete (${order.payment_status}).`);
+      return;
+    }
     const next = this.getNextStatus(order.status);
     if (next) {
       const generatedTracking = (next === 'shipped' || next === 'delivered') && !order.tracking_number
@@ -522,6 +546,10 @@ export class AdminOrders implements OnInit, OnDestroy {
 
   advanceToStage(order: AdminOrder, targetStage: AdminOrder['status'], event?: Event): void {
     event?.stopPropagation();
+    if (this.admin.isPaymentIncomplete(order)) {
+      this.toast.error(`Cannot advance order #${order.id.slice(0, 8)}: Customer payment is incomplete (${order.payment_status}).`);
+      return;
+    }
     const currentStatus = (order.status || '').toLowerCase().trim();
     if (currentStatus === targetStage || currentStatus === 'cancelled' || currentStatus === 'delivered') return;
     const generatedTracking = (targetStage === 'shipped' || targetStage === 'delivered') && !order.tracking_number
@@ -597,6 +625,31 @@ export class AdminOrders implements OnInit, OnDestroy {
         this.selectedOrder.update((o) => (o ? { ...o, status: 'cancelled' } : null));
       }
     }
+  }
+
+  reconcilePayment(order: AdminOrder, event?: Event): void {
+    event?.stopPropagation();
+    if (this.isReconciling()) return;
+    this.isReconciling.set(true);
+    this.toast.info(`Connecting to Razorpay gateway to verify payment for #${order.id.slice(0, 8)}...`);
+
+    this.admin.reconcilePayment(order.id).subscribe({
+      next: (res) => {
+        this.isReconciling.set(false);
+        if (res.updated) {
+          this.toast.success(res.message);
+          if (this.selectedOrder()?.id === order.id && res.order) {
+            this.selectedOrder.set(res.order);
+          }
+        } else {
+          this.toast.info(res.message || 'Payment has not been completed on Razorpay yet.');
+        }
+      },
+      error: (err) => {
+        this.isReconciling.set(false);
+        this.toast.error(err.error?.message || 'Failed to check payment status with gateway.');
+      },
+    });
   }
 
   // ─── TRACKING CODE CONTROLS ───────────────────────────────────────────────

@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import crypto from 'crypto';
 import { query, withTransaction } from '../../db/pool.js';
 import { acquireLock, releaseLock } from '../../redis/lock.service.js';
+import { optionalAuth } from '../../core/auth.middleware.js';
 
 // Fallback stylists
 const fallbackStylists = [
@@ -93,7 +94,7 @@ export async function bookingsRoutes(app: FastifyInstance) {
     const b = request.body || {};
     const customerName = b.customerName || b.customer_name || 'Salon Guest';
     const customerEmail = b.customerEmail || b.customer_email || 'client@urbanblade.in';
-    const customerPhone = b.customerPhone || b.customer_phone || '9015618265';
+    const customerPhone = b.customerPhone || b.customer_phone || null;
     const stylistId = b.stylistId || b.stylist_id || (b as any).stylistName || (b as any).stylist_name || 'stylist-vikram';
     const serviceId = b.serviceId || b.service_id;
     const bookingDate = b.bookingDate || b.booking_date || new Date().toISOString().split('T')[0];
@@ -198,10 +199,30 @@ export async function bookingsRoutes(app: FastifyInstance) {
   });
 
   // ─── GET USER BOOKINGS HISTORY ────────────────────────────────────────────
-  app.get<{ Querystring: { email?: string } }>('/bookings', async (request, reply) => {
-    const { email } = request.query || {};
-    try {
-      let sql = `
+  app.get<{ Querystring: { email?: string } }>(
+    '/bookings',
+    { preHandler: [optionalAuth] },
+    async (request, reply) => {
+      const { email } = request.query || {};
+      const user = request.user;
+      const scopedEmail = user?.role === 'customer' ? user.email : email;
+
+      if (user?.role === 'vendor') {
+        return reply.status(403).send({
+          error: 'FORBIDDEN',
+          message: 'Vendor accounts cannot access customer salon bookings.',
+        });
+      }
+
+      if (!scopedEmail && user?.role !== 'admin') {
+        return reply.status(401).send({
+          error: 'AUTHENTICATION_REQUIRED',
+          message: 'Please sign in or provide your booking email.',
+        });
+      }
+
+      try {
+        let sql = `
         SELECT 
           b.id,
           b.customer_name,
@@ -218,17 +239,18 @@ export async function bookingsRoutes(app: FastifyInstance) {
         FROM bookings b
         LEFT JOIN stylists s ON s.id = b.stylist_id
       `;
-      const params: any[] = [];
-      if (email) {
-        sql += ` WHERE b.customer_email ILIKE $1 `;
-        params.push(`%${email.trim()}%`);
+        const params: any[] = [];
+        if (scopedEmail) {
+          sql += ` WHERE LOWER(b.customer_email) = $1 `;
+          params.push(scopedEmail.trim().toLowerCase());
+        }
+        sql += ` ORDER BY b.booking_date DESC, b.created_at DESC LIMIT 50; `;
+        const res = await query(sql, params);
+        return reply.send(res.rows);
+      } catch (err: any) {
+        request.log.error(err, 'Failed to fetch user bookings');
+        return reply.send([]);
       }
-      sql += ` ORDER BY b.booking_date DESC, b.created_at DESC LIMIT 50; `;
-      const res = await query(sql, params);
-      return reply.send(res.rows);
-    } catch (err: any) {
-      request.log.error(err, 'Failed to fetch user bookings');
-      return reply.send([]);
     }
-  });
+  );
 }

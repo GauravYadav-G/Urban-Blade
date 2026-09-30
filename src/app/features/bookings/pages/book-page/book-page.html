@@ -172,7 +172,7 @@
             <div class="form-group">
               <label for="service-select">Select Salon Service *</label>
               <select id="service-select" formControlName="service">
-                @for (svc of services; track svc.id) {
+                @for (svc of services(); track svc.id) {
                   <option [value]="svc.name">{{ svc.name }} — ₹{{ svc.price }} (In Salon)</option>
                 }
               </select>

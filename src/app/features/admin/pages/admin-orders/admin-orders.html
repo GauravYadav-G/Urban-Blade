@@ -226,6 +226,15 @@
       </button>
 
       <button
+        class="tab-btn tab-btn--incomplete"
+        [class.active]="selectedTab() === 'incomplete'"
+        (click)="selectedTab.set('incomplete')"
+      >
+        <span class="dot incomplete"></span>
+        <span>Incomplete Pay ({{ incompleteOrdersCount() }})</span>
+      </button>
+
+      <button
         class="tab-btn"
         [class.active]="selectedTab() === 'confirmed' || selectedTab() === 'accepted'"
         (click)="selectedTab.set('confirmed')"
@@ -273,9 +282,11 @@
 
     <!-- Secondary Filters Row -->
     <div class="filter-controls-right">
-      <!-- Payment Method Filter -->
+      <!-- Payment Method & Status Filter -->
       <div class="sub-filter-pills">
         <button type="button" [class.active]="selectedPaymentFilter() === 'all'" (click)="selectedPaymentFilter.set('all')">All Pay</button>
+        <button type="button" [class.active]="selectedPaymentFilter() === 'paid'" (click)="selectedPaymentFilter.set('paid')">✓ Paid</button>
+        <button type="button" [class.active]="selectedPaymentFilter() === 'incomplete'" (click)="selectedPaymentFilter.set('incomplete')" [class.has-incomplete]="incompleteOrdersCount() > 0">⚠️ Incomplete ({{ incompleteOrdersCount() }})</button>
         <button type="button" [class.active]="selectedPaymentFilter() === 'prepaid'" (click)="selectedPaymentFilter.set('prepaid')">Prepaid</button>
         <button type="button" [class.active]="selectedPaymentFilter() === 'cod'" (click)="selectedPaymentFilter.set('cod')">COD</button>
       </div>
@@ -376,6 +387,7 @@
               class="order-row" 
               [class.is-selected]="isOrderSelected(order.id)"
               [class.is-delayed]="isDelayed(order)"
+              [class.is-incomplete-payment]="admin.isPaymentIncomplete(order)"
               (click)="viewOrder(order)"
             >
               <!-- Checkbox -->
@@ -392,6 +404,11 @@
                 <div class="ref-cell">
                   <div class="ref-id-row">
                     <span class="order-id-badge">#{{ order.id.slice(0, 10) }}</span>
+                    @if (admin.isPaymentIncomplete(order)) {
+                      <span class="unpaid-badge" title="Customer checkout initiated but payment has not been captured">
+                        ⚠️ Incomplete Pay
+                      </span>
+                    }
                     @if (isDelayed(order)) {
                       <span class="sla-warning-pill" title="Order delayed: placed >24 hours ago without dispatch!">
                         ⚡ &gt;24h Delay
@@ -465,13 +482,43 @@
               <!-- Payment -->
               <td>
                 <div class="payment-cell">
-                  <span class="pay-badge" [class.upi]="order.payment_method === 'upi' || order.payment_method === 'Razorpay'" [class.cod]="order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery'">
-                    {{ (order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery') ? '💵 COD' : '💳 ' + (order.payment_method || 'Prepaid') }}
-                  </span>
+                  <div class="pay-method-row">
+                    <span class="pay-badge" [class.upi]="order.payment_method === 'upi' || order.payment_method === 'Razorpay'" [class.cod]="order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery'">
+                      {{ (order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery') ? '💵 COD' : '💳 ' + (order.payment_method || 'Prepaid') }}
+                    </span>
+                    @if (admin.isPaymentIncomplete(order)) {
+                      <span class="pay-status-pill pay-status-pill--incomplete" title="Payment pending confirmation / abandoned">
+                        ⚠️ Incomplete
+                      </span>
+                    } @else if (admin.isPaymentFailed(order)) {
+                      <span class="pay-status-pill pay-status-pill--failed" title="Payment transaction failed">
+                        ✕ Failed
+                      </span>
+                    } @else if (admin.isPaymentPaid(order)) {
+                      <span class="pay-status-pill pay-status-pill--paid" title="Payment captured and settled">
+                        ✓ Paid
+                      </span>
+                    } @else {
+                      <span class="pay-status-pill pay-status-pill--cod" title="Payment to be collected on delivery">
+                        Due on Delivery
+                      </span>
+                    }
+                  </div>
                   @if (order.transaction_id) {
                     <span class="tx-id-badge" [title]="'Transaction ID: ' + order.transaction_id">
                       {{ order.transaction_id.startsWith('pay_') ? order.transaction_id.slice(0, 14) + '...' : order.transaction_id }}
                     </span>
+                  }
+                  @if (admin.isPaymentIncomplete(order) && order.payment_method === 'Razorpay') {
+                    <button 
+                      type="button" 
+                      class="micro-reconcile-btn" 
+                      [disabled]="isReconciling()" 
+                      (click)="reconcilePayment(order, $event)" 
+                      title="Check Razorpay for captured payment and auto-update order"
+                    >
+                      🔄 Check Gateway
+                    </button>
                   }
                 </div>
               </td>
@@ -479,61 +526,84 @@
               <!-- Fulfillment Pipeline -->
               <td>
                 <div class="table-pipeline-wrap">
-                  <div class="pipeline-track">
-                    <span class="p-dot" [class.done]="isStageCompleted(order.status, 0)" [class.curr]="isStageCurrent(order.status, 0)" title="Confirmed"></span>
-                    <span class="p-bar" [class.done]="isStageCompleted(order.status, 0)"></span>
-                    <span class="p-dot" [class.done]="isStageCompleted(order.status, 1)" [class.curr]="isStageCurrent(order.status, 1)" title="Processing"></span>
-                    <span class="p-bar" [class.done]="isStageCompleted(order.status, 1)"></span>
-                    <span class="p-dot" [class.done]="isStageCompleted(order.status, 2)" [class.curr]="isStageCurrent(order.status, 2)" title="Shipped"></span>
-                    <span class="p-bar" [class.done]="isStageCompleted(order.status, 2)"></span>
-                    <span class="p-dot" [class.done]="isStageCompleted(order.status, 3)" [class.curr]="isStageCurrent(order.status, 3)" title="Delivered"></span>
-                  </div>
-                  <div class="pipeline-label-row">
-                    <span class="status-pill {{ order.status }}">
-                      {{ order.status | titlecase }}
-                    </span>
-                    @if (order.tracking_number) {
-                      <button 
-                        type="button" 
-                        class="trk-copy-pill"
-                        (click)="copyTrackingNumber(order.tracking_number, $event)"
-                        [title]="'Click to copy tracking code: ' + order.tracking_number"
-                      >
-                        <span class="trk-icon">🚚</span>
-                        <span class="trk-text">{{ order.tracking_number }}</span>
-                        @if (copiedTrackingId() === order.tracking_number) {
-                          <span class="trk-copied">✓</span>
-                        }
-                      </button>
-                    }
-                  </div>
+                  @if (admin.isPaymentIncomplete(order)) {
+                    <div class="pipeline-track pipeline-track--incomplete">
+                      <span class="p-dot unpaid" title="Awaiting Customer Payment"></span>
+                      <span class="p-bar"></span>
+                      <span class="p-dot" title="Processing"></span>
+                      <span class="p-bar"></span>
+                      <span class="p-dot" title="Shipped"></span>
+                      <span class="p-bar"></span>
+                      <span class="p-dot" title="Delivered"></span>
+                    </div>
+                    <div class="pipeline-label-row">
+                      <span class="status-pill status-pill--awaiting-payment">
+                        ⚠️ Awaiting Payment
+                      </span>
+                    </div>
+                  } @else {
+                    <div class="pipeline-track">
+                      <span class="p-dot" [class.done]="isStageCompleted(order.status, 0)" [class.curr]="isStageCurrent(order.status, 0)" title="Confirmed"></span>
+                      <span class="p-bar" [class.done]="isStageCompleted(order.status, 0)"></span>
+                      <span class="p-dot" [class.done]="isStageCompleted(order.status, 1)" [class.curr]="isStageCurrent(order.status, 1)" title="Processing"></span>
+                      <span class="p-bar" [class.done]="isStageCompleted(order.status, 1)"></span>
+                      <span class="p-dot" [class.done]="isStageCompleted(order.status, 2)" [class.curr]="isStageCurrent(order.status, 2)" title="Shipped"></span>
+                      <span class="p-bar" [class.done]="isStageCompleted(order.status, 2)"></span>
+                      <span class="p-dot" [class.done]="isStageCompleted(order.status, 3)" [class.curr]="isStageCurrent(order.status, 3)" title="Delivered"></span>
+                    </div>
+                    <div class="pipeline-label-row">
+                      <span class="status-pill {{ order.status }}">
+                        {{ order.status | titlecase }}
+                      </span>
+                      @if (order.tracking_number) {
+                        <button 
+                          type="button" 
+                          class="trk-copy-pill"
+                          (click)="copyTrackingNumber(order.tracking_number, $event)"
+                          [title]="'Click to copy tracking code: ' + order.tracking_number"
+                        >
+                          <span class="trk-icon">🚚</span>
+                          <span class="trk-text">{{ order.tracking_number }}</span>
+                          @if (copiedTrackingId() === order.tracking_number) {
+                            <span class="trk-copied">✓</span>
+                          }
+                        </button>
+                      }
+                    </div>
+                  }
                 </div>
               </td>
 
               <!-- Row Action Controls -->
               <td class="text-right" (click)="$event.stopPropagation()">
                 <div class="actions-cell">
-                  @let action = getNextStageAction(order);
-                  @if (action.nextStatus) {
-                    <button 
-                      type="button" 
-                      class="quick-advance-btn {{ action.badgeClass }}" 
-                      (click)="advanceStatus(order, $event)" 
-                      [title]="'Advance order: ' + action.label"
-                    >
-                      <span class="btn-icon">{{ action.icon }}</span>
-                      <span class="btn-text">{{ action.label }}</span>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                      </svg>
-                    </button>
-                  } @else if (order.status === 'delivered') {
-                    <span class="table-delivered-tag">
-                      <span class="tag-check">✓</span>
-                      <span>Delivered</span>
+                  @if (admin.isPaymentIncomplete(order)) {
+                    <span class="unpaid-action-tag" title="Customer payment is incomplete. Dispatch is locked.">
+                      ⚠️ Awaiting Payment
                     </span>
                   } @else {
-                    <span class="table-cancelled-tag">Cancelled</span>
+                    @let action = getNextStageAction(order);
+                    @if (action.nextStatus) {
+                      <button 
+                        type="button" 
+                        class="quick-advance-btn {{ action.badgeClass }}" 
+                        (click)="advanceStatus(order, $event)" 
+                        [title]="'Advance order: ' + action.label"
+                      >
+                        <span class="btn-icon">{{ action.icon }}</span>
+                        <span class="btn-text">{{ action.label }}</span>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                      </button>
+                    } @else if (order.status === 'delivered') {
+                      <span class="table-delivered-tag">
+                        <span class="tag-check">✓</span>
+                        <span>Delivered</span>
+                      </span>
+                    } @else {
+                      <span class="table-cancelled-tag">Cancelled</span>
+                    }
                   }
 
                   <!-- 1-Click WhatsApp -->
@@ -630,6 +700,35 @@
           </button>
         </div>
 
+        <!-- Incomplete Payment High-Priority Alert Banner -->
+        @if (admin.isPaymentIncomplete(o)) {
+          <div class="inspector-unpaid-banner">
+            <span class="banner-icon">⚠️</span>
+            <div class="banner-text">
+              <strong class="banner-title">Customer Payment Incomplete ({{ o.payment_status | uppercase }})</strong>
+              <p class="banner-desc">
+                Checkout was initiated via {{ o.payment_method }}, but payment was not confirmed.
+                Inventory hold is active. <strong>Dispatch is locked until payment is settled.</strong>
+              </p>
+              @if (o.payment_method === 'Razorpay') {
+                <button 
+                  type="button" 
+                  class="btn-reconcile-gateway" 
+                  [disabled]="isReconciling()" 
+                  (click)="reconcilePayment(o, $event)"
+                >
+                  @if (isReconciling()) {
+                    <span class="cwf-spinner"></span>
+                    <span>Checking Razorpay Gateway...</span>
+                  } @else {
+                    <span>🔄 Check &amp; Settle Payment with Razorpay</span>
+                  }
+                </button>
+              }
+            </div>
+          </div>
+        }
+
         <!-- Interactive 4-Stage Fulfillment Journey Tracker -->
         <div class="fulfillment-journey-card">
           <div class="journey-header">
@@ -639,7 +738,12 @@
               </span>
               <span class="journey-hint">Click any stage to advance immediately or follow the automated sequence</span>
             </div>
-            @if (getNextStatus(o.status); as nextSt) {
+            @if (admin.isPaymentIncomplete(o)) {
+              <span class="btn-fast-advance unpaid-blocked" title="Cannot advance while payment is incomplete">
+                <span class="adv-icon">⚠️</span>
+                <span class="adv-label">Awaiting Payment</span>
+              </span>
+            } @else if (getNextStatus(o.status); as nextSt) {
               <button 
                 type="button" 
                 class="btn-fast-advance {{ getNextStageAction(o).badgeClass }}"
@@ -863,7 +967,9 @@
                 </div>
                 <div class="detail-row">
                   <span class="label">Status:</span>
-                  <span class="val green">{{ o.payment_status }}</span>
+                  <span class="val" [class.green]="admin.isPaymentPaid(o)" [class.amber]="admin.isPaymentIncomplete(o)" [class.red]="admin.isPaymentFailed(o)">
+                    {{ admin.getPaymentStatusLabel(o) | uppercase }} ({{ o.payment_status }})
+                  </span>
                 </div>
                 @if (o.transaction_id) {
                   <div class="detail-row highlight-tx-row">
@@ -882,8 +988,8 @@
                   </div>
                 }
                 <div class="detail-row total">
-                  <span class="label">Total Paid:</span>
-                  <span class="val total-val">₹{{ o.total_amount | number:'1.0-0' }}</span>
+                  <span class="label">{{ admin.isPaymentPaid(o) ? 'Total Paid:' : 'Total Amount Due:' }}</span>
+                  <span class="val total-val" [class.val-unpaid]="admin.isPaymentIncomplete(o)">₹{{ o.total_amount | number:'1.0-0' }}</span>
                 </div>
               </div>
             </div>
@@ -914,7 +1020,12 @@
             <span>Tax Invoice</span>
           </button>
 
-          @if (getNextStatus(o.status); as nextSt) {
+          @if (admin.isPaymentIncomplete(o)) {
+            <button class="modal-action-btn advance unpaid-locked" disabled title="Dispatch is locked until payment is captured">
+              <span class="adv-btn-icon">⚠️</span>
+              <span>Payment Incomplete (Dispatch Locked)</span>
+            </button>
+          } @else if (getNextStatus(o.status); as nextSt) {
             <button class="modal-action-btn advance {{ getNextStageAction(o).badgeClass }}" (click)="advanceStatus(o)">
               <span class="adv-btn-icon">{{ getNextStageAction(o).icon }}</span>
               <span>{{ getNextStageAction(o).label }} (Move to {{ nextSt | titlecase }})</span>
@@ -1117,7 +1228,14 @@
               <span class="inv-badge">OFFICIAL GST TAX INVOICE</span>
               <div class="inv-meta-row"><strong>Invoice No:</strong> UB-{{ inv.id.slice(0, 8).toUpperCase() }}</div>
               <div class="inv-meta-row"><strong>Date of Issue:</strong> {{ inv.created_at | date:'mediumDate' }}</div>
-              <div class="inv-meta-row"><strong>Payment:</strong> {{ inv.payment_method | uppercase }} ({{ inv.payment_status | uppercase }})</div>
+              <div class="inv-meta-row">
+                <strong>Payment:</strong> {{ inv.payment_method | uppercase }} —
+                @if (admin.isPaymentIncomplete(inv)) {
+                  <span class="inv-unpaid-warn">⚠️ INCOMPLETE / UNPAID</span>
+                } @else {
+                  <span>{{ inv.payment_status | uppercase }}</span>
+                }
+              </div>
               @if (inv.transaction_id) {
                 <div class="inv-meta-row"><strong>Tx ID:</strong> {{ inv.transaction_id }}</div>
               }

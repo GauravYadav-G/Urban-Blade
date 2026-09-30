@@ -1,114 +1,59 @@
+import { createHash } from 'node:crypto';
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { requireAuth } from './auth.middleware.js';
+import { config } from '../config.js';
 import { redis, isRedisAvailable } from '../redis/client.js';
 
-const memoryIdempotency = new Map<string, { status: number; body: any; expiresAt: number }>();
+type Entry = { fingerprint: string; status?: number; body?: unknown; expiresAt: number };
+const memory = new Map<string, Entry>();
+const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
-export interface StoredResponse {
-  status: number;
-  body: any;
-}
-
-/**
- * Amazon-Grade Idempotency Middleware
- * Prevents duplicate orders, double charges, and duplicated bookings during network retries
- */
-export async function idempotencyHook(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
-  const method = request.method.toUpperCase();
-  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
-    return;
+export async function idempotencyHook(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(request.method)) return;
+  // Restrict caching to authenticated checkout creation, never login/token responses.
+  if (!['/api/orders/cod-order', '/api/orders/razorpay/create-order'].includes(request.url.split('?')[0])) return;
+  const key = request.headers['x-idempotency-key'] || request.headers['idempotency-key'];
+  if (!key) return;
+  if (typeof key !== 'string' || key.length > 100 || !/^[\w-]+$/.test(key)) {
+    reply.code(400).send({ error: 'INVALID_IDEMPOTENCY_KEY' }); return;
   }
-
-  const idempotencyKey =
-    (request.headers['x-idempotency-key'] as string) ||
-    (request.headers['idempotency-key'] as string);
-
-  if (!idempotencyKey) {
-    return;
-  }
-
-  const redisKey = `idempotency:${idempotencyKey}`;
-
-  // Check if response is already cached
-  if (isRedisAvailable() && redis) {
+  await requireAuth(request, reply);
+  if (reply.sent) return;
+  const redisKey = `idempotency:${hash(`${request.headers.authorization}:${request.method}:${request.url}:${key}`)}`;
+  const fingerprint = hash(JSON.stringify(request.body));
+  const entry: Entry = { fingerprint, expiresAt: Date.now() + 120000 };
+  let existing: Entry | undefined;
+  const useRedis = isRedisAvailable() && !!redis;
+  if (config.isProduction && !useRedis) { reply.code(503).send({ error: 'CHECKOUT_TEMPORARILY_UNAVAILABLE' }); return; }
+  if (useRedis && redis) {
     try {
-      const existing = await redis.get(redisKey);
-      if (existing) {
-        if (existing === 'IN_FLIGHT') {
-          reply.status(409).send({
-            error: 'REQUEST_IN_FLIGHT',
-            message: 'A duplicate request with this idempotency key is currently processing.',
-          });
-          return;
-        }
-        const cached: StoredResponse = JSON.parse(existing);
-        reply.header('X-Cache-Lookup', 'IDEMPOTENT_HIT');
-        reply.status(cached.status).send(cached.body);
-        return;
-      }
-
-      // Mark request as IN_FLIGHT with 60s expiration
-      await redis.set(redisKey, 'IN_FLIGHT', 'EX', 60);
+      const acquired = await redis.set(redisKey, JSON.stringify(entry), 'EX', 120, 'NX');
+      if (!acquired) existing = JSON.parse((await redis.get(redisKey)) || '{}');
     } catch {
-      // Fall through to memory
+      reply.code(503).send({ error: 'CHECKOUT_TEMPORARILY_UNAVAILABLE' }); return;
     }
   } else {
-    const cached = memoryIdempotency.get(redisKey);
-    if (cached) {
-      if (Date.now() < cached.expiresAt) {
-        reply.header('X-Cache-Lookup', 'IDEMPOTENT_HIT');
-        reply.status(cached.status).send(cached.body);
-        return;
-      }
-      memoryIdempotency.delete(redisKey);
+    for (const [k, value] of memory) if (value.expiresAt <= Date.now()) memory.delete(k);
+    existing = memory.get(redisKey);
+    if (!existing) {
+      if (memory.size >= 10000) { reply.code(503).send({ error: 'CHECKOUT_BUSY' }); return; }
+      memory.set(redisKey, entry);
     }
   }
-
-  // Attach key to request so the onSend hook can save the final response
-  (request as any).idempotencyKey = redisKey;
+  if (existing) {
+    if (existing.fingerprint !== fingerprint) reply.code(409).send({ error: 'IDEMPOTENCY_CONFLICT' });
+    else if (!existing.status) reply.code(409).send({ error: 'REQUEST_IN_FLIGHT' });
+    else reply.code(existing.status).send(existing.body);
+    return;
+  }
+  (request as any).idempotency = { key: redisKey, fingerprint, useRedis };
 }
 
-/**
- * Hook to save response once generated
- */
-export async function saveIdempotentResponse(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  payload: any
-): Promise<any> {
-  const redisKey = (request as any).idempotencyKey;
-  if (!redisKey) {
-    return payload;
-  }
-
-  try {
-    const status = reply.statusCode;
-    let body = payload;
-    try {
-      if (typeof payload === 'string') {
-        body = JSON.parse(payload);
-      }
-    } catch {
-      body = payload;
-    }
-
-    const dataToStore: StoredResponse = { status, body };
-
-    if (isRedisAvailable() && redis) {
-      // Keep idempotent response for 24 hours
-      await redis.set(redisKey, JSON.stringify(dataToStore), 'EX', 86400);
-    } else {
-      memoryIdempotency.set(redisKey, {
-        status,
-        body,
-        expiresAt: Date.now() + 86400 * 1000,
-      });
-    }
-  } catch (err) {
-    // Non-blocking
-  }
-
+export async function saveIdempotentResponse(request: FastifyRequest, reply: FastifyReply, payload: any): Promise<any> {
+  const state = (request as any).idempotency;
+  if (!state) return payload;
+  const entry: Entry = { fingerprint: state.fingerprint, status: reply.statusCode, body: typeof payload === 'string' ? JSON.parse(payload) : payload, expiresAt: Date.now() + 86400000 };
+  if (state.useRedis && redis) await redis.set(state.key, JSON.stringify(entry), 'EX', 86400);
+  else memory.set(state.key, entry);
   return payload;
 }

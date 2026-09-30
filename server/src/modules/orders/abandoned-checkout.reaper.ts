@@ -1,81 +1,38 @@
 import { pool, query, withTransaction } from '../../db/pool.js';
+import { paymentGateway, settleCapturedPayment } from './payment-settlement.service.js';
+import { cancelOrderAndReleaseStock } from './stock-reservation.service.js';
 
-/**
- * Reclaims inventory from checkout sessions that were initiated ('accepted')
- * but never captured within 15 minutes.
- */
 export async function reapAbandonedCheckouts(): Promise<number> {
   if (pool.ended) return 0;
-  try {
-    // Find unconfirmed orders older than 15 minutes
-    const staleOrders = await query(`
-      SELECT id, status, created_at 
-      FROM orders 
-      WHERE (status = 'accepted' OR payment_status = 'pending')
-        AND status NOT IN ('confirmed', 'processing', 'shipped', 'delivered', 'cancelled')
-        AND created_at < NOW() - INTERVAL '15 minutes'
-      LIMIT 50;
-    `);
-
-    if (staleOrders.rows.length === 0) {
-      return 0;
-    }
-
-    let reapedCount = 0;
-    for (const order of staleOrders.rows) {
-      await withTransaction(async (client) => {
-        // Restock products
-        const items = await client.query(
-          `SELECT product_id, quantity FROM order_items WHERE order_id = $1`,
-          [order.id]
-        );
-
-        for (const item of items.rows) {
-          if (item.product_id) {
-            await client.query(
-              `UPDATE products 
-               SET stock_quantity = stock_quantity + $1,
-                   in_stock = true,
-                   updated_at = CURRENT_TIMESTAMP
-               WHERE id = $2`,
-              [item.quantity, item.product_id]
-            );
-          }
-        }
-
-        // Mark order as cancelled due to checkout timeout
-        await client.query(
-          `UPDATE orders 
-           SET status = 'cancelled', 
-               payment_status = 'failed',
-               updated_at = CURRENT_TIMESTAMP 
-           WHERE id = $1`,
-          [order.id]
-        );
-      });
-      reapedCount++;
-    }
-
-    if (reapedCount > 0) {
-      console.log(`[InventoryReaper] Reclaimed inventory for ${reapedCount} abandoned checkout sessions.`);
-    }
-    return reapedCount;
-  } catch (err: any) {
-    if (pool.ended || err.message?.includes('after calling end')) {
-      return 0;
-    }
-    console.error('[InventoryReaper] Error during checkout reap cycle:', err.message);
-    return 0;
+  // Recover payments even when the customer closes checkout before verification.
+  const online = await query(`SELECT id, idempotency_key FROM orders WHERE status = 'accepted'
+    AND payment_status = 'pending' AND payment_method = 'Razorpay' ORDER BY created_at LIMIT 50`);
+  for (const order of online.rows) {
+    try {
+      const payments = await paymentGateway().orders.fetchPayments(order.idempotency_key);
+      const captured = payments.items.find(payment => payment.status === 'captured');
+      if (captured) await settleCapturedPayment(captured.id, order.id);
+      // Pending online orders are retained until the provider confirms payment.
+      // Do not release holds on a timer while delayed bank authorization is possible.
+    } catch (err: any) { console.error('Payment reconciliation failed', order.id, err.message); }
   }
+  const stale = await query(`SELECT id FROM orders
+    WHERE status = 'accepted' AND payment_status = 'pending'
+      AND payment_method <> 'Razorpay'
+      AND created_at < NOW() - INTERVAL '15 minutes'
+    ORDER BY created_at LIMIT 50`);
+  let count = 0;
+  for (const order of stale.rows) {
+    const result = await withTransaction(client => cancelOrderAndReleaseStock(client, order.id));
+    if (result.cancelled) count++;
+  }
+  return count;
 }
 
 export function startAbandonedCheckoutReaper(intervalMs = 60000): NodeJS.Timeout {
-  // Initial sweep after server boots
-  setTimeout(() => {
-    reapAbandonedCheckouts().catch(() => {});
-  }, 10000);
-
-  return setInterval(() => {
-    reapAbandonedCheckouts().catch(() => {});
+  const timer = setInterval(() => {
+    reapAbandonedCheckouts().catch(err => console.error('Checkout cleanup failed', err.message));
   }, intervalMs);
+  timer.unref();
+  return timer;
 }

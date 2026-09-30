@@ -8,10 +8,40 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   name VARCHAR(255) NOT NULL,
+  phone VARCHAR(20),
   role VARCHAR(50) DEFAULT 'customer' CHECK (role IN ('customer', 'admin', 'stylist', 'vendor')),
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ─── VENDOR BUSINESS ACCOUNTS ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS vendors (
+  id VARCHAR(120) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) UNIQUE NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password TEXT NOT NULL,
+  contact_person VARCHAR(255) NOT NULL,
+  phone VARCHAR(50) NOT NULL,
+  commission_rate NUMERIC(5, 2) NOT NULL DEFAULT 12 CHECK (commission_rate >= 0 AND commission_rate <= 100),
+  status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+  payout_account JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ─── CARTS ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS carts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  items JSONB NOT NULL DEFAULT '[]'::jsonb,
+  version INTEGER DEFAULT 0 NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_carts_user_id ON carts(user_id);
 
 -- ─── ADDRESSES ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS addresses (
@@ -50,6 +80,7 @@ CREATE TABLE IF NOT EXISTS products (
   badge VARCHAR(50) CHECK (badge IS NULL OR badge IN ('deal', 'bestseller', 'new')),
   in_stock BOOLEAN DEFAULT true,
   stock_quantity INTEGER DEFAULT 100 CHECK (stock_quantity >= 0),
+  stock_reserved INTEGER DEFAULT 0 CHECK (stock_reserved >= 0),
   version INTEGER DEFAULT 0 NOT NULL, -- Optimistic Concurrency Control (OCC)
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
@@ -99,10 +130,86 @@ CREATE TABLE IF NOT EXISTS orders (
   payment_method VARCHAR(50) DEFAULT 'cash_on_delivery',
   payment_status VARCHAR(30) DEFAULT 'pending' CHECK (payment_status IN ('pending', 'captured', 'refunded', 'failed')),
   transaction_id VARCHAR(255),
+  razorpay_payment_id VARCHAR(255),
+  razorpay_signature VARCHAR(255),
+  coupon_code VARCHAR(100),
+  discount_amount NUMERIC(10, 2) NOT NULL DEFAULT 0 CHECK (discount_amount >= 0),
+  tracking_number VARCHAR(255),
+  carrier VARCHAR(120),
+  notes TEXT,
   version INTEGER DEFAULT 0 NOT NULL,
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Index for idempotency key lookups
+CREATE INDEX IF NOT EXISTS idx_orders_idempotency_key ON orders(idempotency_key);
+
+
+-- ─── STOCK RESERVATION LEDGER (PAYMENT-FIRST TTL SOURCE OF TRUTH) ────────────
+-- One row per (order, product) unit hold. products.stock_reserved is the
+-- aggregate; this table is the authoritative per-reservation record that the
+-- TTL reaper and the commit/release paths consume. Status transitions are
+-- one-way (active -> committed | released), which makes every stock mutation
+-- idempotent: re-running a release or a commit matches zero rows and is a no-op.
+CREATE TABLE IF NOT EXISTS stock_reservations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'committed', 'released')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  resolved_at TIMESTAMPTZ,
+  UNIQUE (order_id, product_id)
+);
+
+-- Drives the TTL sweep: only live holds, ordered by age.
+CREATE INDEX IF NOT EXISTS idx_stock_reservations_active_created
+  ON stock_reservations (created_at)
+  WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_stock_reservations_order_status
+  ON stock_reservations (order_id, status);
+CREATE INDEX IF NOT EXISTS idx_stock_reservations_product
+  ON stock_reservations (product_id)
+  WHERE status = 'active';
+
+-- ─── IDEMPOTENT COMPAT MIGRATIONS (ADDITIVE ONLY) ────────────────────────────
+-- CREATE TABLE IF NOT EXISTS is a no-op against a pre-existing table, so columns
+-- introduced later MUST be added with ALTER ... ADD COLUMN IF NOT EXISTS, or they
+-- silently never exist on already-provisioned databases.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS transaction_id VARCHAR(255);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code VARCHAR(100);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10, 2) NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_number VARCHAR(255);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS carrier VARCHAR(120);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS razorpay_payment_id VARCHAR(255);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS razorpay_signature VARCHAR(255);
+CREATE INDEX IF NOT EXISTS idx_orders_razorpay_payment_id ON orders(razorpay_payment_id);
+
+-- Contact number a customer saves on their profile (used for carrier OTP and
+-- appointment reminders). Provisioned databases created before this column must
+-- receive it too, otherwise PATCH /auth/profile fails and every account silently
+-- falls back to whatever placeholder the UI happens to render.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
+
+-- Payment-first inventory hold counter. Referenced by every order path, so it
+-- must exist on databases provisioned before the column was introduced.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_reserved INTEGER NOT NULL DEFAULT 0;
+
+-- ADD CONSTRAINT has no IF NOT EXISTS form; swallow the duplicate error so the
+-- migration stays re-runnable.
+DO $$
+BEGIN
+  ALTER TABLE products
+    ADD CONSTRAINT products_stock_reserved_check CHECK (stock_reserved >= 0);
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+  WHEN duplicate_table THEN NULL;
+END $$;
+
+-- Support index for the reservation-aware product availability lookup.
+CREATE INDEX IF NOT EXISTS idx_products_availability ON products (stock_quantity, stock_reserved);
 
 -- ─── ORDER ITEMS ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS order_items (
@@ -114,3 +221,66 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   image_url TEXT
 );
+
+-- ─── MARKETPLACE PRICE COMPARISON ────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS marketplace_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  marketplace VARCHAR(50) NOT NULL CHECK (marketplace IN ('amazon', 'flipkart', 'nykaa', 'purplle', 'meesho', 'jiomart', 'bigbasket', 'blinkit', 'zepto', 'other')),
+  url TEXT NOT NULL,
+  price NUMERIC(10, 2),
+  currency VARCHAR(5) DEFAULT 'INR',
+  last_checked TIMESTAMPTZ,
+  check_status VARCHAR(20) DEFAULT 'pending' CHECK (check_status IN ('pending', 'success', 'failed', 'rate_limited')),
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(product_id, marketplace)
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_links_product_id ON marketplace_links(product_id);
+CREATE INDEX IF NOT EXISTS idx_marketplace_links_marketplace ON marketplace_links(marketplace);
+CREATE INDEX IF NOT EXISTS idx_marketplace_links_last_checked ON marketplace_links(last_checked);
+
+-- ─── COUPON USAGES ─────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS coupon_usages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  coupon_code VARCHAR(100) NOT NULL,
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
+  discount_amount NUMERIC(10, 2) NOT NULL DEFAULT 0 CHECK (discount_amount >= 0),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_coupon_usages_coupon_code ON coupon_usages(coupon_code);
+CREATE INDEX IF NOT EXISTS idx_coupon_usages_user_id ON coupon_usages(user_id);
+CREATE INDEX IF NOT EXISTS idx_coupon_usages_order_id ON coupon_usages(order_id);
+
+-- ─── DB MIGRATIONS TRACKING ──────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version VARCHAR(50) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  applied_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  checksum VARCHAR(64)
+);
+
+-- Initial migration record
+INSERT INTO schema_migrations (version, name, checksum)
+VALUES ('1.0.0', 'initial_schema', 'initial')
+ON CONFLICT (version) DO NOTHING;
+
+-- Authentication requires one rotating refresh token per account.
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  token TEXT NOT NULL UNIQUE,
+  revoked BOOLEAN NOT NULL DEFAULT FALSE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS revoked_access_tokens (
+  token_hash CHAR(64) PRIMARY KEY,
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_revoked_access_expiry ON revoked_access_tokens(expires_at);

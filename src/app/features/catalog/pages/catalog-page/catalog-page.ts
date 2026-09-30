@@ -14,7 +14,7 @@ import { ProductCard } from '@shared/components/product-card/product-card';
 export class CatalogPage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly catalog = inject(CatalogService);
+  readonly catalog = inject(CatalogService);
 
   readonly categories = this.catalog.categories;
   readonly params = toSignal(this.route.queryParamMap.pipe(map((q) => q)), {

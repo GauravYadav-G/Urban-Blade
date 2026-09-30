@@ -1,7 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, catchError, of, tap } from 'rxjs';
-import { CatalogService } from './catalog.service';
+import { Observable, catchError, tap, throwError } from 'rxjs';
 import { AccountService } from './account.service';
 
 export interface CheckoutItemRequest {
@@ -78,12 +77,27 @@ const API_BASE =
 @Injectable({ providedIn: 'root' })
 export class PaymentService {
   private readonly http = inject(HttpClient);
-  private readonly catalog = inject(CatalogService);
   private readonly account = inject(AccountService);
 
   readonly isProcessing = signal<boolean>(false);
   readonly lastReceipt = signal<PaymentReceipt | null>(null);
   readonly activeRazorpayOrder = signal<RazorpayOrderResponse | null>(null);
+
+  quoteOrder(items: CheckoutItemRequest[], couponCode?: string): Observable<{ totalAmount: number; discountAmount: number; verifiedItems: Array<{ productId: string; unitPrice: number }> }> {
+    return this.http.post<any>(`${API_BASE}/orders/quote`, { items, couponCode });
+  }
+
+  private checkoutKey(method: string, payload: unknown): string {
+    const fingerprint = JSON.stringify({ method, payload, user: this.account.user()?.email });
+    const stored = sessionStorage.getItem('checkout-attempt');
+    if (stored) {
+      const attempt = JSON.parse(stored);
+      if (attempt.fingerprint === fingerprint && Date.now() - attempt.createdAt < 15 * 60 * 1000) return attempt.key;
+    }
+    const key = crypto.randomUUID();
+    sessionStorage.setItem('checkout-attempt', JSON.stringify({ fingerprint, key, createdAt: Date.now() }));
+    return key;
+  }
 
   /**
    * Dynamically loads the official Razorpay Checkout JavaScript SDK
@@ -106,7 +120,7 @@ export class PaymentService {
       script.async = true;
       script.onload = () => resolve(true);
       script.onerror = () => {
-        console.warn('Failed to load official Razorpay script from CDN');
+        script.remove();
         resolve(false);
       };
       document.body.appendChild(script);
@@ -122,11 +136,12 @@ export class PaymentService {
     userId?: string;
     couponCode?: string;
     discountAmount?: number;
+    expectedTotal: number;
   }): Observable<RazorpayOrderResponse> {
     this.isProcessing.set(true);
 
     return this.http
-      .post<RazorpayOrderResponse>(`${API_BASE}/orders/razorpay/create-order`, payload)
+      .post<RazorpayOrderResponse>(`${API_BASE}/orders/razorpay/create-order`, payload, { headers: { 'x-idempotency-key': this.checkoutKey('razorpay', payload) } })
       .pipe(
         tap((order) => {
           this.isProcessing.set(false);
@@ -134,10 +149,7 @@ export class PaymentService {
         }),
         catchError((err) => {
           this.isProcessing.set(false);
-          console.warn('Backend Razorpay order creation failed, generating local fallback session:', err.message);
-          const fallback = this.createFallbackRazorpayOrder(payload);
-          this.activeRazorpayOrder.set(fallback);
-          return of(fallback);
+          return throwError(() => err);
         })
       );
   }
@@ -153,14 +165,12 @@ export class PaymentService {
       .pipe(
         tap((receipt) => {
           this.lastReceipt.set(receipt);
+          sessionStorage.removeItem('checkout-attempt');
           this.isProcessing.set(false);
         }),
         catchError((err) => {
           this.isProcessing.set(false);
-          console.warn('Backend payment verification fallback:', err.message);
-          const fallbackReceipt = this.createFallbackReceipt(payload);
-          this.lastReceipt.set(fallbackReceipt);
-          return of(fallbackReceipt);
+          return throwError(() => err);
         })
       );
   }
@@ -174,55 +184,21 @@ export class PaymentService {
     userId?: string;
     couponCode?: string;
     discountAmount?: number;
+    expectedTotal: number;
   }): Observable<PaymentReceipt> {
     this.isProcessing.set(true);
 
     return this.http
-      .post<PaymentReceipt>(`${API_BASE}/orders/cod-order`, payload)
+      .post<PaymentReceipt>(`${API_BASE}/orders/cod-order`, payload, { headers: { 'x-idempotency-key': this.checkoutKey('cod', payload) } })
       .pipe(
         tap((receipt) => {
           this.lastReceipt.set(receipt);
+          sessionStorage.removeItem('checkout-attempt');
           this.isProcessing.set(false);
         }),
         catchError((err) => {
           this.isProcessing.set(false);
-          console.warn('Backend COD order fallback:', err.message);
-          const subtotal = payload.items.reduce((acc, it) => {
-            const p = this.catalog.byId(it.productId) || this.catalog.byId(it.productId.replace(/^(hc|bd|sk|tl|gf|sv)-/, ''));
-            return acc + (p ? p.price : 899) * it.quantity;
-          }, 0);
-          const discount = Math.max(0, Number(payload.discountAmount) || 0);
-          const discountedSubtotal = Math.max(0, subtotal - discount);
-          const totalAmount = discountedSubtotal + (discountedSubtotal >= 999 ? 0 : 99);
-          const orderId = `ub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-          const fallbackReceipt: PaymentReceipt = {
-            success: true,
-            orderId,
-            paymentId: `pay_cod_${Date.now()}`,
-            receiptNumber: `RCPT-UB-${orderId.slice(0, 8).toUpperCase()}`,
-            status: 'confirmed',
-            paymentStatus: 'pending',
-            totalAmount,
-            currency: 'INR',
-            confirmedAt: new Date().toISOString(),
-            shippingAddress: payload.shippingAddress,
-            items: payload.items.map((it, idx) => {
-              const p = this.catalog.byId(it.productId) || this.catalog.byId(it.productId.replace(/^(hc|bd|sk|tl|gf|sv)-/, ''));
-              return {
-                id: `item-${idx}`,
-                product_name: p ? p.name : 'Salon Care Product',
-                unit_price: p ? p.price : 899,
-                quantity: it.quantity,
-                image_url: p?.imageUrl || '/images/products/hc-hair-serum.jpg',
-              };
-            }),
-            paymentDetails: {
-              method: 'Cash on Delivery',
-              instruction: 'Pay upon delivery at your doorstep.',
-            },
-          };
-          this.lastReceipt.set(fallbackReceipt);
-          return of(fallbackReceipt);
+          return throwError(() => err);
         })
       );
   }
@@ -244,22 +220,16 @@ export class PaymentService {
   ): Promise<void> {
     const isLoaded = await this.loadRazorpayScript();
     if (!isLoaded || !(window as any).Razorpay) {
-      console.warn('Razorpay script could not be loaded directly from CDN. Falling back to test checkout authorization.');
-      const testPaymentId = `pay_sim_${Date.now()}`;
-      const testSignature = `test_sig_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      callbacks.onSuccess({
-        razorpay_payment_id: testPaymentId,
-        razorpay_order_id: orderData.razorpayOrderId,
-        razorpay_signature: testSignature,
-      });
+      callbacks.onError?.({ description: 'Payment gateway could not load. Please check your connection and try again.' });
       return;
     }
 
-    const cleanPhone = (orderData.shippingAddress.phone || '').replace(/\D/g, '').slice(-10) || '9876543210';
-    const isRealOrder = orderData.razorpayOrderId && !orderData.razorpayOrderId.startsWith('order_fallback_');
+    const cleanPhone = (orderData.shippingAddress.phone || '').replace(/\D/g, '').slice(-10);
+
 
     const options: any = {
-      key: orderData.keyId || 'rzp_test_TZtC5tBbAEEppP',
+      key: orderData.keyId,
+      order_id: orderData.razorpayOrderId,
       amount: orderData.amount,
       currency: orderData.currency || 'INR',
       name: 'Urban Blade Luxury Salon',
@@ -290,15 +260,11 @@ export class PaymentService {
         callbacks.onSuccess({
           razorpay_payment_id: response.razorpay_payment_id,
           razorpay_order_id: response.razorpay_order_id || orderData.razorpayOrderId,
-          razorpay_signature: response.razorpay_signature || 'sig_verified_test',
+          razorpay_signature: response.razorpay_signature,
         });
       },
     };
 
-    // Razorpay rejects unverified synthetic order_ids. Only supply order_id if generated by backend Razorpay API
-    if (isRealOrder) {
-      options.order_id = orderData.razorpayOrderId;
-    }
 
     try {
       const rzp = new (window as any).Razorpay(options);
@@ -309,78 +275,6 @@ export class PaymentService {
     } catch (err) {
       if (callbacks.onError) callbacks.onError(err);
     }
-  }
-
-  private createFallbackRazorpayOrder(payload: {
-    items: CheckoutItemRequest[];
-    shippingAddress: ShippingAddress;
-    couponCode?: string;
-    discountAmount?: number;
-  }): RazorpayOrderResponse {
-    const verifiedItems = payload.items.map((it) => {
-      const cleanSlug = it.productId.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
-      const prod = this.catalog.byId(it.productId) || this.catalog.byId(cleanSlug);
-      return {
-        productId: it.productId,
-        productName: prod ? prod.name : 'Salon Care Product',
-        unitPrice: prod ? prod.price : 899,
-        quantity: it.quantity,
-        imageUrl: prod?.imageUrl || '/images/products/hc-hair-serum.jpg',
-      };
-    });
-
-    const subtotal = verifiedItems.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
-    const discount = Math.max(0, Number(payload.discountAmount) || 0);
-    const discountedSubtotal = Math.max(0, subtotal - discount);
-    const shippingFee = discountedSubtotal >= 999 ? 0 : 99;
-    const totalAmount = discountedSubtotal + shippingFee;
-    const orderId = `ub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const razorpayOrderId = `order_fallback_${Math.random().toString(36).slice(2, 12)}`;
-
-    return {
-      orderId,
-      razorpayOrderId,
-      amount: Math.round(totalAmount * 100),
-      totalAmount,
-      currency: 'INR',
-      keyId: 'rzp_test_TZtC5tBbAEEppP',
-      items: verifiedItems,
-      shippingAddress: payload.shippingAddress,
-    };
-  }
-
-  private createFallbackReceipt(payload: RazorpayVerificationRequest): PaymentReceipt {
-    return {
-      success: true,
-      orderId: payload.orderId,
-      paymentId: payload.razorpayPaymentId,
-      receiptNumber: `RCPT-UB-${Date.now().toString().slice(-6)}`,
-      status: 'confirmed',
-      paymentStatus: 'captured',
-      totalAmount: this.activeRazorpayOrder()?.totalAmount || 899,
-      currency: 'INR',
-      confirmedAt: new Date().toISOString(),
-      shippingAddress: this.activeRazorpayOrder()?.shippingAddress || {
-        fullName: this.account.user()?.name || 'Customer',
-        phone: '9000000000',
-        street: 'Standard Delivery Address',
-        city: 'Ghaziabad',
-      },
-      items: [
-        {
-          id: 'item-0',
-          product_name: 'Hair Serum',
-          unit_price: 899,
-          quantity: 1,
-          image_url: '/images/products/hc-hair-serum.jpg',
-        },
-      ],
-      paymentDetails: {
-        method: 'Razorpay',
-        razorpayPaymentId: payload.razorpayPaymentId,
-        razorpayOrderId: payload.razorpayOrderId,
-      },
-    };
   }
 
   /**
@@ -400,31 +294,15 @@ export class PaymentService {
         tap(() => this.isProcessing.set(false)),
         catchError((err) => {
           this.isProcessing.set(false);
-          console.warn('Backend checkout session fallback:', err.message);
-          const fallback = this.createFallbackCheckoutSession(payload);
-          return of(fallback);
+          return throwError(() => err);
         })
       );
-  }
-
-  private createFallbackCheckoutSession(payload: {
-    items: CheckoutItemRequest[];
-    shippingAddress: ShippingAddress;
-    paymentMethod?: string;
-  }): CheckoutSessionResponse {
-    const base = this.createFallbackRazorpayOrder(payload);
-    return {
-      ...base,
-      signatureToken: `sig_fallback_${Date.now()}`,
-      expiresAt: Date.now() + 15 * 60 * 1000,
-      paymentMethod: payload.paymentMethod || 'upi',
-    };
   }
 
   cancelPayment(orderId: string, reason?: string): Observable<any> {
     return this.http
       .post(`${API_BASE}/orders/cancel-payment`, { orderId, reason })
-      .pipe(catchError(() => of({ ok: true })));
+      ;
   }
 
   verifyPayment(payload: {
@@ -441,19 +319,12 @@ export class PaymentService {
       .pipe(
         tap((receipt) => {
           this.lastReceipt.set(receipt);
+          sessionStorage.removeItem('checkout-attempt');
           this.isProcessing.set(false);
         }),
         catchError((err) => {
           this.isProcessing.set(false);
-          console.warn('Backend payment verification fallback:', err.message);
-          const fallback = this.createFallbackReceipt({
-            orderId: payload.orderId,
-            razorpayOrderId: `order_${payload.orderId.slice(0, 8)}`,
-            razorpayPaymentId: payload.paymentId,
-            razorpaySignature: payload.signatureToken || 'sig_ok',
-          });
-          this.lastReceipt.set(fallback);
-          return of(fallback);
+          return throwError(() => err);
         })
       );
   }

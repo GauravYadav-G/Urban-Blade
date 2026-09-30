@@ -1,5 +1,7 @@
 # Urban Blade - Luxury Salon & Grooming Platform
 
+For payment configuration, security changes, verification, and launch limitations, see [Commerce setup](COMMERCE-SETUP.md).
+
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FGauravYadav-G%2FUrban-Blade)
 
 High-performance e-commerce and salon appointment booking web application built with Angular and powered by Neon Serverless PostgreSQL.

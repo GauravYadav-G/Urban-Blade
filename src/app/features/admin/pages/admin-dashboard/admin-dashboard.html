@@ -101,7 +101,7 @@
     <app-metric-card
       title="Orders Volume"
       [value]="admin.metrics().orders.total + ' Units'"
-      [subtitle]="(admin.metrics().orders.accepted + admin.metrics().orders.processing) + ' awaiting dispatch'"
+      [subtitle]="(admin.metrics().orders.accepted + admin.metrics().orders.processing) + ' awaiting dispatch' + (admin.metrics().orders.incompletePayment > 0 ? ' (' + admin.metrics().orders.incompletePayment + ' unpaid)' : '')"
       trend="+8.2%"
       tone="emerald"
       icon='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>'
@@ -146,20 +146,31 @@
 
       <div class="order-queue-list">
         @for (order of admin.orders().slice(0, 4); track order.id) {
-          <div class="queue-item">
+          <div class="queue-item" [class.queue-item--unpaid]="admin.isPaymentIncomplete(order)">
             <div class="queue-item__left">
               <div class="order-avatar">{{ (order.shipping_address.fullName ? order.shipping_address.fullName.charAt(0) : 'U') | uppercase }}</div>
               <div class="queue-item__info">
                 <div class="info-top">
                   <strong>{{ order.shipping_address.fullName || 'Customer' }}</strong>
-                  <span class="status-chip" [class]="'status-chip--' + order.status">{{ order.status | uppercase }}</span>
+                  @if (admin.isPaymentIncomplete(order)) {
+                    <span class="status-chip status-chip--unpaid">⚠️ INCOMPLETE</span>
+                  } @else {
+                    <span class="status-chip" [class]="'status-chip--' + order.status">{{ order.status | uppercase }}</span>
+                  }
                 </div>
-                <span class="info-meta">{{ order.items.length }} item(s) · ₹{{ order.total_amount | number }} · {{ order.payment_method | uppercase }}</span>
+                <span class="info-meta">
+                  {{ order.items.length }} item(s) · ₹{{ order.total_amount | number }} · {{ order.payment_method | uppercase }}
+                  @if (admin.isPaymentIncomplete(order)) {
+                    <span class="unpaid-tag">· (Payment Incomplete)</span>
+                  }
+                </span>
               </div>
             </div>
 
             <div class="queue-item__actions">
-              @if (order.status === 'accepted' || order.status === 'confirmed' || order.status === 'pending') {
+              @if (admin.isPaymentIncomplete(order)) {
+                <span class="tag-unpaid-warn" title="Payment was not completed by the customer. Packing is locked.">Awaiting Payment</span>
+              } @else if (order.status === 'accepted' || order.status === 'confirmed' || order.status === 'pending') {
                 <button type="button" class="btn-mini btn-mini--blue" (click)="admin.updateOrderStatus(order.id, 'processing')">
                   Pack Order
                 </button>

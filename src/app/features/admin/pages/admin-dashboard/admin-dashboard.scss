@@ -619,3 +619,34 @@
     max-width: 320px;
   }
 }
+
+.queue-item--unpaid {
+  background: #fffafa !important;
+  border-left: 3px solid #f43f5e !important;
+}
+
+.status-chip--unpaid {
+  background: #fff1f2 !important;
+  color: #e11d48 !important;
+  border: 1px solid #fecdd3 !important;
+  font-weight: 800 !important;
+}
+
+.unpaid-tag {
+  color: #e11d48;
+  font-weight: 700;
+}
+
+.tag-unpaid-warn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: #fff1f2;
+  color: #be123c;
+  border: 1px solid #fecdd3;
+  cursor: not-allowed;
+}
+

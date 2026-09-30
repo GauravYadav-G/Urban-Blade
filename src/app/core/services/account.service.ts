@@ -73,29 +73,7 @@ export class AccountService {
         return true;
       }
     } catch {
-      // Offline fallback for demo customer
-      if (email === DEMO_ACCOUNT.email.toLowerCase() && credentials.password === DEMO_ACCOUNT.password) {
-        const demoUser: StoreUser = {
-          email: DEMO_ACCOUNT.email,
-          name: DEMO_ACCOUNT.name,
-          role: 'customer',
-        };
-        this.persistToken('demo_mock_jwt_token_customer');
-        this.userSignal.set(demoUser);
-        this.persist(demoUser);
-        return true;
-      }
-      if (email === ADMIN_ACCOUNT.email.toLowerCase() && credentials.password === ADMIN_ACCOUNT.password) {
-        const adminUser: StoreUser = {
-          email: ADMIN_ACCOUNT.email,
-          name: ADMIN_ACCOUNT.name,
-          role: 'admin',
-        };
-        this.persistToken('admin_offline_jwt_token');
-        this.userSignal.set(adminUser);
-        this.persist(adminUser);
-        return true;
-      }
+      return false;
     }
 
     return false;
@@ -124,37 +102,7 @@ export class AccountService {
         return true;
       }
     } catch {
-      // Offline fallback for master admin and vendors
-      const isMasterAdmin =
-        email === ADMIN_ACCOUNT.email.toLowerCase() && credentials.password === ADMIN_ACCOUNT.password;
-      const matchedVendor = this.defaultVendors[email];
-      const isVendorMatch = !!matchedVendor && (credentials.password === 'Vendor@2026' || credentials.password.length >= 6);
-
-      if (isMasterAdmin) {
-        const adminUser: StoreUser = {
-          email: ADMIN_ACCOUNT.email,
-          name: ADMIN_ACCOUNT.name,
-          role: 'admin',
-        };
-        this.persistToken('admin_offline_jwt_token');
-        this.userSignal.set(adminUser);
-        this.persist(adminUser);
-        return true;
-      }
-
-      if (isVendorMatch && matchedVendor) {
-        const vendorUser: StoreUser = {
-          email,
-          name: matchedVendor.name,
-          role: 'vendor',
-          vendorId: matchedVendor.id,
-          vendorName: matchedVendor.name,
-        };
-        this.persistToken('vendor_offline_jwt_token');
-        this.userSignal.set(vendorUser);
-        this.persist(vendorUser);
-        return true;
-      }
+      return false;
     }
 
     return false;
@@ -190,7 +138,7 @@ export class AccountService {
     this.signOut();
   }
 
-  async register(name: string, email: string, password = 'Blade@User123'): Promise<boolean> {
+  async register(name: string, email: string, password: string): Promise<boolean> {
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedName = name.trim();
 
@@ -212,22 +160,46 @@ export class AccountService {
       if (err?.status === 409) {
         throw new Error(err?.error?.message || 'An account with this email address already exists. Please sign in instead.');
       }
-      // Local fallback for offline/demo environments
-      const user: StoreUser = { name: trimmedName, email: trimmedEmail, role: 'customer' };
-      this.persistToken('local_client_session_' + Date.now());
-      this.userSignal.set(user);
-      this.persist(user);
-      return true;
+      throw new Error(err?.error?.message || 'Registration is unavailable. Please try again.');
     }
     return false;
   }
 
-  updateProfile(name: string): void {
+  async updateProfile(updates: { name?: string; phone?: string | null } | string): Promise<StoreUser | null> {
     const cur = this.userSignal();
-    if (!cur) return;
-    const updated: StoreUser = { ...cur, name };
+    if (!cur) return null;
+    const name = typeof updates === 'string' ? updates : updates.name;
+    const phone = typeof updates === 'string' ? cur.phone : updates.phone;
+
+    const payload: { name?: string; phone?: string } = {};
+    if (name !== undefined) payload.name = name;
+    if (phone !== undefined && phone !== null) payload.phone = phone;
+
+    const updated: StoreUser = {
+      ...cur,
+      ...(name !== undefined ? { name } : {}),
+      ...(phone !== undefined ? { phone } : {}),
+    };
     this.userSignal.set(updated);
     this.persist(updated);
+
+    const token = this.getToken();
+    if (token) {
+      try {
+        const resp = await firstValueFrom(
+          this.http.patch<{ ok: boolean; user: StoreUser }>(`${API_AUTH_URL}/profile`, payload)
+        );
+        if (resp && resp.user) {
+          const merged: StoreUser = { ...updated, ...resp.user };
+          this.userSignal.set(merged);
+          this.persist(merged);
+          return merged;
+        }
+      } catch {
+        // Fallback to local storage persistence
+      }
+    }
+    return updated;
   }
 
   signOut(): void {
@@ -264,7 +236,11 @@ export class AccountService {
   private readStored(): StoreUser | null {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw) as StoreUser;
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (raw && token) {
+        const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        if (payload.exp * 1000 > Date.now()) return JSON.parse(raw) as StoreUser;
+      }
       return null;
     } catch {
       return null;

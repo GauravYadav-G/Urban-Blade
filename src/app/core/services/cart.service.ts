@@ -28,10 +28,12 @@ export class CartService {
   );
 
   addProduct(product: Product, qty = 1): void {
+    if (!product.inStock || !Number.isInteger(qty) || qty < 1) return;
+    qty = Math.min(qty, 100);
     this.linesSignal.update((current) => {
       const existing = current.find((l) => l.productId === product.id);
       const next = existing
-        ? current.map((l) => (l.productId === product.id ? { ...l, qty: l.qty + qty } : l))
+        ? current.map((l) => (l.productId === product.id ? { ...l, qty: Math.min(l.qty + qty, 100) } : l))
         : [...current, lineFromProduct(product, qty)];
       this.persist(next);
       return next;
@@ -40,6 +42,7 @@ export class CartService {
   }
 
   updateQty(lineId: string, qty: number): void {
+    if (!Number.isInteger(qty) || qty > 100) return;
     if (qty < 1) {
       this.removeLine(lineId);
       return;
@@ -49,6 +52,15 @@ export class CartService {
       this.persist(next);
       return next;
     });
+  }
+
+  updatePrices(prices: Array<{ productId: string; unitPrice: number }>): void {
+    const next = this.linesSignal().map(line => {
+      const price = prices.find(item => item.productId === line.productId);
+      return price ? { ...line, unitPrice: price.unitPrice } : line;
+    });
+    this.linesSignal.set(next);
+    this.persist(next);
   }
 
   removeLine(lineId: string): void {

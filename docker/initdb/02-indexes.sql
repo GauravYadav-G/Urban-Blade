@@ -24,5 +24,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_booking
 
 -- ─── ORDER LOOKUPS & USER HISTORY ───────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_orders_user_created ON orders(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_tracking_number ON orders(tracking_number) WHERE tracking_number IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_products_vendor_lower ON products(LOWER(vendor));
+CREATE INDEX IF NOT EXISTS idx_vendors_email_lower ON vendors(LOWER(email));
 CREATE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(idempotency_key);
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
