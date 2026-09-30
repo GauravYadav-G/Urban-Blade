@@ -23,7 +23,11 @@ export async function paymentWebhookRoutes(app: FastifyInstance) {
     try {
       await settleCapturedPayment(paymentId);
       return { received: true };
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.message === 'ORDER_MISMATCH') {
+        request.log.warn({ paymentId }, 'Payment webhook received for unmapped order; acknowledging to prevent infinite retry');
+        return reply.code(200).send({ received: true, ignored: true, reason: 'ORDER_MISMATCH' });
+      }
       request.log.error({ err, paymentId }, 'Payment webhook needs retry or reconciliation');
       return reply.code(503).send({ error: 'SETTLEMENT_PENDING' });
     }

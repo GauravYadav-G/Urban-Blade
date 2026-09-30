@@ -39,15 +39,17 @@ export class HomePage {
   readonly hair = computed(() => this.catalog.byCategory('hair'));
   readonly beard = computed(() => this.catalog.byCategory('beard'));
   readonly services = computed(() => this.catalog.byCategory('services'));
-  readonly relatedPicks = [
-    'hc-hair-serum',
-    'beard-oil',
-    'detan-kit',
-    'hair-dryer',
-    'couples-spa',
-  ]
-    .map((id) => this.catalog.byId(id))
-    .filter((p): p is Product => !!p);
+  readonly relatedPicks = computed(() =>
+    [
+      'hc-hair-serum',
+      'beard-oil',
+      'detan-kit',
+      'hair-dryer',
+      'couples-spa',
+    ]
+      .map((id) => this.catalog.byId(id))
+      .filter((p): p is Product => !!p)
+  );
 
   readonly tiles = [
     { title: 'Hair care', cat: 'hair', image: '/images/products/hc-shampoo.jpg' },

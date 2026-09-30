@@ -54,10 +54,22 @@ export class CartService {
     });
   }
 
-  updatePrices(prices: Array<{ productId: string; unitPrice: number }>): void {
+  updatePrices(prices: Array<{ productId: string; slug?: string; unitPrice: number }>): void {
     const next = this.linesSignal().map(line => {
-      const price = prices.find(item => item.productId === line.productId);
-      return price ? { ...line, unitPrice: price.unitPrice } : line;
+      const price = prices.find(item =>
+        item.productId === line.productId ||
+        (line.slug && item.productId === line.slug) ||
+        (item.slug && (item.slug === line.productId || item.slug === line.slug))
+      );
+      if (price) {
+        return {
+          ...line,
+          productId: price.productId || line.productId,
+          slug: price.slug || line.slug,
+          unitPrice: price.unitPrice,
+        };
+      }
+      return line;
     });
     this.linesSignal.set(next);
     this.persist(next);

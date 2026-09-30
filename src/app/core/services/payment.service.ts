@@ -41,12 +41,6 @@ export interface RazorpayVerificationRequest {
   razorpaySignature: string;
 }
 
-export interface CheckoutSessionResponse extends RazorpayOrderResponse {
-  signatureToken?: string;
-  expiresAt?: number;
-  paymentMethod?: string;
-}
-
 export interface PaymentReceipt {
   success: boolean;
   orderId: string;
@@ -277,55 +271,7 @@ export class PaymentService {
     }
   }
 
-  /**
-   * Phase 1: Real-time Two-Phase Checkout Session with Atomic Neon DB Inventory Lock
-   */
-  createCheckoutSession(payload: {
-    items: CheckoutItemRequest[];
-    shippingAddress: ShippingAddress;
-    paymentMethod?: 'upi' | 'card' | 'cash_on_delivery';
-    userId?: string;
-  }): Observable<CheckoutSessionResponse> {
-    this.isProcessing.set(true);
-
-    return this.http
-      .post<CheckoutSessionResponse>(`${API_BASE}/orders/checkout-session`, payload)
-      .pipe(
-        tap(() => this.isProcessing.set(false)),
-        catchError((err) => {
-          this.isProcessing.set(false);
-          return throwError(() => err);
-        })
-      );
-  }
-
   cancelPayment(orderId: string, reason?: string): Observable<any> {
-    return this.http
-      .post(`${API_BASE}/orders/cancel-payment`, { orderId, reason })
-      ;
-  }
-
-  verifyPayment(payload: {
-    orderId: string;
-    paymentId: string;
-    signatureToken?: string;
-    expiresAt?: number;
-    paymentDetails?: any;
-  }): Observable<PaymentReceipt> {
-    this.isProcessing.set(true);
-
-    return this.http
-      .post<PaymentReceipt>(`${API_BASE}/orders/verify-payment`, payload)
-      .pipe(
-        tap((receipt) => {
-          this.lastReceipt.set(receipt);
-          sessionStorage.removeItem('checkout-attempt');
-          this.isProcessing.set(false);
-        }),
-        catchError((err) => {
-          this.isProcessing.set(false);
-          return throwError(() => err);
-        })
-      );
+    return this.http.post(`${API_BASE}/orders/cancel-payment`, { orderId, reason });
   }
 }

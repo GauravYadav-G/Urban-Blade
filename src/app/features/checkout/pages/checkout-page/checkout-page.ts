@@ -279,11 +279,16 @@ export class CheckoutPage implements OnInit {
     const items = this.cart.lines().map(line => ({ productId: line.productId, quantity: line.qty }));
     this.paymentService.quoteOrder(items, this.appliedCoupon()?.code).subscribe({
       next: quote => {
-        const changed = Math.round(quote.totalAmount * 100) !== Math.round(this.estimatedTotal() * 100);
+        const oldTotal = Math.round(this.estimatedTotal() * 100);
         this.cart.updatePrices(quote.verifiedItems);
         this.couponDiscount.set(quote.discountAmount);
         this.isInitiating.set(false);
-        if (changed) { this.toast.info('Your order total has been updated. Please review it and place your order again.'); return; }
+        const newTotal = Math.round(this.estimatedTotal() * 100);
+        const serverTotal = Math.round(quote.totalAmount * 100);
+        if (oldTotal !== serverTotal && newTotal !== serverTotal) {
+          this.toast.info('Your order total has been updated. Please review it and place your order again.');
+          return;
+        }
         this.placeOrder();
       },
       error: err => { this.isInitiating.set(false); this.toast.error(err.error?.message || 'Unable to check current prices and stock.'); },

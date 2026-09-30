@@ -28,7 +28,19 @@ export async function idempotencyHook(request: FastifyRequest, reply: FastifyRep
   if (useRedis && redis) {
     try {
       const acquired = await redis.set(redisKey, JSON.stringify(entry), 'EX', 120, 'NX');
-      if (!acquired) existing = JSON.parse((await redis.get(redisKey)) || '{}');
+      if (!acquired) {
+        const raw = await redis.get(redisKey);
+        if (raw) {
+          try {
+            existing = JSON.parse(raw);
+          } catch {
+            existing = undefined;
+          }
+        }
+        if (!existing) {
+          await redis.set(redisKey, JSON.stringify(entry), 'EX', 120);
+        }
+      }
     } catch {
       reply.code(503).send({ error: 'CHECKOUT_TEMPORARILY_UNAVAILABLE' }); return;
     }
@@ -40,7 +52,7 @@ export async function idempotencyHook(request: FastifyRequest, reply: FastifyRep
       memory.set(redisKey, entry);
     }
   }
-  if (existing) {
+  if (existing && existing.fingerprint) {
     if (existing.fingerprint !== fingerprint) reply.code(409).send({ error: 'IDEMPOTENCY_CONFLICT' });
     else if (!existing.status) reply.code(409).send({ error: 'REQUEST_IN_FLIGHT' });
     else reply.code(existing.status).send(existing.body);
@@ -52,7 +64,24 @@ export async function idempotencyHook(request: FastifyRequest, reply: FastifyRep
 export async function saveIdempotentResponse(request: FastifyRequest, reply: FastifyReply, payload: any): Promise<any> {
   const state = (request as any).idempotency;
   if (!state) return payload;
-  const entry: Entry = { fingerprint: state.fingerprint, status: reply.statusCode, body: typeof payload === 'string' ? JSON.parse(payload) : payload, expiresAt: Date.now() + 86400000 };
+
+  const isSuccess = reply.statusCode >= 200 && reply.statusCode < 300;
+  if (!isSuccess) {
+    // Release key on non-2xx failures so retries re-execute instead of caching errors
+    if (state.useRedis && redis) {
+      await redis.del(state.key).catch(() => {});
+    } else {
+      memory.delete(state.key);
+    }
+    return payload;
+  }
+
+  const entry: Entry = {
+    fingerprint: state.fingerprint,
+    status: reply.statusCode,
+    body: typeof payload === 'string' ? JSON.parse(payload) : payload,
+    expiresAt: Date.now() + 86400000,
+  };
   if (state.useRedis && redis) await redis.set(state.key, JSON.stringify(entry), 'EX', 86400);
   else memory.set(state.key, entry);
   return payload;

@@ -226,13 +226,15 @@ export class CatalogService {
         list.sort((a, b) => Number(!!b.badge) - Number(!!a.badge) || b.reviewCount - a.reviewCount);
     }
 
-    // Apply pagination
-    const page = query.page || 1;
-    const limit = query.limit || 24;
-    const start = (page - 1) * limit;
-    const end = start + limit;
+    // Apply pagination only if explicitly requested
+    if (query.limit !== undefined) {
+      const page = query.page || 1;
+      const start = (page - 1) * query.limit;
+      const end = start + query.limit;
+      return list.slice(start, end);
+    }
 
-    return list.slice(start, end);
+    return list;
   }
 
   /** Search with pagination metadata */

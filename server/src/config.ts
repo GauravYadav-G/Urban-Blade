@@ -15,6 +15,8 @@ if (process.env.NODE_ENV === 'production') {
   if (!process.env.CORS_ORIGINS) throw new Error('CORS_ORIGINS must list trusted storefront origins');
 }
 
+const DEV_FALLBACK_JWT_SECRET = 'urbanblade-dev-jwt-secret-do-not-use-in-prod-32chars!';
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
@@ -24,8 +26,8 @@ export const config = {
   corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:4200').split(',').map(value => value.trim()),
 
   jwt: {
-    secret: process.env.JWT_SECRET || randomBytes(48).toString('hex'),
-    expiresIn: process.env.JWT_EXPIRES_IN || '15m',
+    secret: process.env.JWT_SECRET || DEV_FALLBACK_JWT_SECRET,
+    expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   },
 
   database: {

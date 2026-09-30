@@ -10,6 +10,7 @@ import { checkRedisHealth } from '../../redis/client.js';
 import { getEventLoopLag, getMemoryUsage } from '../../core/circuit-breaker.js';
 import { syncOrderFromCarrierWebsite } from '../orders/carrier-portal.service.js';
 import { paymentGateway, settleCapturedPayment } from '../orders/payment-settlement.service.js';
+import { releaseStockReservation } from '../orders/stock-reservation.service.js';
 import { generateAiReply } from '../support/support.routes.js';
 import { requireAdmin, requireStaff } from '../../core/auth.middleware.js';
 
@@ -48,7 +49,7 @@ export async function adminRoutes(app: FastifyInstance) {
           COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::int as week_orders,
           COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days')::int as prev_week_orders,
           COUNT(*) FILTER (WHERE status IN ('accepted', 'confirmed', 'pending') AND (payment_method IN ('cash_on_delivery', 'Cash on Delivery') OR payment_status = 'captured'))::int as accepted,
-          COUNT(*) FILTER (WHERE payment_method NOT IN ('cash_on_delivery', 'Cash on Delivery') AND payment_status != 'captured' AND status != 'cancelled')::int as incomplete_payment,
+          COUNT(*) FILTER (WHERE COALESCE(payment_method, '') NOT IN ('cash_on_delivery', 'Cash on Delivery') AND COALESCE(payment_status, '') != 'captured' AND COALESCE(status, '') != 'cancelled')::int as incomplete_payment,
           COUNT(*) FILTER (WHERE status = 'processing')::int as processing,
           COUNT(*) FILTER (WHERE status = 'shipped')::int as shipped,
           COUNT(*) FILTER (WHERE status = 'delivered')::int as delivered,
@@ -673,9 +674,28 @@ export async function adminRoutes(app: FastifyInstance) {
           if (current.payment_method === 'Razorpay' && current.payment_status !== 'captured') throw new Error('PAYMENT_NOT_CAPTURED');
           if (status === 'cancelled') {
             if (current.payment_status === 'captured') throw new Error('REFUND_REQUIRED_BEFORE_CANCELLATION');
-            const items = await client.query('SELECT product_id, quantity FROM order_items WHERE order_id = $1 ORDER BY product_id', [current.id]);
-            for (const item of items.rows) {
-              if (item.product_id) await client.query('UPDATE products SET stock_quantity = stock_quantity + $1, in_stock = TRUE, version = version + 1 WHERE id = $2', [item.quantity, item.product_id]);
+
+            // 1. If the order holds active reservations (unpaid/uncommitted), release them safely
+            await releaseStockReservation(client, current.id);
+
+            // 2. Only restore stock_quantity for items that were actually COMMITTED (deducted from inventory)
+            const committed = await client.query(
+              `SELECT product_id, quantity FROM stock_reservations WHERE order_id = $1 AND status = 'committed'`,
+              [current.id]
+            );
+            if (committed.rows.length > 0) {
+              for (const item of committed.rows) {
+                if (item.product_id) {
+                  await client.query(
+                    'UPDATE products SET stock_quantity = stock_quantity + $1, in_stock = TRUE, version = version + 1 WHERE id = $2',
+                    [item.quantity, item.product_id]
+                  );
+                }
+              }
+              await client.query(
+                `UPDATE stock_reservations SET status = 'restored', resolved_at = CURRENT_TIMESTAMP WHERE order_id = $1 AND status = 'committed'`,
+                [current.id]
+              );
             }
           }
           if (status === 'shipped' && !trackingNumber?.trim()) throw new Error('TRACKING_NUMBER_REQUIRED');

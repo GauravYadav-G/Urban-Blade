@@ -1,5 +1,6 @@
-import { HttpInterceptorFn } from '@angular/common/http';
+import { HttpInterceptorFn, HttpErrorResponse } from '@angular/common/http';
 import { inject, isDevMode } from '@angular/core';
+import { catchError, from, switchMap, throwError } from 'rxjs';
 import { AccountService } from '../services/account.service';
 import { environment } from '../../../environments/environment';
 
@@ -29,5 +30,28 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   if (!headers.has('x-session-id')) headers = headers.set('x-session-id', sessionId);
   if (token && !headers.has('Authorization')) headers = headers.set('Authorization', `Bearer ${token}`);
   const authReq = req.clone({ url, headers });
-  return next(authReq);
+
+  return next(authReq).pipe(
+    catchError((err: unknown) => {
+      if (
+        err instanceof HttpErrorResponse &&
+        err.status === 401 &&
+        !url.includes('/auth/login') &&
+        !url.includes('/auth/register') &&
+        !url.includes('/auth/refresh')
+      ) {
+        return from(account.refreshSession()).pipe(
+          switchMap((newToken) => {
+            if (!newToken) return throwError(() => err);
+            const retriedReq = authReq.clone({
+              headers: authReq.headers.set('Authorization', `Bearer ${newToken}`),
+            });
+            return next(retriedReq);
+          })
+        );
+      }
+      return throwError(() => err);
+    })
+  );
 };
+

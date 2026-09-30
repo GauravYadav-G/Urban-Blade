@@ -2,10 +2,11 @@ import { Injectable, inject, computed, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import type { LoginCredentials, StoreUser } from '@core/models/user.model';
-import { DEMO_ACCOUNT, ADMIN_ACCOUNT } from '@core/constants/salon.constants';
+import { ADMIN_ACCOUNT } from '@core/constants/salon.constants';
 
 const STORAGE_KEY = 'urban-blade-user';
 const TOKEN_KEY = 'urban-blade-token';
+const REFRESH_TOKEN_KEY = 'urban-blade-refresh-token';
 const SESSION_ID_KEY = 'urban-blade-session-id';
 
 const API_AUTH_URL =
@@ -15,6 +16,7 @@ const API_AUTH_URL =
 
 interface AuthResponse {
   token: string;
+  refreshToken?: string;
   user: StoreUser;
 }
 
@@ -22,6 +24,7 @@ interface AuthResponse {
 export class AccountService {
   private readonly http = inject(HttpClient);
   private readonly userSignal = signal<StoreUser | null>(this.readStored());
+  private refreshPromise: Promise<string | null> | null = null;
 
   readonly user = this.userSignal.asReadonly();
   readonly isSignedIn = computed(() => this.userSignal() !== null);
@@ -43,6 +46,11 @@ export class AccountService {
   getToken(): string | null {
     if (typeof window === 'undefined') return null;
     return localStorage.getItem(TOKEN_KEY);
+  }
+
+  getRefreshToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(REFRESH_TOKEN_KEY);
   }
 
   getSessionId(): string {
@@ -67,7 +75,7 @@ export class AccountService {
       );
 
       if (resp && resp.token && resp.user) {
-        this.persistToken(resp.token);
+        this.persistTokens(resp.token, resp.refreshToken);
         this.userSignal.set(resp.user);
         this.persist(resp.user);
         return true;
@@ -96,7 +104,7 @@ export class AccountService {
           return false;
         }
 
-        this.persistToken(resp.token);
+        this.persistTokens(resp.token, resp.refreshToken);
         this.userSignal.set(resp.user);
         this.persist(resp.user);
         return true;
@@ -151,7 +159,7 @@ export class AccountService {
         })
       );
       if (resp && resp.token && resp.user) {
-        this.persistToken(resp.token);
+        this.persistTokens(resp.token, resp.refreshToken);
         this.userSignal.set(resp.user);
         this.persist(resp.user);
         return true;
@@ -202,6 +210,40 @@ export class AccountService {
     return updated;
   }
 
+  async refreshSession(): Promise<string | null> {
+    if (this.refreshPromise) return this.refreshPromise;
+    this.refreshPromise = this.doRefreshSession().finally(() => {
+      this.refreshPromise = null;
+    });
+    return this.refreshPromise;
+  }
+
+  private async doRefreshSession(): Promise<string | null> {
+    const refreshToken = this.getRefreshToken();
+    if (!refreshToken) {
+      this.signOut();
+      return null;
+    }
+    try {
+      const resp = await firstValueFrom(
+        this.http.post<AuthResponse>(`${API_AUTH_URL}/refresh`, { refreshToken })
+      );
+      if (resp && resp.token) {
+        this.persistTokens(resp.token, resp.refreshToken);
+        if (resp.user) {
+          this.userSignal.set(resp.user);
+          this.persist(resp.user);
+        }
+        return resp.token;
+      }
+    } catch {
+      this.signOut();
+      return null;
+    }
+    this.signOut();
+    return null;
+  }
+
   signOut(): void {
     const token = this.getToken();
     if (token) {
@@ -212,14 +254,18 @@ export class AccountService {
     try {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
     } catch {
       /* ignore */
     }
   }
 
-  private persistToken(token: string): void {
+  private persistTokens(token: string, refreshToken?: string): void {
     try {
       localStorage.setItem(TOKEN_KEY, token);
+      if (refreshToken) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      }
     } catch {
       /* ignore */
     }
@@ -237,9 +283,18 @@ export class AccountService {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       const token = localStorage.getItem(TOKEN_KEY);
+      const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
       if (raw && token) {
-        const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-        if (payload.exp * 1000 > Date.now()) return JSON.parse(raw) as StoreUser;
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+          if (payload.exp * 1000 > Date.now()) return JSON.parse(raw) as StoreUser;
+        } catch {
+          // Token format invalid
+        }
+        if (refreshToken) {
+          // Stored user is kept; token will refresh on first request via interceptor
+          return JSON.parse(raw) as StoreUser;
+        }
       }
       return null;
     } catch {

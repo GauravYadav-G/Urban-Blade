@@ -36,7 +36,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
-    reply.header('Cache-Control', 'no-store');
+    if (!reply.getHeader('Cache-Control') && !reply.getHeader('cache-control')) {
+      reply.header('Cache-Control', 'no-store');
+    }
     if (config.isProduction) reply.header('Strict-Transport-Security', 'max-age=31536000');
     return payload;
   });

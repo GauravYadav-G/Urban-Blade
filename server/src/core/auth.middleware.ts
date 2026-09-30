@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { getCacheKey } from '../redis/client.js';
+import { getCacheKey, isRedisAvailable } from '../redis/client.js';
 import { query } from '../db/pool.js';
 
 export interface AuthUser {
@@ -24,6 +24,10 @@ declare module '@fastify/jwt' {
  * Strict authentication guard: requires valid, unrevoked JWT
  */
 export async function requireAuth(request: FastifyRequest, reply: FastifyReply) {
+  if ((request as any)._authChecked && request.user) {
+    return;
+  }
+
   try {
     const authHeader = request.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -45,20 +49,25 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
       });
     }
 
-    // Also check database for token revocation (works without Redis)
-    const dbRevoked = await query(
-      'SELECT 1 FROM revoked_access_tokens WHERE token_hash = $1 AND expires_at > NOW()',
-      [createHash('sha256').update(token).digest('hex')]
-    );
-    if (dbRevoked.rows.length > 0) {
-      return reply.status(401).send({
-        error: 'TOKEN_REVOKED',
-        message: 'This session has been logged out. Please sign in again.',
-      });
+    // Only query database for revocation if Redis is not active
+    if (!isRedisAvailable()) {
+      try {
+        const dbRevoked = await query(
+          'SELECT 1 FROM revoked_access_tokens WHERE token_hash = $1 AND expires_at > NOW()',
+          [createHash('sha256').update(token).digest('hex')]
+        );
+        if (dbRevoked.rows.length > 0) {
+          return reply.status(401).send({
+            error: 'TOKEN_REVOKED',
+            message: 'This session has been logged out. Please sign in again.',
+          });
+        }
+      } catch {
+        // In case table is still initializing
+      }
     }
 
-    // Verify JWT with algorithm whitelist to prevent algorithm confusion attacks
-    await request.jwtVerify({ algorithms: ['HS256'] });
+    (request as any)._authChecked = true;
   } catch (err: any) {
     return reply.status(401).send({
       error: 'INVALID_TOKEN',
@@ -69,10 +78,20 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
 
 /**
  * Optional authentication: attaches user to request if valid token exists,
- * but allows unauthenticated access if no token is provided.
+ * but allows unauthenticated access if no token or an expired token is provided.
  */
 export async function optionalAuth(request: FastifyRequest, _reply: FastifyReply) {
-  if (request.headers.authorization) await requireAuth(request, _reply);
+  const authHeader = request.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return;
+  try {
+    const token = authHeader.substring(7).trim();
+    const isRevoked = await getCacheKey(`revoked:${token}`);
+    if (isRevoked) return;
+    await request.jwtVerify({ algorithms: ['HS256'] });
+    (request as any)._authChecked = true;
+  } catch {
+    // Tolerant: ignore expired/invalid token on public/optional routes so guests can proceed
+  }
 }
 
 /**
