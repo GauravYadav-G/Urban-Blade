@@ -58,13 +58,13 @@ export const config = {
   },
 
   razorpay: {
-    keyId: process.env.RAZORPAY_KEY_ID || '',
-    keySecret: process.env.RAZORPAY_KEY_SECRET || '',
+    keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_TZtC5tBbAEEppP',
+    keySecret: process.env.RAZORPAY_KEY_SECRET || 'bSQij93encYPYkJK6yLzy8xm',
     webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || '',
   },
 
   // Separate secret for payment HMAC signatures (distinct from JWT secret)
   payment: {
-    signingSecret: process.env.PAYMENT_SIGNING_SECRET || process.env.RAZORPAY_KEY_SECRET || '',
+    signingSecret: process.env.PAYMENT_SIGNING_SECRET || process.env.RAZORPAY_KEY_SECRET || 'bSQij93encYPYkJK6yLzy8xm',
   },
 };

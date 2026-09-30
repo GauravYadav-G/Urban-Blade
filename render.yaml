@@ -44,8 +44,8 @@ services:
       - key: REDIS_URL
         sync: false
       - key: RAZORPAY_KEY_ID
-        sync: false
+        value: rzp_test_TZtC5tBbAEEppP
       - key: RAZORPAY_KEY_SECRET
-        sync: false
+        value: bSQij93encYPYkJK6yLzy8xm
       - key: RAZORPAY_WEBHOOK_SECRET
         sync: false
