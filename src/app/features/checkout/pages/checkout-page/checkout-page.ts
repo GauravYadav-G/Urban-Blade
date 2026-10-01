@@ -66,6 +66,20 @@ export class CheckoutPage implements OnInit {
   }
   async applyCoupon(): Promise<void> { await this.refreshQuote(this.couponInput().trim().toUpperCase()); }
   async removeCoupon(): Promise<void> { if (await this.refreshQuote('')) this.couponInput.set(''); }
+  async updateLineQty(lineId: string, event: Event): Promise<void> {
+    const val = Number((event.target as HTMLSelectElement).value);
+    if (!val || val < 1 || val > 8) return;
+    this.cart.updateQty(lineId, Math.min(val, 8));
+    await this.refreshQuote();
+  }
+  async removeLine(lineId: string): Promise<void> {
+    this.cart.removeLine(lineId);
+    if (this.cart.lines().length) {
+      await this.refreshQuote();
+    } else {
+      this.quote.set(null);
+    }
+  }
   async submit(): Promise<void> {
     if (this.busy() || this.pending() || this.receipt()) return;
     this.form.markAllAsTouched();

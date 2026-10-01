@@ -13,6 +13,7 @@ export interface CartAddToast {
 
 const STORAGE_KEY = 'urban-blade-cart';
 export const CART_TOAST_DURATION_MS = 4000;
+export const MAX_CART_QTY = 8;
 
 @Injectable({ providedIn: 'root' })
 export class CartService {
@@ -29,7 +30,11 @@ export class CartService {
   );
 
   mergeServerCart(items: CartLine[]): void {
-    const valid = Array.isArray(items) ? items.filter(i => i && typeof i.productId === 'string' && Number.isInteger(i.qty) && i.qty > 0 && i.qty <= 100 && Number.isFinite(i.unitPrice)) : [];
+    const valid = Array.isArray(items)
+      ? items
+          .filter(i => i && typeof i.productId === 'string' && Number.isInteger(i.qty) && i.qty > 0 && Number.isFinite(i.unitPrice))
+          .map(i => ({ ...i, qty: Math.min(i.qty, MAX_CART_QTY) }))
+      : [];
     const merged = new Map(valid.map(i => [i.productId, i]));
     for (const local of this.linesSignal()) merged.set(local.productId, local);
     const next = Array.from(merged.values()).slice(0, 100);
@@ -38,11 +43,11 @@ export class CartService {
 
   addProduct(product: Product, qty = 1): void {
     if (!product.inStock || !Number.isInteger(qty) || qty < 1) return;
-    qty = Math.min(qty, 100);
+    qty = Math.min(qty, MAX_CART_QTY);
     this.linesSignal.update((current) => {
       const existing = current.find((l) => l.productId === product.id);
       const next = existing
-        ? current.map((l) => (l.productId === product.id ? { ...l, qty: Math.min(l.qty + qty, 100) } : l))
+        ? current.map((l) => (l.productId === product.id ? { ...l, qty: Math.min(l.qty + qty, MAX_CART_QTY) } : l))
         : [...current, lineFromProduct(product, qty)];
       this.persist(next);
       return next;
@@ -51,13 +56,14 @@ export class CartService {
   }
 
   updateQty(lineId: string, qty: number): void {
-    if (!Number.isInteger(qty) || qty > 100) return;
+    if (!Number.isInteger(qty)) return;
     if (qty < 1) {
       this.removeLine(lineId);
       return;
     }
+    const clampedQty = Math.min(qty, MAX_CART_QTY);
     this.linesSignal.update((lines) => {
-      const next = lines.map((l) => (l.lineId === lineId ? { ...l, qty } : l));
+      const next = lines.map((l) => (l.lineId === lineId ? { ...l, qty: clampedQty } : l));
       this.persist(next);
       return next;
     });
@@ -131,7 +137,11 @@ export class CartService {
   private readStored(): CartLine[] {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? (JSON.parse(raw) as CartLine[]) : [];
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as CartLine[];
+      return Array.isArray(parsed)
+        ? parsed.map(l => ({ ...l, qty: Math.min(Math.max(1, Number(l.qty) || 1), MAX_CART_QTY) }))
+        : [];
     } catch {
       return [];
     }

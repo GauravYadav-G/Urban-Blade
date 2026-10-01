@@ -205,8 +205,36 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--brand);
   display:block}
 .item p{font-size:11px;
   margin:5px 0}
-.item>span{font-size:12px;
-  white-space:nowrap}
+.item-qty-row{display:inline-flex;
+  align-items:center;
+  gap:8px;
+  margin-top:6px}
+.qty-label{font-size:11px;
+  color:var(--muted);
+  font-weight:500}
+.checkout-qty-select{padding:2px 8px;
+  font-size:12px;
+  font-weight:600;
+  border:1px solid var(--border);
+  border-radius:4px;
+  background:var(--surface);
+  color:var(--ink);
+  cursor:pointer;
+  outline:none;
+  transition:border-color .15s ease}
+.checkout-qty-select:focus{border-color:var(--brand)}
+.item-remove-btn{background:transparent;
+  border:none;
+  color:var(--muted);
+  font-size:11px;
+  padding:2px 4px;
+  cursor:pointer;
+  text-decoration:underline;
+  transition:color .15s ease}
+.item-remove-btn:hover{color:var(--sale)}
+.item>span,.item-price{font-size:12px;
+  white-space:nowrap;
+  font-weight:600}
 .coupon{border-top:1px solid var(--border);
   border-bottom:1px solid var(--border);
   padding:20px 0}
