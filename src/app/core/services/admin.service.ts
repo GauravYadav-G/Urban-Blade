@@ -143,10 +143,17 @@ const STORAGE_KEY_VENDORS = 'urban-blade-admin-vendors';
 const STORAGE_KEY_TASKS = 'urban-blade-admin-tasks';
 const STORAGE_KEY_INQUIRIES = 'urban-blade-admin-inquiries';
 
-const API_BASE =
+const ADMIN_API_BASE =
   typeof window !== 'undefined' && window.location.port === '4200'
     ? 'http://localhost:4000/api/admin'
     : '/api/admin';
+
+const PUBLIC_API_BASE =
+  typeof window !== 'undefined' && window.location.port === '4200'
+    ? 'http://localhost:4000/api'
+    : '/api';
+
+const API_BASE = ADMIN_API_BASE;
 
 const SUPPORT_API_BASE =
   typeof window !== 'undefined' && window.location.port === '4200'
@@ -476,7 +483,8 @@ export class AdminService {
     const current = this.products().find((p) => p.id === productId || p.slug === productId);
     if (!current) return;
 
-    const nextQty = Math.max(0, (current.stock_quantity ?? 100) + delta);
+    const currentQty = Number(current.stock_quantity ?? (current.inStock ? 100 : 0));
+    const nextQty = Math.max(0, currentQty + Number(delta));
     const inStock = nextQty > 0;
 
     this.products.update((list) =>
@@ -507,12 +515,22 @@ export class AdminService {
       in_stock: inStock,
     };
 
-    this.http.put(`${API_BASE}/admin/products/${productId}`, payload).subscribe({
-      next: () => void this.catalog.refreshCatalog(),
+    const targetId = current.id || productId;
+    this.http.put(`${ADMIN_API_BASE}/products/${targetId}`, payload).subscribe({
+      next: () => {
+        void this.catalog.refreshCatalog();
+        this.toast.success(`Inventory updated: ${current.name} is now ${nextQty} in stock.`);
+      },
       error: () => {
-        this.http.put(`${API_BASE}/products/${productId}`, payload).subscribe({
-          next: () => void this.catalog.refreshCatalog(),
-          error: () => {},
+        this.http.put(`${PUBLIC_API_BASE}/products/${targetId}`, payload).subscribe({
+          next: () => {
+            void this.catalog.refreshCatalog();
+            this.toast.success(`Inventory updated: ${current.name} is now ${nextQty} in stock.`);
+          },
+          error: (err) => {
+            console.error('Failed to sync stock to backend:', err);
+            this.toast.error(`Could not persist stock update to database for ${current.name}.`);
+          },
         });
       },
     });
@@ -523,7 +541,8 @@ export class AdminService {
     if (!current) return;
 
     const next = !current.inStock;
-    const nextQty = next ? Math.max(10, current.stock_quantity ?? 100) : 0;
+    const currentQty = Number(current.stock_quantity ?? 0);
+    const nextQty = next ? Math.max(10, currentQty > 0 ? currentQty : 10) : 0;
     this.products.update((list) =>
       list.map((p) =>
         p.id === productId || p.slug === productId
@@ -547,10 +566,11 @@ export class AdminService {
     this.toast.info(`Availability toggled: ${current.name} is now ${next ? 'In Stock' : 'Out of Stock'}.`);
 
     const payload = { inStock: next, in_stock: next, stockQuantity: nextQty, stock_quantity: nextQty };
-    this.http.put(`${API_BASE}/admin/products/${productId}`, payload).subscribe({
+    const targetId = current.id || productId;
+    this.http.put(`${ADMIN_API_BASE}/products/${targetId}`, payload).subscribe({
       next: () => void this.catalog.refreshCatalog(),
       error: () => {
-        this.http.put(`${API_BASE}/products/${productId}`, payload).subscribe({
+        this.http.put(`${PUBLIC_API_BASE}/products/${targetId}`, payload).subscribe({
           next: () => void this.catalog.refreshCatalog(),
           error: () => {},
         });
@@ -618,20 +638,20 @@ export class AdminService {
     };
 
     if (item.id) {
-      this.http.put(`${API_BASE}/admin/products/${item.id}`, payload).subscribe({
+      this.http.put(`${ADMIN_API_BASE}/products/${item.id}`, payload).subscribe({
         next: () => void this.catalog.refreshCatalog(),
         error: () => {
-          this.http.put(`${API_BASE}/products/${item.id}`, payload).subscribe({
+          this.http.put(`${PUBLIC_API_BASE}/products/${item.id}`, payload).subscribe({
             next: () => void this.catalog.refreshCatalog(),
             error: () => {},
           });
         },
       });
     } else {
-      this.http.post(`${API_BASE}/admin/products`, payload).subscribe({
+      this.http.post(`${ADMIN_API_BASE}/products`, payload).subscribe({
         next: () => void this.catalog.refreshCatalog(),
         error: () => {
-          this.http.post(`${API_BASE}/products`, payload).subscribe({
+          this.http.post(`${PUBLIC_API_BASE}/products`, payload).subscribe({
             next: () => void this.catalog.refreshCatalog(),
             error: () => {},
           });
@@ -646,10 +666,10 @@ export class AdminService {
     this.saveProducts(this.products());
     this.recomputeAndPersistMetrics();
     this.toast.info('Product removed from catalog and database.');
-    this.http.delete(`${API_BASE}/admin/products/${id}`).subscribe({
+    this.http.delete(`${ADMIN_API_BASE}/products/${id}`).subscribe({
       next: () => void this.catalog.refreshCatalog(),
       error: () => {
-        this.http.delete(`${API_BASE}/products/${id}`).subscribe({
+        this.http.delete(`${PUBLIC_API_BASE}/products/${id}`).subscribe({
           next: () => void this.catalog.refreshCatalog(),
           error: () => {},
         });
@@ -682,10 +702,10 @@ export class AdminService {
 
     this.saveProducts(this.products());
     this.toast.info(`Product badge updated.`);
-    this.http.put(`${API_BASE}/admin/products/${productId}`, { badge }).subscribe({
+    this.http.put(`${ADMIN_API_BASE}/products/${productId}`, { badge }).subscribe({
       next: () => void this.catalog.refreshCatalog(),
       error: () => {
-        this.http.put(`${API_BASE}/products/${productId}`, { badge }).subscribe({
+        this.http.put(`${PUBLIC_API_BASE}/products/${productId}`, { badge }).subscribe({
           next: () => void this.catalog.refreshCatalog(),
           error: () => {},
         });
@@ -928,44 +948,94 @@ export class AdminService {
   }
 
   refreshProducts(notify = false): void {
-    this.http.get<{ data: any[] }>(`${API_BASE}/products`).subscribe({
-      next: (res) => {
-        if (res?.data && res.data.length > 0) {
-          const mapped: AdminProduct[] = res.data.map((p) => ({
-            id: p.id,
-            name: p.name,
-            slug: p.slug,
-            description: p.description,
-            longDescription: p.longDescription || p.long_description || p.description,
-            highlights: p.highlights || [],
-            price: Number(p.price),
-            compareAtPrice: p.compareAtPrice != null ? Number(p.compareAtPrice) : (p.compare_at_price != null ? Number(p.compare_at_price) : undefined),
-            currency: p.currency || 'INR',
-            imageUrl: p.imageUrl || p.image_url || '/images/products/hc-shampoo.jpg',
-            category: p.category,
-            kind: p.kind,
-            vendor: p.vendor,
-            audience: p.audience,
-            freeDelivery: p.freeDelivery ?? p.free_delivery ?? true,
-            rating: Number(p.rating || 5),
-            reviewCount: Number(p.reviewCount ?? p.review_count ?? 1),
-            badge: p.badge,
-            inStock: Boolean(p.inStock ?? p.in_stock ?? true),
-            stock_quantity: Number(p.stock_quantity ?? p.stockQuantity ?? 0),
-            stock_reserved: Number(p.stock_reserved || 0),
-            availableQuantity: Number(p.availableQuantity ?? p.stock_quantity ?? 0),
-          }));
-          this.products.set(mapped);
-          this.saveProducts(mapped);
-          mapped.forEach((prod) => this.catalog.upsertProduct(prod));
-          this.recomputeAndPersistMetrics();
-          if (notify) {
-            this.toast.success(`⚡ Synced ${mapped.length} catalog products from database.`);
+    const fetchFresh = () => {
+      this.http.get<{ data: any[] }>(`${ADMIN_API_BASE}/products?limit=200&t=${Date.now()}`).subscribe({
+        next: (res) => {
+          if (res?.data && res.data.length > 0) {
+            const mapped: AdminProduct[] = res.data.map((p) => ({
+              id: p.id,
+              name: p.name,
+              slug: p.slug,
+              description: p.description,
+              longDescription: p.longDescription || p.long_description || p.description,
+              highlights: p.highlights || [],
+              price: Number(p.price),
+              compareAtPrice: p.compareAtPrice != null ? Number(p.compareAtPrice) : (p.compare_at_price != null ? Number(p.compare_at_price) : undefined),
+              currency: p.currency || 'INR',
+              imageUrl: p.imageUrl || p.image_url || '/images/products/hc-shampoo.jpg',
+              category: p.category,
+              kind: p.kind,
+              vendor: p.vendor,
+              audience: p.audience,
+              freeDelivery: p.freeDelivery ?? p.free_delivery ?? true,
+              rating: Number(p.rating || 5),
+              reviewCount: Number(p.reviewCount ?? p.review_count ?? 1),
+              badge: p.badge,
+              inStock: Boolean(p.inStock ?? p.in_stock ?? true),
+              stock_quantity: Number(p.stock_quantity ?? p.stockQuantity ?? 0),
+              stock_reserved: Number(p.stock_reserved || 0),
+              availableQuantity: Number(p.availableQuantity ?? p.stock_quantity ?? 0),
+            }));
+            this.products.set(mapped);
+            this.saveProducts(mapped);
+            mapped.forEach((prod) => this.catalog.upsertProduct(prod));
+            this.recomputeAndPersistMetrics();
+            if (notify) {
+              this.toast.success(`⚡ Synced ${mapped.length} catalog products from database.`);
+            }
           }
-        }
-      },
-      error: () => {},
-    });
+        },
+        error: () => {
+          this.http.get<{ data: any[] }>(`${PUBLIC_API_BASE}/products?limit=100&t=${Date.now()}`).subscribe({
+            next: (res) => {
+              if (res?.data && res.data.length > 0) {
+                const mapped: AdminProduct[] = res.data.map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                  slug: p.slug,
+                  description: p.description,
+                  longDescription: p.longDescription || p.long_description || p.description,
+                  highlights: p.highlights || [],
+                  price: Number(p.price),
+                  compareAtPrice: p.compareAtPrice != null ? Number(p.compareAtPrice) : (p.compare_at_price != null ? Number(p.compare_at_price) : undefined),
+                  currency: p.currency || 'INR',
+                  imageUrl: p.imageUrl || p.image_url || '/images/products/hc-shampoo.jpg',
+                  category: p.category,
+                  kind: p.kind,
+                  vendor: p.vendor,
+                  audience: p.audience,
+                  freeDelivery: p.freeDelivery ?? p.free_delivery ?? true,
+                  rating: Number(p.rating || 5),
+                  reviewCount: Number(p.reviewCount ?? p.review_count ?? 1),
+                  badge: p.badge,
+                  inStock: Boolean(p.inStock ?? p.in_stock ?? true),
+                  stock_quantity: Number(p.stock_quantity ?? p.stockQuantity ?? 0),
+                  stock_reserved: Number(p.stock_reserved || 0),
+                  availableQuantity: Number(p.availableQuantity ?? p.stock_quantity ?? 0),
+                }));
+                this.products.set(mapped);
+                this.saveProducts(mapped);
+                mapped.forEach((prod) => this.catalog.upsertProduct(prod));
+                this.recomputeAndPersistMetrics();
+                if (notify) {
+                  this.toast.success(`⚡ Synced ${mapped.length} catalog products from database.`);
+                }
+              }
+            },
+            error: () => {},
+          });
+        },
+      });
+    };
+
+    if (notify) {
+      this.http.post(`${ADMIN_API_BASE}/cache/flush`, {}).subscribe({
+        next: () => fetchFresh(),
+        error: () => fetchFresh(),
+      });
+    } else {
+      fetchFresh();
+    }
   }
 
   private syncWithBackend(): void {

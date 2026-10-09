@@ -54,8 +54,12 @@ export class ProductDetailPage {
     effect(() => {
       const id = this.id();
       this.zoomActive.set(false);
-      if (id && this.catalog.byId(id)) {
-        this.recent.record(id);
+      if (id) {
+        // Revalidate latest inventory & stock status live from Neon DB
+        void this.catalog.fetchProductById(id);
+        if (this.catalog.byId(id)) {
+          this.recent.record(id);
+        }
       }
     });
   }

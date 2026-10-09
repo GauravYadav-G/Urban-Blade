@@ -44,7 +44,9 @@ export class CatalogService {
     const products: Product[] = [];
     try {
       for (let page = 1; page <= 100; page++) {
-        const result = await firstValueFrom(this.http.get<{ data: Product[] }>(`${API_BASE}/products?page=${page}&limit=100`));
+        const result = await firstValueFrom(
+          this.http.get<{ data: Product[] }>(`${API_BASE}/products?page=${page}&limit=100&t=${Date.now()}`)
+        );
         products.push(...result.data);
         if (result.data.length < 100) break;
       }
@@ -54,6 +56,31 @@ export class CatalogService {
     } catch {
       this.loadError.set('The catalog is temporarily unavailable. Please try again.');
     } finally { this.loading.set(false); }
+  }
+
+  async fetchProductById(id: string): Promise<Product | null> {
+    if (!id) return null;
+    const cleanId = id.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
+    try {
+      const prod = await firstValueFrom(
+        this.http.get<Product>(`${API_BASE}/products/${id}?t=${Date.now()}`)
+      );
+      if (prod) {
+        this.upsertProduct(prod);
+        return prod;
+      }
+    } catch {
+      try {
+        const prod = await firstValueFrom(
+          this.http.get<Product>(`${API_BASE}/products/${cleanId}?t=${Date.now()}`)
+        );
+        if (prod) {
+          this.upsertProduct(prod);
+          return prod;
+        }
+      } catch {}
+    }
+    return this.byId(id) || null;
   }
 
   readonly categories: { slug: ProductCategory; label: string }[] = [

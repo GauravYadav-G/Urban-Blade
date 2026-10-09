@@ -21,6 +21,10 @@ export class CatalogPage {
     initialValue: this.route.snapshot.queryParamMap,
   });
 
+  constructor() {
+    void this.catalog.refreshCatalog();
+  }
+
   readonly query = computed<CatalogQuery>(() => {
     const q = this.params();
     return {

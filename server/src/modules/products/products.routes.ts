@@ -70,74 +70,79 @@ export async function productsRoutes(app: FastifyInstance) {
       sort?: string;
       page?: string;
       limit?: string;
+      t?: string;
+      nocache?: string;
     };
   }>('/products', async (request, reply) => {
-    const { q, cat, deals, audience, sort, page = '1', limit = '24' } = request.query;
+    const { q, cat, deals, audience, sort, page = '1', limit = '24', t, nocache } = request.query;
 
     const cacheKey = `catalog:query:${JSON.stringify({ q, cat, deals, audience, sort, page, limit })}`;
 
-    const result = await getOrSetCache(
-      cacheKey,
-      async () => {
-        try {
-          const conditions: string[] = [];
-          const values: any[] = [];
-          let paramIndex = 1;
+    const fetchFromDb = async () => {
+      try {
+        const conditions: string[] = [];
+        const values: any[] = [];
+        let paramIndex = 1;
 
-          if (cat && cat !== 'all') {
-            conditions.push(`category = $${paramIndex++}`);
-            values.push(cat);
-          }
-
-          if (deals === 'true') {
-            conditions.push(`compare_at_price > price`);
-          }
-
-          if (audience && audience !== 'all') {
-            conditions.push(`(audience = $${paramIndex++} OR audience = 'unisex')`);
-            values.push(audience);
-          }
-
-          if (q && q.trim()) {
-            // High-performance full-text search using GIN index tsquery or fallback ILIKE
-            conditions.push(`(name ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR vendor ILIKE $${paramIndex})`);
-            values.push(`%${q.trim()}%`);
-            paramIndex++;
-          }
-
-          let orderBy = 'review_count DESC';
-          if (sort === 'price-asc') orderBy = 'price ASC';
-          else if (sort === 'price-desc') orderBy = 'price DESC';
-          else if (sort === 'rating') orderBy = 'rating DESC';
-
-          const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-          const pageNum = Math.max(1, parseInt(page, 10) || 1);
-          const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
-          const offset = (pageNum - 1) * limitNum;
-
-          const sql = `
-            SELECT id, slug, name, description, highlights, price, compare_at_price,
-                   currency, image_url, category, kind, vendor, audience, free_delivery,
-                   rating, review_count, badge, in_stock, stock_quantity, stock_reserved
-            FROM products
-            ${whereClause}
-            ORDER BY ${orderBy}
-            LIMIT ${limitNum} OFFSET ${offset};
-          `;
-
-          const res = await query(sql, values);
-          return { data: res.rows.map(formatProduct), page: pageNum, limit: limitNum, source: 'database' };
-        } catch (err) {
-          request.log.error(err, 'Catalog unavailable');
-          throw Object.assign(new Error('Catalog temporarily unavailable'), { statusCode: 503 });
+        if (cat && cat !== 'all') {
+          conditions.push(`category = $${paramIndex++}`);
+          values.push(cat);
         }
 
-      },
-      { ttlSeconds: 120, useL1: true }
-    );
+        if (deals === 'true') {
+          conditions.push(`compare_at_price > price`);
+        }
 
-    // Amazon-grade HTTP caching header (stale-while-revalidate)
-    reply.header('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+        if (audience && audience !== 'all') {
+          conditions.push(`(audience = $${paramIndex++} OR audience = 'unisex')`);
+          values.push(audience);
+        }
+
+        if (q && q.trim()) {
+          // High-performance full-text search using GIN index tsquery or fallback ILIKE
+          conditions.push(`(name ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR vendor ILIKE $${paramIndex})`);
+          values.push(`%${q.trim()}%`);
+          paramIndex++;
+        }
+
+        let orderBy = 'review_count DESC';
+        if (sort === 'price-asc') orderBy = 'price ASC';
+        else if (sort === 'price-desc') orderBy = 'price DESC';
+        else if (sort === 'rating') orderBy = 'rating DESC';
+
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+        const pageNum = Math.max(1, parseInt(page, 10) || 1);
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
+        const offset = (pageNum - 1) * limitNum;
+
+        const sql = `
+          SELECT id, slug, name, description, highlights, price, compare_at_price,
+                 currency, image_url, category, kind, vendor, audience, free_delivery,
+                 rating, review_count, badge, in_stock, stock_quantity, stock_reserved
+          FROM products
+          ${whereClause}
+          ORDER BY ${orderBy}
+          LIMIT ${limitNum} OFFSET ${offset};
+        `;
+
+        const res = await query(sql, values);
+        return { data: res.rows.map(formatProduct), page: pageNum, limit: limitNum, source: 'database' };
+      } catch (err) {
+        request.log.error(err, 'Catalog unavailable');
+        throw Object.assign(new Error('Catalog temporarily unavailable'), { statusCode: 503 });
+      }
+    };
+
+    let result;
+    if (t || nocache) {
+      result = await fetchFromDb();
+    } else {
+      result = await getOrSetCache(cacheKey, fetchFromDb, { ttlSeconds: 15, useL1: true });
+    }
+
+    reply.header('Cache-Control', 'no-cache, no-store, must-revalidate');
+    reply.header('Pragma', 'no-cache');
+    reply.header('Expires', '0');
     return reply.send(result);
   });
 
@@ -154,9 +159,9 @@ export async function productsRoutes(app: FastifyInstance) {
         } catch {}
         return seedProducts.filter((p) => (p.compare_at_price || p.compareAtPrice) && (p.compare_at_price || p.compareAtPrice) > p.price).slice(0, 12).map(formatProduct);
       },
-      { ttlSeconds: 300 }
+      { ttlSeconds: 30 }
     );
-    reply.header('Cache-Control', 'public, max-age=120, stale-while-revalidate=600');
+    reply.header('Cache-Control', 'no-cache, no-store, must-revalidate');
     return reply.send(deals);
   });
 
@@ -171,39 +176,45 @@ export async function productsRoutes(app: FastifyInstance) {
         } catch {}
         return [...seedProducts].sort((a, b) => (b.review_count || b.reviewCount || 0) - (a.review_count || a.reviewCount || 0)).slice(0, 12).map(formatProduct);
       },
-      { ttlSeconds: 300 }
+      { ttlSeconds: 30 }
     );
-    reply.header('Cache-Control', 'public, max-age=120, stale-while-revalidate=600');
+    reply.header('Cache-Control', 'no-cache, no-store, must-revalidate');
     return reply.send(bestsellers);
   });
 
   // ─── GET PRODUCT BY ID OR SLUG ─────────────────────────────────────────────
-  app.get<{ Params: { idOrSlug: string } }>('/products/:idOrSlug', async (request, reply) => {
+  app.get<{ Params: { idOrSlug: string }; Querystring: { t?: string; nocache?: string } }>('/products/:idOrSlug', async (request, reply) => {
     const { idOrSlug } = request.params;
+    const { t, nocache } = request.query || {};
     const cleanSlug = idOrSlug.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
     const cacheKey = `product:${idOrSlug}`;
 
-    const product = await getOrSetCache(
-      cacheKey,
-      async () => {
-        try {
-          const res = await query(
-            `SELECT * FROM products WHERE slug = $1 OR slug = $2 OR id::text = $1 LIMIT 1`,
-            [idOrSlug, cleanSlug]
-          );
-          if (res.rows.length > 0) return formatProduct(res.rows[0]);
-        } catch {}
-        const match = seedProducts.find((p) => p.id === idOrSlug || p.slug === idOrSlug || p.id === cleanSlug || p.slug === cleanSlug);
-        return match ? formatProduct(match) : null;
-      },
-      { ttlSeconds: 600 }
-    );
+    const fetchDetail = async () => {
+      try {
+        const res = await query(
+          `SELECT * FROM products WHERE slug = $1 OR slug = $2 OR id::text = $1 LIMIT 1`,
+          [idOrSlug, cleanSlug]
+        );
+        if (res.rows.length > 0) return formatProduct(res.rows[0]);
+      } catch {}
+      const match = seedProducts.find((p) => p.id === idOrSlug || p.slug === idOrSlug || p.id === cleanSlug || p.slug === cleanSlug);
+      return match ? formatProduct(match) : null;
+    };
+
+    let product;
+    if (t || nocache) {
+      product = await fetchDetail();
+    } else {
+      product = await getOrSetCache(cacheKey, fetchDetail, { ttlSeconds: 15 });
+    }
 
     if (!product) {
       return reply.status(404).send({ error: 'PRODUCT_NOT_FOUND', message: 'Product does not exist' });
     }
 
-    reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=1200');
+    reply.header('Cache-Control', 'no-cache, no-store, must-revalidate');
+    reply.header('Pragma', 'no-cache');
+    reply.header('Expires', '0');
     return reply.send(product);
   });
 
@@ -313,15 +324,18 @@ export async function productsRoutes(app: FastifyInstance) {
     const b: any = request.body || {};
     const cleanId = id.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
 
-    const stockQty = b.stockQuantity !== undefined ? b.stockQuantity : b.stock_quantity;
-    if (stockQty !== undefined && (!Number.isInteger(stockQty) || stockQty < 0)) {
+    const rawStock = b.stockQuantity !== undefined ? b.stockQuantity : b.stock_quantity;
+    const stockQty = rawStock !== undefined && rawStock !== null && rawStock !== '' ? Math.max(0, Math.floor(Number(rawStock))) : undefined;
+    if (stockQty !== undefined && isNaN(stockQty)) {
       return reply.code(400).send({ error: 'INVALID_STOCK' });
     }
-    let inStock = b.inStock !== undefined ? b.inStock : (b.in_stock !== undefined ? b.in_stock : undefined);
+    let inStock = b.inStock !== undefined ? Boolean(b.inStock) : (b.in_stock !== undefined ? Boolean(b.in_stock) : undefined);
     if (stockQty !== undefined && inStock === undefined) {
       inStock = stockQty > 0;
     } else if (stockQty !== undefined && stockQty === 0) {
       inStock = false;
+    } else if (stockQty !== undefined && stockQty > 0) {
+      inStock = true;
     }
 
     const compareAt = b.compareAtPrice !== undefined ? b.compareAtPrice : b.compare_at_price;
@@ -342,9 +356,9 @@ export async function productsRoutes(app: FastifyInstance) {
           description = COALESCE($8, description),
           image_url = COALESCE($9, image_url),
           long_description = COALESCE($10, long_description),
+          stock_reserved = CASE WHEN $4::integer IS NOT NULL AND $4::integer = 0 THEN 0 ELSE stock_reserved END,
           updated_at = CURRENT_TIMESTAMP
         WHERE id = (SELECT id FROM products WHERE id::text = $11 OR slug = $11 OR slug = $12 ORDER BY (id::text = $11) DESC LIMIT 1)
-          AND ($4::integer IS NULL OR $4 >= stock_reserved)
         RETURNING *;
         `,
         [

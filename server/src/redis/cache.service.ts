@@ -6,7 +6,7 @@ import { config } from '../config.js';
 const l1Cache = new LRUCache<string, any>({
   max: 1000, // Up to 1,000 hot keys in local process RAM
   ttl: 15 * 1000, // 15 seconds TTL for L1
-  allowStale: true,
+  allowStale: false,
 });
 
 // Single-flight in-progress promise map to prevent cache stampedes

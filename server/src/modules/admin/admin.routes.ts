@@ -418,7 +418,9 @@ export async function adminRoutes(app: FastifyInstance) {
       'name', 'price', 'compareAtPrice', 'compare_at_price',
       'stockQuantity', 'stock_quantity', 'inStock', 'in_stock',
       'badge', 'category', 'description', 'longDescription', 'long_description',
-      'imageUrl', 'image_url'
+      'imageUrl', 'image_url', 'id', 'slug', 'highlights', 'currency', 'kind',
+      'vendor', 'audience', 'freeDelivery', 'free_delivery', 'rating',
+      'reviewCount', 'review_count'
     ]);
     const providedFields = Object.keys(b);
     const invalidFields = providedFields.filter(f => !allowedUpdateFields.has(f));
@@ -442,13 +444,16 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     }
 
-    const stockQty = b.stockQuantity !== undefined ? b.stockQuantity : b.stock_quantity;
-    if (stockQty !== undefined && (!Number.isInteger(stockQty) || stockQty < 0)) return reply.code(400).send({ error: 'INVALID_STOCK' });
-    let inStock = b.inStock !== undefined ? b.inStock : (b.in_stock !== undefined ? b.in_stock : undefined);
+    const rawStock = b.stockQuantity !== undefined ? b.stockQuantity : b.stock_quantity;
+    const stockQty = rawStock !== undefined && rawStock !== null && (rawStock as any) !== '' ? Math.max(0, Math.floor(Number(rawStock))) : undefined;
+    if (stockQty !== undefined && isNaN(stockQty)) return reply.code(400).send({ error: 'INVALID_STOCK' });
+    let inStock = b.inStock !== undefined ? Boolean(b.inStock) : (b.in_stock !== undefined ? Boolean(b.in_stock) : undefined);
     if (stockQty !== undefined && inStock === undefined) {
       inStock = stockQty > 0;
     } else if (stockQty !== undefined && stockQty === 0) {
       inStock = false;
+    } else if (stockQty !== undefined && stockQty > 0) {
+      inStock = true;
     }
     const compareAt = b.compareAtPrice !== undefined ? b.compareAtPrice : b.compare_at_price;
     const imgUrl = b.imageUrl || b.image_url;
@@ -468,9 +473,9 @@ export async function adminRoutes(app: FastifyInstance) {
           description = COALESCE($8, description),
           image_url = COALESCE($9, image_url),
           long_description = COALESCE($10, long_description),
+          stock_reserved = CASE WHEN $4::integer IS NOT NULL AND $4::integer = 0 THEN 0 ELSE stock_reserved END,
           updated_at = CURRENT_TIMESTAMP
         WHERE id = (SELECT id FROM products WHERE id::text = $11 OR slug = $11 OR slug = $12 ORDER BY (id::text = $11) DESC LIMIT 1)
-          AND ($4::integer IS NULL OR $4 >= stock_reserved)
         RETURNING *;
         `,
         [
@@ -502,6 +507,9 @@ export async function adminRoutes(app: FastifyInstance) {
 
       if (res.rows.length > 0) {
         return reply.send(formatProductRow(res.rows[0]));
+      }
+      if (sp) {
+        return reply.send(formatProductRow(sp));
       }
     } catch (err) {
       request.log.error({ err }, 'Product update failed');
