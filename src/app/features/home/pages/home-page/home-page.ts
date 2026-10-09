@@ -161,6 +161,8 @@ export class HomePage {
   addFeatured(event: Event, product: Product): void {
     event.preventDefault();
     event.stopPropagation();
+    const isOut = !product.inStock || (product.stock_quantity !== undefined && product.stock_quantity <= 0);
+    if (isOut) return;
     this.cart.addProduct(product);
   }
 }

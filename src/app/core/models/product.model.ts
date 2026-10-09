@@ -45,6 +45,17 @@ export interface Product {
   reviewCount: number;
   badge?: 'deal' | 'bestseller' | 'new';
   inStock: boolean;
+  stock_quantity?: number;
+  stockQuantity?: number;
+  availableQuantity?: number;
   marketplacePrices?: MarketplacePrice[];
   priceComparison?: PriceComparison;
+}
+
+export function isProductInStock(product: Product | null | undefined): boolean {
+  if (!product) return false;
+  if (!product.inStock) return false;
+  const qty = product.stock_quantity ?? product.stockQuantity;
+  if (qty !== undefined && qty <= 0) return false;
+  return true;
 }

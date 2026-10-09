@@ -27,7 +27,8 @@ export async function healthRoutes(app: FastifyInstance) {
       tier: 'Amazon-Grade 100k Concurrent Target',
     };
 
-    reply.status(isHealthy ? 200 : 503).send(payload);
+    reply.status(isHealthy ? 200 : 503);
+    return payload;
   });
 
   app.get('/health/live', async () => ({ status: 'alive' }));
@@ -35,9 +36,9 @@ export async function healthRoutes(app: FastifyInstance) {
   app.get('/health/ready', async (request, reply) => {
     const db = await checkDbHealth();
     if (!db.ok) {
-      reply.status(503).send({ status: 'not_ready', reason: 'database_unavailable' });
-      return;
+      reply.status(503);
+      return { status: 'not_ready', reason: 'database_unavailable' };
     }
-    reply.status(200).send({ status: 'ready' });
+    return { status: 'ready' };
   });
 }

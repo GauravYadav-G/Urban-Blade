@@ -17,6 +17,8 @@
     "server:benchmark": "npm --prefix server run benchmark",
     "server:race-test": "npm --prefix server run race-test",
     "server:clean-orders": "npm --prefix server run clean:orders",
+    "test:admin": "npm --prefix server run test:admin:full",
+    "test:guidelines": "npm --prefix server run test:guidelines",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down"
   },

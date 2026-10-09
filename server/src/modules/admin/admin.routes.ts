@@ -429,9 +429,11 @@ export async function adminRoutes(app: FastifyInstance) {
       });
     }
 
+    const cleanId = id.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
+
     // Vendor authorization boundary
     if (user?.role === 'vendor') {
-      const prodCheck = await query('SELECT vendor FROM products WHERE id::text = $1 OR slug = $1 ORDER BY (id::text = $1) DESC LIMIT 1', [id]);
+      const prodCheck = await query('SELECT vendor FROM products WHERE id::text = $1 OR slug = $1 OR slug = $2 ORDER BY (id::text = $1) DESC LIMIT 1', [id, cleanId]);
       if (prodCheck.rows.length > 0) {
         const prodVendor = prodCheck.rows[0].vendor;
         if (!prodVendor || prodVendor.trim().toLowerCase() !== (user.vendorName || user.name).trim().toLowerCase()) {
@@ -442,13 +444,17 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const stockQty = b.stockQuantity !== undefined ? b.stockQuantity : b.stock_quantity;
     if (stockQty !== undefined && (!Number.isInteger(stockQty) || stockQty < 0)) return reply.code(400).send({ error: 'INVALID_STOCK' });
-    const inStock = b.inStock !== undefined ? b.inStock : (b.in_stock !== undefined ? b.in_stock : (stockQty !== undefined ? stockQty > 0 : undefined));
+    let inStock = b.inStock !== undefined ? b.inStock : (b.in_stock !== undefined ? b.in_stock : undefined);
+    if (stockQty !== undefined && inStock === undefined) {
+      inStock = stockQty > 0;
+    } else if (stockQty !== undefined && stockQty === 0) {
+      inStock = false;
+    }
     const compareAt = b.compareAtPrice !== undefined ? b.compareAtPrice : b.compare_at_price;
     const imgUrl = b.imageUrl || b.image_url;
     const longDesc = b.longDescription || b.long_description;
 
     try {
-      const cleanId = id.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
       const res = await query(
         `
         UPDATE products SET
@@ -463,7 +469,7 @@ export async function adminRoutes(app: FastifyInstance) {
           image_url = COALESCE($9, image_url),
           long_description = COALESCE($10, long_description),
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = (SELECT id FROM products WHERE id::text = $11 OR slug = $11 ORDER BY (id::text = $11) DESC LIMIT 1)
+        WHERE id = (SELECT id FROM products WHERE id::text = $11 OR slug = $11 OR slug = $12 ORDER BY (id::text = $11) DESC LIMIT 1)
           AND ($4::integer IS NULL OR $4 >= stock_reserved)
         RETURNING *;
         `,
@@ -479,8 +485,18 @@ export async function adminRoutes(app: FastifyInstance) {
           imgUrl,
           longDesc,
           id,
+          cleanId,
         ]
       );
+
+      // Keep seed fallback in sync
+      const sp = seedProducts.find((p) => p.id === id || p.slug === id || p.id === cleanId || p.slug === cleanId);
+      if (sp) {
+        if (stockQty !== undefined) sp.stock_quantity = stockQty;
+        if (inStock !== undefined) sp.inStock = inStock;
+        if (b.name) sp.name = b.name;
+        if (b.price !== undefined) sp.price = Number(b.price);
+      }
 
       await invalidateCatalog();
 
@@ -500,10 +516,11 @@ export async function adminRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>('/admin/products/:id', async (request, reply) => {
     const { id } = request.params;
     const user = request.user;
+    const cleanId = id.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
 
     // Vendor authorization boundary
     if (user?.role === 'vendor') {
-      const prodCheck = await query('SELECT vendor FROM products WHERE id::text = $1 OR slug = $1 ORDER BY (id::text = $1) DESC LIMIT 1', [id]);
+      const prodCheck = await query('SELECT vendor FROM products WHERE id::text = $1 OR slug = $1 OR slug = $2 ORDER BY (id::text = $1) DESC LIMIT 1', [id, cleanId]);
       if (prodCheck.rows.length > 0) {
         const prodVendor = prodCheck.rows[0].vendor;
         if (!prodVendor || prodVendor.trim().toLowerCase() !== (user.vendorName || user.name).trim().toLowerCase()) {
@@ -513,7 +530,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     try {
-      const deleted = await query('DELETE FROM products WHERE id = (SELECT id FROM products WHERE id::text = $1 OR slug = $1 ORDER BY (id::text = $1) DESC LIMIT 1) RETURNING id', [id]);
+      const deleted = await query('DELETE FROM products WHERE id = (SELECT id FROM products WHERE id::text = $1 OR slug = $1 OR slug = $2 ORDER BY (id::text = $1) DESC LIMIT 1) RETURNING id', [id, cleanId]);
       if (!deleted.rowCount) return reply.code(404).send({ error: 'PRODUCT_NOT_FOUND' });
     } catch (err) {
       request.log.error({ err }, 'Product deletion failed');

@@ -152,6 +152,34 @@ h1 {
   }
 }
 
+.pdp__stock {
+  margin: 0 0 0.4rem;
+  font-weight: 700;
+  font-size: 1.05rem;
+
+  &--in {
+    color: var(--success);
+  }
+
+  &--out {
+    color: #dc2626;
+  }
+}
+
+.pdp__stock-msg {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.pdp__low-msg {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+  color: #d97706;
+  font-weight: 600;
+}
+
 .btn {
   display: block;
   width: 100%;
@@ -169,6 +197,13 @@ h1 {
 
 .btn--buy {
   background: #ffa41c;
+}
+
+.btn--disabled {
+  background: #e2e8f0;
+  color: #94a3b8;
+  cursor: not-allowed;
+  border: 1px solid #cbd5e1;
 }
 
 .btn--list {

@@ -1,7 +1,10 @@
 @let p = product();
-<article class="card" [class.card--large]="largeMedia()">
+@let isOut = isOutOfStock();
+<article class="card" [class.card--large]="largeMedia()" [class.card--out-of-stock]="isOut">
   <a class="card__media" [routerLink]="['/shop', p.id]" [attr.aria-label]="p.name">
-    @if (p.badge === 'deal') {
+    @if (isOut) {
+      <span class="card__badge card__badge--out">Out of Stock</span>
+    } @else if (p.badge === 'deal') {
       <span class="card__badge">Deal</span>
     } @else if (p.badge === 'bestseller') {
       <span class="card__badge card__badge--best">Bestseller</span>
@@ -9,6 +12,11 @@
       <span class="card__badge card__badge--new">New</span>
     }
     <img [src]="p.imageUrl" [alt]="p.name" width="320" height="240" loading="lazy" appImgFallback />
+    @if (isOut) {
+      <div class="card__out-overlay">
+        <span>Sold Out</span>
+      </div>
+    }
   </a>
   <div class="card__body">
     <h3 class="card__title">
@@ -25,6 +33,19 @@
       <p class="card__ship">FREE delivery</p>
     }
     <p class="card__vendor">Sold by {{ p.vendor }}</p>
-    <button type="button" class="card__btn" (click)="add($event)">Add to cart</button>
+    @if (isOut) {
+      <p class="card__stock-status card__stock-status--out">Currently Out of Stock</p>
+    } @else if (p.stock_quantity !== undefined && p.stock_quantity <= 10) {
+      <p class="card__stock-status card__stock-status--low">Only {{ p.stock_quantity }} left</p>
+    }
+    <button
+      type="button"
+      class="card__btn"
+      [class.card__btn--out]="isOut"
+      [disabled]="isOut"
+      (click)="add($event)"
+    >
+      {{ isOut ? 'Out of Stock' : 'Add to cart' }}
+    </button>
   </div>
 </article>

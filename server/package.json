@@ -20,6 +20,8 @@
     "test:flow": "tsx scripts/test-e2e-complete-flow.ts",
     "test:sync": "tsx scripts/test-support-realtime-sync.ts",
     "test:admin": "tsx scripts/test-admin-and-order-fixes.ts",
+    "test:admin:full": "tsx scripts/test-admin-full-operations.ts",
+    "test:guidelines": "tsx scripts/test-ai-guidelines-compliance.ts",
     "clean:orders": "tsx scripts/clean-orders.ts",
     "test": "npm run build && node --test tests/*.test.mjs"
   },

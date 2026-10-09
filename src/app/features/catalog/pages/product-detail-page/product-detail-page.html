@@ -52,17 +52,27 @@
     </div>
     <aside class="pdp__buy">
       <p class="pdp__price">{{ p.price | inr }}</p>
-      <p>{{ p.inStock ? 'In stock' : 'Currently unavailable' }}</p>
-      <label>
-        Qty
-        <select [ngModel]="qty" (ngModelChange)="qty = +$event" name="qty">
-          @for (n of [1, 2, 3, 4, 5, 6, 7, 8]; track n) {
-            <option [ngValue]="n">{{ n }}</option>
-          }
-        </select>
-      </label>
-      <button type="button" class="btn btn--cart" (click)="addToCart()">Add to cart</button>
-      <button type="button" class="btn btn--buy" (click)="buyNow()">Buy now</button>
+      @let isOut = isOutOfStock();
+      @if (isOut) {
+        <p class="pdp__stock pdp__stock--out">Out of Stock</p>
+        <p class="pdp__stock-msg">This item is currently out of stock. We are restocking soon!</p>
+        <button type="button" class="btn btn--cart btn--disabled" disabled>Out of Stock</button>
+      } @else {
+        <p class="pdp__stock pdp__stock--in">In Stock</p>
+        @if (p.stock_quantity !== undefined && p.stock_quantity <= 10) {
+          <p class="pdp__low-msg">Only {{ p.stock_quantity }} left in stock - order soon.</p>
+        }
+        <label>
+          Qty
+          <select [ngModel]="qty" (ngModelChange)="qty = +$event" name="qty">
+            @for (n of [1, 2, 3, 4, 5, 6, 7, 8]; track n) {
+              <option [ngValue]="n">{{ n }}</option>
+            }
+          </select>
+        </label>
+        <button type="button" class="btn btn--cart" (click)="addToCart()">Add to cart</button>
+        <button type="button" class="btn btn--buy" (click)="buyNow()">Buy now</button>
+      }
       <button type="button" class="btn btn--list" (click)="toggleList()">
         {{ savedOnList() ? 'Remove from your list' : 'Add to your list' }}
       </button>

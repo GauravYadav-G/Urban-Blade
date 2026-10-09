@@ -63,7 +63,7 @@ export async function bookingsRoutes(app: FastifyInstance) {
         const available = allSlots.filter((slot) => !bookedSlots.has(slot));
         return reply.send({ stylistId, date, availableSlots: available });
       } catch {
-        return reply.send({ stylistId, date, availableSlots: allSlots });
+        return reply.code(503).send({ error: 'AVAILABILITY_UNAVAILABLE', message: 'Availability could not be checked. Please retry.' });
       }
     }
   );
@@ -249,7 +249,7 @@ export async function bookingsRoutes(app: FastifyInstance) {
         return reply.send(res.rows);
       } catch (err: any) {
         request.log.error(err, 'Failed to fetch user bookings');
-        return reply.send([]);
+        return reply.code(503).send({ error: 'HISTORY_UNAVAILABLE', message: 'Appointments could not be loaded. Please retry.' });
       }
     }
   );

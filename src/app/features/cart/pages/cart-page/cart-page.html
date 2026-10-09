@@ -12,12 +12,19 @@
     <ul class="cart__lines">
       @for (line of cart.lines(); track line.lineId) {
         @let product = productFor(line);
-        <li class="cart__line">
+        @let isLineOut = isLineOutOfStock(line);
+        <li class="cart__line" [class.cart__line--out]="isLineOut">
           <a class="cart__media" [routerLink]="['/shop', line.productId]">
             <img [src]="line.imageUrl" [alt]="line.name" appImgFallback />
+            @if (isLineOut) {
+              <span class="cart__media-out-tag">Out of Stock</span>
+            }
           </a>
           <div class="cart__info">
             <a class="cart__name" [routerLink]="['/shop', line.productId]">{{ line.name }}</a>
+            @if (isLineOut) {
+              <p class="cart__line-alert">⚠️ This item is out of stock. Please delete it to proceed with checkout.</p>
+            }
             @if (product) {
               <p class="cart__vendor">Sold by {{ product.vendor }}</p>
             }
@@ -34,7 +41,7 @@
             <div class="cart__actions">
               <label>
                 Qty
-                <select [value]="line.qty" (change)="setQty(line.lineId, $event)">
+                <select [value]="line.qty" (change)="setQty(line.lineId, $event)" [disabled]="isLineOut">
                   @for (n of [1, 2, 3, 4, 5, 6, 7, 8]; track n) {
                     <option [value]="n" [selected]="n === line.qty">{{ n }}</option>
                   }
@@ -74,7 +81,12 @@
       } @else {
         <p class="cart__ship">Standard Delivery: {{ ecommerce().standardShippingFee | inr }}</p>
       }
-      <a routerLink="/checkout" class="checkout">Proceed to checkout</a>
+      @if (hasOutOfStockItems()) {
+        <p class="cart__summary-alert">Some items in your cart are currently out of stock. Remove them to continue.</p>
+        <button type="button" class="checkout checkout--disabled" disabled>Proceed to checkout</button>
+      } @else {
+        <a routerLink="/checkout" class="checkout">Proceed to checkout</a>
+      }
       <a routerLink="/shop" class="cart__keep">Continue shopping</a>
     </aside>
   </div>

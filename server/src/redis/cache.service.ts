@@ -1,5 +1,5 @@
 import { LRUCache } from 'lru-cache';
-import { getCacheKey, setCacheKey, delCacheKey } from './client.js';
+import { getCacheKey, setCacheKey, delCacheKey, delCacheByPattern } from './client.js';
 import { config } from '../config.js';
 
 // ─── L1 PROCESS CACHE (0MS LATENCY FOR HOTTEST KEYS) ─────────────────────────
@@ -94,4 +94,6 @@ export async function invalidateCatalog(): Promise<void> {
   await delCacheKey('catalog:all').catch(() => {});
   await delCacheKey('catalog:deals').catch(() => {});
   await delCacheKey('catalog:bestsellers').catch(() => {});
+  await delCacheByPattern('catalog:*').catch(() => {});
+  await delCacheByPattern('product:*').catch(() => {});
 }

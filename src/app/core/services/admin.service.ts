@@ -1,6 +1,6 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { of, Observable, tap } from 'rxjs';
+import { of, Observable, tap, firstValueFrom } from 'rxjs';
 import { CatalogService } from './catalog.service';
 import { ToastService } from './toast.service';
 import type { Product } from '@core/models/product.model';
@@ -482,26 +482,40 @@ export class AdminService {
     this.products.update((list) =>
       list.map((p) =>
         p.id === productId || p.slug === productId
-          ? { ...p, stock_quantity: nextQty, inStock }
+          ? { ...p, stock_quantity: nextQty, stockQuantity: nextQty, inStock }
           : p
       )
     );
 
     const catalogProd = this.catalog.byId(productId);
     if (catalogProd) {
-      this.catalog.upsertProduct({ ...catalogProd, inStock });
+      this.catalog.upsertProduct({
+        ...catalogProd,
+        inStock,
+        stock_quantity: nextQty,
+        stockQuantity: nextQty,
+      });
     }
 
     this.saveProducts(this.products());
     this.recomputeAndPersistMetrics();
 
-    this.http
-      .put(`${API_BASE}/products/${productId}`, {
-        stockQuantity: nextQty,
-        stock_quantity: nextQty,
-        inStock,
-      })
-      .subscribe({ error: () => {} });
+    const payload = {
+      stockQuantity: nextQty,
+      stock_quantity: nextQty,
+      inStock,
+      in_stock: inStock,
+    };
+
+    this.http.put(`${API_BASE}/admin/products/${productId}`, payload).subscribe({
+      next: () => void this.catalog.refreshCatalog(),
+      error: () => {
+        this.http.put(`${API_BASE}/products/${productId}`, payload).subscribe({
+          next: () => void this.catalog.refreshCatalog(),
+          error: () => {},
+        });
+      },
+    });
   }
 
   toggleInStock(productId: string): void {
@@ -509,24 +523,39 @@ export class AdminService {
     if (!current) return;
 
     const next = !current.inStock;
+    const nextQty = next ? Math.max(10, current.stock_quantity ?? 100) : 0;
     this.products.update((list) =>
       list.map((p) =>
-        p.id === productId || p.slug === productId ? { ...p, inStock: next } : p
+        p.id === productId || p.slug === productId
+          ? { ...p, inStock: next, stock_quantity: nextQty, stockQuantity: nextQty }
+          : p
       )
     );
 
     const catalogProd = this.catalog.byId(productId);
     if (catalogProd) {
-      this.catalog.upsertProduct({ ...catalogProd, inStock: next });
+      this.catalog.upsertProduct({
+        ...catalogProd,
+        inStock: next,
+        stock_quantity: nextQty,
+        stockQuantity: nextQty,
+      });
     }
 
     this.saveProducts(this.products());
     this.recomputeAndPersistMetrics();
     this.toast.info(`Availability toggled: ${current.name} is now ${next ? 'In Stock' : 'Out of Stock'}.`);
 
-    this.http
-      .put(`${API_BASE}/products/${productId}`, { inStock: next, in_stock: next })
-      .subscribe({ error: () => {} });
+    const payload = { inStock: next, in_stock: next, stockQuantity: nextQty, stock_quantity: nextQty };
+    this.http.put(`${API_BASE}/admin/products/${productId}`, payload).subscribe({
+      next: () => void this.catalog.refreshCatalog(),
+      error: () => {
+        this.http.put(`${API_BASE}/products/${productId}`, payload).subscribe({
+          next: () => void this.catalog.refreshCatalog(),
+          error: () => {},
+        });
+      },
+    });
   }
 
   saveProduct(item: Partial<AdminProduct>): void {
@@ -535,6 +564,9 @@ export class AdminService {
       item.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') ||
       `prod-${Date.now()}`;
     const id = item.id || `prod-${Date.now()}`;
+
+    const stockQty = item.stock_quantity ?? 100;
+    const inStock = stockQty > 0 && (item.inStock ?? true);
 
     const completeProduct: AdminProduct = {
       id,
@@ -555,8 +587,9 @@ export class AdminService {
       rating: item.rating || 5.0,
       reviewCount: item.reviewCount || 1,
       badge: item.badge,
-      inStock: item.inStock ?? true,
-      stock_quantity: item.stock_quantity ?? 100,
+      inStock,
+      stock_quantity: stockQty,
+      stockQuantity: stockQty,
     };
 
     this.products.update((list) => {
@@ -585,9 +618,25 @@ export class AdminService {
     };
 
     if (item.id) {
-      this.http.put(`${API_BASE}/products/${item.id}`, payload).subscribe({ error: () => {} });
+      this.http.put(`${API_BASE}/admin/products/${item.id}`, payload).subscribe({
+        next: () => void this.catalog.refreshCatalog(),
+        error: () => {
+          this.http.put(`${API_BASE}/products/${item.id}`, payload).subscribe({
+            next: () => void this.catalog.refreshCatalog(),
+            error: () => {},
+          });
+        },
+      });
     } else {
-      this.http.post(`${API_BASE}/products`, payload).subscribe({ error: () => {} });
+      this.http.post(`${API_BASE}/admin/products`, payload).subscribe({
+        next: () => void this.catalog.refreshCatalog(),
+        error: () => {
+          this.http.post(`${API_BASE}/products`, payload).subscribe({
+            next: () => void this.catalog.refreshCatalog(),
+            error: () => {},
+          });
+        },
+      });
     }
   }
 
@@ -597,7 +646,15 @@ export class AdminService {
     this.saveProducts(this.products());
     this.recomputeAndPersistMetrics();
     this.toast.info('Product removed from catalog and database.');
-    this.http.delete(`${API_BASE}/products/${id}`).subscribe({ error: () => {} });
+    this.http.delete(`${API_BASE}/admin/products/${id}`).subscribe({
+      next: () => void this.catalog.refreshCatalog(),
+      error: () => {
+        this.http.delete(`${API_BASE}/products/${id}`).subscribe({
+          next: () => void this.catalog.refreshCatalog(),
+          error: () => {},
+        });
+      },
+    });
   }
 
   // ─── CUSTOMER CRM MUTATIONS ───────────────────────────────────────────────
@@ -625,7 +682,15 @@ export class AdminService {
 
     this.saveProducts(this.products());
     this.toast.info(`Product badge updated.`);
-    this.http.put(`${API_BASE}/products/${productId}`, { badge }).subscribe({ error: () => {} });
+    this.http.put(`${API_BASE}/admin/products/${productId}`, { badge }).subscribe({
+      next: () => void this.catalog.refreshCatalog(),
+      error: () => {
+        this.http.put(`${API_BASE}/products/${productId}`, { badge }).subscribe({
+          next: () => void this.catalog.refreshCatalog(),
+          error: () => {},
+        });
+      },
+    });
   }
 
   fetchCustomerDetails(id: string): Observable<{ user: any; orders: any[]; bookings: any[] }> {
@@ -1263,7 +1328,7 @@ export class AdminService {
 
     // Fire parallel DELETEs to backend
     const deletes = ids.map((id) =>
-      this.http.delete<{ ok: boolean }>(`${SUPPORT_API_BASE}/inquiries/${id}`).toPromise()
+      firstValueFrom(this.http.delete<{ ok: boolean }>(`${SUPPORT_API_BASE}/inquiries/${id}`))
         .catch(() => null)
     );
 
@@ -1441,7 +1506,7 @@ export class AdminService {
       {
         id: 'vnd-salon',
         name: 'Urban Blade Salon',
-        slug: 'salon@urbanblade.in',
+        slug: 'urban-blade-salon',
         email: 'salon@urbanblade.in',
         password: 'Vendor@2026',
         contact_person: 'Master Barber Gaurav',

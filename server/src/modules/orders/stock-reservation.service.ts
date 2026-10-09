@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { invalidateCatalog } from '../../redis/cache.service.js';
 
 /**
  * Stock Reservation Service — the single source of truth for inventory holds.
@@ -154,6 +155,7 @@ export async function commitStockReservation(client: PoolClient, orderId: string
       `,
       [orderId]
     );
+    await invalidateCatalog().catch(() => {});
   }
 
   if (unapplied.length) throw new Error('STOCK_LEDGER_INCONSISTENT');
@@ -306,6 +308,9 @@ export async function cancelOrderAndReleaseStock(
     await client.query('UPDATE products SET stock_quantity = stock_quantity + $1, in_stock = TRUE, version = version + 1 WHERE id = $2', [item.quantity, item.product_id]);
   }
   await client.query("UPDATE stock_reservations SET status = 'restored', resolved_at = NOW() WHERE order_id = $1 AND status = 'committed'", [orderId]);
+  if (committed.rows.length > 0) {
+    await invalidateCatalog().catch(() => {});
+  }
   return { cancelled: true, released: activeReservations };
 }
 

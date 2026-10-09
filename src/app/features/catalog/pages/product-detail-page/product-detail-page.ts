@@ -67,14 +67,21 @@ export class ProductDetailPage {
     }
   }
 
+  isOutOfStock(): boolean {
+    const p = this.product();
+    if (!p) return true;
+    return !p.inStock || (p.stock_quantity !== undefined && p.stock_quantity <= 0);
+  }
+
   addToCart(): void {
     const p = this.product();
-    if (p) {
+    if (p && !this.isOutOfStock()) {
       this.cart.addProduct(p, this.qty);
     }
   }
 
   buyNow(): void {
+    if (this.isOutOfStock()) return;
     this.addToCart();
     void this.router.navigate(['/checkout']);
   }

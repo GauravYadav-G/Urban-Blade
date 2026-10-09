@@ -42,7 +42,8 @@ export class CartService {
   }
 
   addProduct(product: Product, qty = 1): void {
-    if (!product.inStock || !Number.isInteger(qty) || qty < 1) return;
+    const isOut = !product.inStock || (product.stock_quantity !== undefined && product.stock_quantity <= 0);
+    if (isOut || !Number.isInteger(qty) || qty < 1) return;
     qty = Math.min(qty, MAX_CART_QTY);
     this.linesSignal.update((current) => {
       const existing = current.find((l) => l.productId === product.id);

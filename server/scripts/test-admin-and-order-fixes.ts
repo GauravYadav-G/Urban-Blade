@@ -145,10 +145,19 @@ async function runAdminAndOrderFixesTest() {
     // 5. Test Cash On Delivery Order with Email in shipping_address
     console.log('🛒 5. Testing Order Placement with Email in Shipping Address (POST /api/orders/cod-order)...');
     const testCustomerEmail = 'vikas.verma@urbanblade.in';
+    const customerToken = app.jwt.sign({
+      id: 'cf32923e-e498-407c-93d5-8d8cef913979',
+      email: testCustomerEmail,
+      role: 'customer',
+      name: 'Vikas Verma',
+    });
     const orderRes = await app.inject({
       method: 'POST',
       url: '/api/orders/cod-order',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: `Bearer ${customerToken}`,
+      },
       payload: {
         items: [
           {
@@ -164,7 +173,6 @@ async function runAdminAndOrderFixesTest() {
           email: testCustomerEmail,
         },
         userId: testCustomerEmail,
-        couponCode: 'BLADE10',
       },
     });
     console.log(`   Order response status: ${orderRes.statusCode}`);

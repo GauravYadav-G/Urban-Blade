@@ -45,6 +45,15 @@ export class CartPage {
     return this.catalog.byId(line.productId);
   }
 
+  isLineOutOfStock(line: CartLine): boolean {
+    const p = this.productFor(line);
+    return !p || !p.inStock || (p.stock_quantity !== undefined && p.stock_quantity <= 0);
+  }
+
+  readonly hasOutOfStockItems = computed(() => {
+    return this.cart.lines().some((line) => this.isLineOutOfStock(line));
+  });
+
   descriptionFor(line: CartLine): string {
     return this.productFor(line)?.description ?? line.description ?? '';
   }

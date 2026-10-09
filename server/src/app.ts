@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import underPressure from '@fastify/under-pressure';
+import { pressureResponse } from './core/load-shedding.js';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 
@@ -73,19 +74,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     maxEventLoopDelay: config.limits.maxEventLoopDelayMs,
     maxHeapUsedBytes: config.limits.maxHeapUsedBytes,
     maxRssBytes: config.limits.maxHeapUsedBytes * 1.5,
-    pressureHandler: (req, rep, type, value) => {
-      // Never shed health check probes or root welcome checks
-      const path = req.url || '';
-      if (path === '/' || path.startsWith('/api/health')) {
-        return;
-      }
-      req.log.warn({ type, value }, '⚠️ System under severe pressure - shedding load');
-      rep.header('Retry-After', 2);
-      rep.status(503).send({
-        error: 'SERVICE_UNDER_PRESSURE',
-        message: 'System is experiencing extreme peak load. Retrying in 2 seconds...',
-      });
-    },
+    pressureHandler: pressureResponse,
   });
 
   // High-concurrency rate limiting

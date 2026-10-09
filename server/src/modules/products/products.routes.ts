@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { query } from '../../db/pool.js';
-import { getOrSetCache } from '../../redis/cache.service.js';
+import { getOrSetCache, invalidateCatalog } from '../../redis/cache.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,8 +14,11 @@ const seedProducts: any[] = JSON.parse(
 );
 
 function formatProduct(p: any) {
-  const stockQty = Math.max(0, Number(p.stock_quantity ?? p.stockQuantity ?? 0) - Number(p.stock_reserved ?? 0));
-  const inStockVal = Boolean(p.in_stock ?? p.inStock) && stockQty > 0;
+  const defaultStock = Boolean(p.in_stock ?? p.inStock ?? true) ? 100 : 0;
+  const rawQty = p.stock_quantity ?? p.stockQuantity;
+  const baseStock = rawQty !== undefined && rawQty !== null ? Number(rawQty) : defaultStock;
+  const stockQty = Math.max(0, baseStock - Number(p.stock_reserved ?? 0));
+  const inStockVal = Boolean(p.in_stock ?? p.inStock ?? true) && stockQty > 0;
   const compareAt = p.compare_at_price != null ? Number(p.compare_at_price) : (p.compareAtPrice != null ? Number(p.compareAtPrice) : null);
   const img = p.image_url || p.imageUrl || '/images/products/hc-shampoo.jpg';
   const freeDel = p.free_delivery ?? p.freeDelivery ?? true;
@@ -177,6 +180,7 @@ export async function productsRoutes(app: FastifyInstance) {
   // ─── GET PRODUCT BY ID OR SLUG ─────────────────────────────────────────────
   app.get<{ Params: { idOrSlug: string } }>('/products/:idOrSlug', async (request, reply) => {
     const { idOrSlug } = request.params;
+    const cleanSlug = idOrSlug.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
     const cacheKey = `product:${idOrSlug}`;
 
     const product = await getOrSetCache(
@@ -184,12 +188,12 @@ export async function productsRoutes(app: FastifyInstance) {
       async () => {
         try {
           const res = await query(
-            `SELECT * FROM products WHERE slug = $1 OR id::text = $1 LIMIT 1`,
-            [idOrSlug]
+            `SELECT * FROM products WHERE slug = $1 OR slug = $2 OR id::text = $1 LIMIT 1`,
+            [idOrSlug, cleanSlug]
           );
           if (res.rows.length > 0) return formatProduct(res.rows[0]);
         } catch {}
-        const match = seedProducts.find((p) => p.id === idOrSlug || p.slug === idOrSlug);
+        const match = seedProducts.find((p) => p.id === idOrSlug || p.slug === idOrSlug || p.id === cleanSlug || p.slug === cleanSlug);
         return match ? formatProduct(match) : null;
       },
       { ttlSeconds: 600 }
@@ -298,5 +302,89 @@ export async function productsRoutes(app: FastifyInstance) {
 
     reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
     return reply.send(comparison);
+  });
+
+  // ─── UPDATE PRODUCT / INVENTORY (DIRECT OR STAFF) ──────────────────────────
+  app.put<{
+    Params: { id: string };
+    Body: any;
+  }>('/products/:id', async (request, reply) => {
+    const { id } = request.params;
+    const b: any = request.body || {};
+    const cleanId = id.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
+
+    const stockQty = b.stockQuantity !== undefined ? b.stockQuantity : b.stock_quantity;
+    if (stockQty !== undefined && (!Number.isInteger(stockQty) || stockQty < 0)) {
+      return reply.code(400).send({ error: 'INVALID_STOCK' });
+    }
+    let inStock = b.inStock !== undefined ? b.inStock : (b.in_stock !== undefined ? b.in_stock : undefined);
+    if (stockQty !== undefined && inStock === undefined) {
+      inStock = stockQty > 0;
+    } else if (stockQty !== undefined && stockQty === 0) {
+      inStock = false;
+    }
+
+    const compareAt = b.compareAtPrice !== undefined ? b.compareAtPrice : b.compare_at_price;
+    const imgUrl = b.imageUrl || b.image_url;
+    const longDesc = b.longDescription || b.long_description;
+
+    try {
+      const res = await query(
+        `
+        UPDATE products SET
+          name = COALESCE($1, name),
+          price = COALESCE($2, price),
+          compare_at_price = COALESCE($3, compare_at_price),
+          stock_quantity = COALESCE($4, stock_quantity),
+          in_stock = COALESCE($5, in_stock),
+          badge = $6,
+          category = COALESCE($7, category),
+          description = COALESCE($8, description),
+          image_url = COALESCE($9, image_url),
+          long_description = COALESCE($10, long_description),
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = (SELECT id FROM products WHERE id::text = $11 OR slug = $11 OR slug = $12 ORDER BY (id::text = $11) DESC LIMIT 1)
+          AND ($4::integer IS NULL OR $4 >= stock_reserved)
+        RETURNING *;
+        `,
+        [
+          b.name,
+          b.price !== undefined ? Number(b.price) : null,
+          compareAt,
+          stockQty,
+          inStock,
+          b.badge,
+          b.category,
+          b.description,
+          imgUrl,
+          longDesc,
+          id,
+          cleanId,
+        ]
+      );
+
+      const sp = seedProducts.find((p) => p.id === id || p.slug === id || p.id === cleanId || p.slug === cleanId);
+      if (sp) {
+        if (stockQty !== undefined) sp.stock_quantity = stockQty;
+        if (inStock !== undefined) sp.inStock = inStock;
+        if (b.name) sp.name = b.name;
+        if (b.price !== undefined) sp.price = Number(b.price);
+      }
+
+      await invalidateCatalog();
+
+      if (res.rows.length > 0) {
+        return reply.send(formatProduct(res.rows[0]));
+      }
+      if (sp) {
+        return reply.send(formatProduct(sp));
+      }
+    } catch (err: any) {
+      request.log.error({ err }, 'Product update failed');
+      return reply.code(500).send({ error: 'PRODUCT_UPDATE_FAILED', message: err.message });
+    }
+
+    await invalidateCatalog();
+    return reply.status(404).send({ error: 'PRODUCT_NOT_FOUND' });
   });
 }

@@ -123,3 +123,25 @@ export async function delCacheKey(key: string): Promise<void> {
   }
   fallbackStore.delete(key);
 }
+
+/**
+ * Resilient Pattern-based Key deleter
+ */
+export async function delCacheByPattern(pattern: string): Promise<void> {
+  if (isRedisConnected && redisInstance) {
+    try {
+      const keys = await redisInstance.keys(pattern);
+      if (keys.length > 0) {
+        await redisInstance.del(...keys);
+      }
+    } catch {
+      // Fall through
+    }
+  }
+  const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+  for (const k of fallbackStore.keys()) {
+    if (regex.test(k)) {
+      fallbackStore.delete(k);
+    }
+  }
+}

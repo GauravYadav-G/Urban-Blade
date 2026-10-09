@@ -17,9 +17,15 @@ export class ProductCard {
   readonly product = input.required<Product>();
   readonly largeMedia = input(false);
 
+  isOutOfStock(): boolean {
+    const p = this.product();
+    return !p.inStock || (p.stock_quantity !== undefined && p.stock_quantity <= 0);
+  }
+
   add(event: Event): void {
     event.preventDefault();
     event.stopPropagation();
+    if (this.isOutOfStock()) return;
     this.cart.addProduct(this.product());
   }
 }

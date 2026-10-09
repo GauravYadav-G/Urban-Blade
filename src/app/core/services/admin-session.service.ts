@@ -17,7 +17,7 @@ export class AdminSessionService {
 
   private readonly remainingSecondsSignal = signal<number>(INACTIVITY_TIMEOUT_MS / 1000);
   readonly remainingSeconds = this.remainingSecondsSignal.asReadonly();
-  readonly isSessionActive = computed(() => this.account.isAdmin() && this.remainingSeconds() > 0);
+  readonly isSessionActive = computed(() => (this.account.isAdmin() || this.account.isVendor()) && this.remainingSeconds() > 0);
   readonly isWarning = computed(() => this.remainingSeconds() > 0 && this.remainingSeconds() <= WARNING_THRESHOLD_SECONDS);
 
   readonly formattedRemaining = computed(() => {
@@ -35,7 +35,7 @@ export class AdminSessionService {
   constructor() {
     // If admin is signed in, start tracking
     effect(() => {
-      if (this.account.isAdmin()) {
+      if (this.account.isAdmin() || this.account.isVendor()) {
         this.startSessionMonitoring();
       } else {
         this.stopSessionMonitoring();
@@ -86,7 +86,7 @@ export class AdminSessionService {
     if (now - this.lastActivityThrottle < 5000) return;
     this.lastActivityThrottle = now;
 
-    if (this.account.isAdmin()) {
+    if (this.account.isAdmin() || this.account.isVendor()) {
       this.resetExpiryTimestamp();
       this.hasWarned = false;
     }
@@ -114,7 +114,7 @@ export class AdminSessionService {
 
     this.timerInterval = setInterval(() => {
       if (typeof window === 'undefined') return;
-      if (!this.account.isAdmin()) {
+      if (!this.account.isAdmin() && !this.account.isVendor()) {
         this.stopSessionMonitoring();
         return;
       }

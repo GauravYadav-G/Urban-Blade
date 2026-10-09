@@ -70,7 +70,11 @@ export class CatalogService {
   }
 
   byId(id: string): Product | undefined {
-    return this.productsSignal().find((p) => p.id === id || p.slug === id);
+    if (!id) return undefined;
+    const cleanId = id.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
+    return this.productsSignal().find(
+      (p) => p.id === id || p.slug === id || p.slug === cleanId || p.id === cleanId
+    );
   }
 
   deals(): Product[] {
@@ -137,8 +141,11 @@ export class CatalogService {
   }
 
   upsertProduct(product: Product): void {
+    const cleanId = product.id.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');
     this.productsSignal.update((list) => {
-      const idx = list.findIndex((p) => p.id === product.id || p.slug === product.slug);
+      const idx = list.findIndex(
+        (p) => p.id === product.id || p.slug === product.slug || p.slug === cleanId || p.id === cleanId
+      );
       let updated: Product[];
       if (idx > -1) {
         const next = [...list];
