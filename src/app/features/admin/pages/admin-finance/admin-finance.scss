@@ -30,9 +30,24 @@
 .audit-table-wrap small { display: block; color: var(--admin-text-muted); margin-top: .35rem; overflow-wrap: anywhere; }
 .audit-table-wrap td:first-child { min-width: 230px; overflow-wrap: anywhere; }
 .audit-table-wrap td button { margin: .2rem 0; }
+.audit-reference-link { display: block; padding: 0; border: 0 !important; min-height: 0 !important; background: transparent !important; color: var(--admin-primary); font: inherit; font-size: .8125rem; font-weight: 700; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.audit-reference-link:hover { text-decoration: underline; }
+.audit-reference-sub { color: var(--admin-text-muted); font-size: .75rem; font-weight: 500; }
 .ev-modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: rgb(11 15 25 / 55%); padding: 1rem; }
 .payout-record { width: min(480px, 100%); max-height: calc(100dvh - 2rem); overflow-y: auto; }
 .payout-record label { display: grid; gap: .5rem; margin: 1rem 0; font-size: .8125rem; }
 .payout-record button { margin-right: .5rem; }
+.order-detail-record { width: min(680px, 100%); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+.order-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.order-detail-header h2 { margin: .35rem 0 0; overflow-wrap: anywhere; }
+.order-detail-header button { min-height: 38px; padding: .5rem .8rem; border: 1px solid var(--admin-border); border-radius: var(--admin-radius-md); background: var(--admin-surface); color: var(--admin-text); cursor: pointer; }
+.order-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: 1.25rem 0; }
+.order-detail-grid div { padding: .8rem; border: 1px solid var(--admin-border); border-radius: var(--admin-radius-md); background: var(--admin-surface-inset); }
+.order-detail-grid span, .order-detail-references span { display: block; color: var(--admin-text-muted); font-size: .75rem; }
+.order-detail-grid strong { display: block; margin-top: .3rem; overflow-wrap: anywhere; }
+.order-detail-references { padding-top: 1rem; border-top: 1px solid var(--admin-border); }
+.order-detail-references code { display: block; margin-top: .35rem; overflow-wrap: anywhere; }
+.order-detail-note { margin-bottom: 0; }
+@media (max-width: 600px) { .order-detail-grid { grid-template-columns: 1fr; } }
 @media (max-width: 1200px) { .ev-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .ev-kpi-grid { grid-template-columns: minmax(0, 1fr); } .audit-panel, .ev-kpi-card { padding: 1rem; } }

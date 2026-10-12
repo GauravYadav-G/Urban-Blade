@@ -15,6 +15,7 @@ import { initiateOrderRefund } from '../orders/refund.service.js';
 import { reserveStock, commitStockReservation, cancelOrderAndReleaseStock } from '../orders/stock-reservation.service.js';
 import { generateAiReply } from '../support/support.routes.js';
 import { requireAdmin, requireStaff } from '../../core/auth.middleware.js';
+import { PayoutProviderError, createRazorpayXPayout, type VendorPayoutAccount } from './vendor-payout.service.js';
 
 export async function adminRoutes(app: FastifyInstance) {
   // ─── AUTHENTICATION & RBAC (OWASP TOP 10 ACCESS CONTROL GUARD) ───────────
@@ -1675,7 +1676,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const { vendorId, amount, reference, notes } = parsed.data;
     try {
       const payout = await withTransaction(async client => {
-        const vendor = (await client.query("SELECT id FROM vendors WHERE id = $1 AND status = 'active' FOR UPDATE", [vendorId])).rows[0];
+        const vendor = (await client.query("SELECT id, name, payout_account FROM vendors WHERE id = $1 AND status = 'active' FOR UPDATE", [vendorId])).rows[0];
         if (!vendor) throw new Error('VENDOR_NOT_FOUND');
         const existing = (await client.query('SELECT * FROM vendor_payouts WHERE reference = $1', [reference])).rows[0];
         if (existing) {
@@ -1685,13 +1686,23 @@ export async function adminRoutes(app: FastifyInstance) {
         const balances = await vendorBalances(client);
         const balance = balances.rows.find(row => row.id === vendorId);
         if (!balance || amount > Number(balance.payable_amount)) throw new Error('PAYOUT_EXCEEDS_BALANCE');
-        return (await client.query(`INSERT INTO vendor_payouts(vendor_id, amount, reference, notes, recorded_by)
-          VALUES($1, $2, $3, $4, $5) RETURNING *`, [vendorId, amount, reference, notes || '', request.user.id])).rows[0];
+        const transfer = await createRazorpayXPayout({
+          amount,
+          reference,
+          narration: `Urban Blade payout ${vendor.name}`,
+          account: (vendor.payout_account || {}) as VendorPayoutAccount,
+        });
+        return (await client.query(`INSERT INTO vendor_payouts(
+            vendor_id, amount, reference, notes, recorded_by, provider, provider_transfer_id, provider_status, processed_at
+          ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $8 = 'processed' THEN NOW() ELSE NULL END)
+          RETURNING *`, [vendorId, amount, reference, notes || '', request.user.id, transfer.provider, transfer.transferId, transfer.status])).rows[0];
       });
-      return { ok: true, recorded: true, disbursed: false, payout, message: 'External payment recorded. This application did not transfer funds.' };
+      return { ok: true, recorded: true, disbursed: true, payout, message: `RazorpayX payout created with status ${payout.provider_status}.` };
     } catch (error) {
       request.log.warn({ error }, 'Payout record rejected');
-      return reply.code(409).send({ error: 'PAYOUT_RECORD_REJECTED', message: 'Check the available vendor balance and use a unique bank transfer reference.' });
+      const code = error instanceof PayoutProviderError ? error.code : String((error as Error)?.message || 'PAYOUT_RECORD_REJECTED');
+      const status = ['PAYOUT_PROVIDER_NOT_CONFIGURED', 'PAYOUT_PROVIDER_UNAVAILABLE'].includes(code) ? 503 : 409;
+      return reply.code(status).send({ error: code, message: error instanceof Error ? error.message : 'Payout could not be created.' });
     }
   });
 }

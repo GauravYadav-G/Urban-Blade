@@ -28,6 +28,7 @@ export class AdminFinance implements OnInit,OnDestroy {
   readonly payoutAmount=signal(0);
   readonly payoutReference=signal('');
   readonly saving=signal(false);
+  readonly selectedOrder=signal<AuditOrder|null>(null);
 
   ngOnInit(){void this.refresh();this.timer=setInterval(()=>{if(!this.syncing()&&!this.loading()&&!document.hidden) void this.refresh();},30000);}
   ngOnDestroy(){this.alive=false;this.destroyed.next();this.destroyed.complete();if(this.timer)clearInterval(this.timer);}
@@ -68,11 +69,13 @@ export class AdminFinance implements OnInit,OnDestroy {
     finally{if(this.alive)this.checking.set(null);}
   }
   openPayout(vendor:VendorBalance){this.payout.set(vendor);this.payoutAmount.set(Number(vendor.payable_amount));this.payoutReference.set('');}
+  openOrderDetails(order:AuditOrder){this.selectedOrder.set(order);}
+  closeOrderDetails(){this.selectedOrder.set(null);}
   async savePayout(){
     const vendor=this.payout();if(!vendor||this.saving())return;
     if(!Number.isFinite(this.payoutAmount())||this.payoutAmount()<=0||this.payoutReference().trim().length<3){this.toast.error('Enter the paid amount and completed bank transfer reference.');return;}
     this.saving.set(true);
-    try{await firstValueFrom(this.api.recordPayout(vendor.id,this.payoutAmount(),this.payoutReference().trim()).pipe(takeUntil(this.destroyed)));this.payout.set(null);this.toast.success('External payout recorded.');await this.refresh();}
+    try{await firstValueFrom(this.api.recordPayout(vendor.id,this.payoutAmount(),this.payoutReference().trim()).pipe(takeUntil(this.destroyed)));this.payout.set(null);this.toast.success('RazorpayX payout created.');await this.refresh();}
     catch(error){if(this.alive)this.toast.error(this.message(error,'Payout record could not be saved.'));}
     finally{if(this.alive)this.saving.set(false);}
   }

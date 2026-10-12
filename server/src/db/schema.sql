@@ -361,8 +361,21 @@ CREATE TABLE IF NOT EXISTS vendor_payouts (
   reference VARCHAR(150) NOT NULL UNIQUE,
   notes TEXT NOT NULL DEFAULT '',
   recorded_by UUID NOT NULL REFERENCES users(id),
+  provider VARCHAR(40) NOT NULL DEFAULT 'manual',
+  provider_transfer_id VARCHAR(150),
+  provider_status VARCHAR(30) NOT NULL DEFAULT 'manual_recorded',
+  failure_reason TEXT,
+  processed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS provider VARCHAR(40) NOT NULL DEFAULT 'manual';
+ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS provider_transfer_id VARCHAR(150);
+ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS provider_status VARCHAR(30) NOT NULL DEFAULT 'manual_recorded';
+ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS failure_reason TEXT;
+ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS processed_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_payouts_provider_transfer_id
+  ON vendor_payouts(provider_transfer_id) WHERE provider_transfer_id IS NOT NULL;
 
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_reconciliation_error TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_checked_at TIMESTAMPTZ;

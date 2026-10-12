@@ -18,7 +18,12 @@ export async function vendorBalances(client?: PoolClient) {
         AND COALESCE(o.refund_status, '') = '' AND COALESCE(o.refund_amount,0)=0 AND COALESCE(o.return_status, '') IN ('', 'rejected')
       GROUP BY LOWER(pr.vendor)
     ) s ON s.vendor = LOWER(v.name)
-    LEFT JOIN (SELECT vendor_id, SUM(amount) AS paid FROM vendor_payouts GROUP BY vendor_id) p ON p.vendor_id = v.id
+    LEFT JOIN (
+      SELECT vendor_id, SUM(amount) AS paid
+      FROM vendor_payouts
+      WHERE provider_status IN ('manual_recorded', 'queued', 'pending', 'processing', 'processed')
+      GROUP BY vendor_id
+    ) p ON p.vendor_id = v.id
     ORDER BY v.name`;
   return client ? client.query(sql) : query(sql);
 }
