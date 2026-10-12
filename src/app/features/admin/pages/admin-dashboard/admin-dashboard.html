@@ -1,41 +1,209 @@
 <div class="bankio-dashboard" [attr.aria-busy]="loading()">
   <header class="dash-header">
-    <div><span class="eyebrow">URBAN BLADE / OVERVIEW</span><h1>Your business, at a glance.</h1><p>Payments, appointments and the work that needs your attention.</p></div>
-    <div class="dash-actions"><a routerLink="/admin/bookings" class="btn-secondary">Manage bookings ↗</a><button class="btn-primary" [disabled]="loading()" (click)="refresh()">{{ loading()?'Refreshing…':'↻ Refresh' }}</button></div>
+    <div>
+      <span class="eyebrow">{{ isVendor() ? ('VENDOR PORTAL / ' + vendorName()) : 'URBAN BLADE / OVERVIEW' }}</span>
+      <h1>{{ isVendor() ? 'Your store, at a glance.' : 'Your business, at a glance.' }}</h1>
+      <p>{{ isVendor() ? ('Product sales, catalog status and payouts for ' + vendorName() + '.') : 'Payments, appointments and the work that needs your attention.' }}</p>
+    </div>
+    <div class="dash-actions">
+      @if(isVendor()){
+        <a routerLink="/admin/products" class="btn-secondary">Manage catalog ↗</a>
+      }@else{
+        <a routerLink="/admin/bookings" class="btn-secondary">Manage bookings ↗</a>
+      }
+      <button class="btn-primary" [disabled]="loading()" (click)="refresh()">{{ loading()?'Refreshing…':'↻ Refresh' }}</button>
+    </div>
   </header>
   @if(error()){<p class="alert-error" role="alert">{{ error() }}</p>}
-  <div class="range-bar"><div class="range-picker" aria-label="Dashboard period">@for(range of [7,30,90];track range){<button [class.selected]="days()===range" [attr.aria-pressed]="days()===range" [disabled]="loading()" (click)="setRange(range)">{{ range }} days</button>}</div>@if(data();as snapshot){<span class="snapshot-note">Snapshot {{ snapshot.finance.asOf | date:'d MMM, h:mm a' }} · {{ snapshot.finance.days }}-day payment period</span>}</div>
+  <div class="range-bar">
+    <div class="range-picker" aria-label="Dashboard period">
+      @for(range of [7,30,90];track range){
+        <button [class.selected]="days()===range" [attr.aria-pressed]="days()===range" [disabled]="loading()" (click)="setRange(range)">{{ range }} days</button>
+      }
+    </div>
+    @if(data();as snapshot){
+      <span class="snapshot-note">Snapshot {{ snapshot.finance.asOf | date:'d MMM, h:mm a' }} · {{ snapshot.finance.days }}-day payment period</span>
+    }
+  </div>
+
   @if(data();as snapshot){
-    <section class="money-grid" aria-label="Payment overview">
-      <article class="collections-hero"><div class="hero-top"><span>NET COLLECTIONS</span><span class="hero-icon">↗</span></div><strong>{{ snapshot.finance.local.net | currency:'INR':'symbol':'1.2-2' }}</strong><p>Payments received, less completed refunds.</p><div class="hero-bottom"><span>Before gateway fees</span><a routerLink="/admin/finance">Financial audit ↗</a></div></article>
-      <article class="metric-tile"><span class="metric-icon collected">↙</span><span class="metric-label">Payments collected</span><strong>{{ snapshot.finance.local.captured | currency:'INR':'symbol':'1.2-2' }}</strong><p>Online captures + recorded offline collections</p></article>
-      <article class="metric-tile"><span class="metric-icon refunded">↗</span><span class="metric-label">Refunds completed</span><strong>{{ snapshot.finance.local.refunded | currency:'INR':'symbol':'1.2-2' }}</strong><p>Pending refunds are excluded</p></article>
-      <article class="metric-tile"><span class="metric-icon awaiting">◷</span><span class="metric-label">Awaiting payment</span><strong>{{ snapshot.finance.local.awaiting | currency:'INR':'symbol':'1.2-2' }}</strong><p>Uncollected, non-cancelled orders</p></article>
-    </section>
+    @if(isVendor()){
+      <section class="money-grid" aria-label="Vendor earnings overview">
+        <article class="collections-hero">
+          <div class="hero-top"><span>NET PAYABLE BALANCE</span><span class="hero-icon">↗</span></div>
+          <strong>{{ (vendorSettlement()?.payable_amount ?? snapshot.finance.local.net) | currency:'INR':'symbol':'1.2-2' }}</strong>
+          <p>Available balance from delivered merchandise orders.</p>
+          <div class="hero-bottom">
+            <span>Commission: {{ vendorSettlement()?.commission_rate ?? 12 }}%</span>
+            <span class="hero-icon">✓ Verified</span>
+          </div>
+        </article>
+        <article class="metric-tile">
+          <span class="metric-icon collected">↙</span>
+          <span class="metric-label">Gross product sales</span>
+          <strong>{{ (vendorSettlement()?.gross_sales ?? snapshot.finance.local.captured) | currency:'INR':'symbol':'1.2-2' }}</strong>
+          <p>Delivered orders of your brand merchandise</p>
+        </article>
+        <article class="metric-tile">
+          <span class="metric-icon refunded">↗</span>
+          <span class="metric-label">Total payouts disbursed</span>
+          <strong>{{ (vendorSettlement()?.paid_amount ?? 0) | currency:'INR':'symbol':'1.2-2' }}</strong>
+          <p>Transferred to your registered account</p>
+        </article>
+        <article class="metric-tile">
+          <span class="metric-icon awaiting">◷</span>
+          <span class="metric-label">Platform fee cut</span>
+          <strong>{{ (vendorSettlement()?.platform_cut ?? 0) | currency:'INR':'symbol':'1.2-2' }}</strong>
+          <p>Standard agreement commission retained</p>
+        </article>
+      </section>
+    }@else{
+      <section class="money-grid" aria-label="Payment overview">
+        <article class="collections-hero">
+          <div class="hero-top"><span>NET COLLECTIONS</span><span class="hero-icon">↗</span></div>
+          <strong>{{ snapshot.finance.local.net | currency:'INR':'symbol':'1.2-2' }}</strong>
+          <p>Payments received, less completed refunds.</p>
+          <div class="hero-bottom"><span>Before gateway fees</span><a routerLink="/admin/finance">Financial audit ↗</a></div>
+        </article>
+        <article class="metric-tile"><span class="metric-icon collected">↙</span><span class="metric-label">Payments collected</span><strong>{{ snapshot.finance.local.captured | currency:'INR':'symbol':'1.2-2' }}</strong><p>Online captures + recorded offline collections</p></article>
+        <article class="metric-tile"><span class="metric-icon refunded">↗</span><span class="metric-label">Refunds completed</span><strong>{{ snapshot.finance.local.refunded | currency:'INR':'symbol':'1.2-2' }}</strong><p>Pending refunds are excluded</p></article>
+        <article class="metric-tile"><span class="metric-icon awaiting">◷</span><span class="metric-label">Awaiting payment</span><strong>{{ snapshot.finance.local.awaiting | currency:'INR':'symbol':'1.2-2' }}</strong><p>Uncollected, non-cancelled orders</p></article>
+      </section>
+    }
+
     <div class="visual-grid">
       <section class="dashboard-panel activity-panel">
-        <div class="panel-heading-row"><div><span class="eyebrow">BUSINESS ACTIVITY</span><h2>How orders are moving</h2></div><div class="chart-switch"><button [class.selected]="chartMetric()==='orders'" [attr.aria-pressed]="chartMetric()==='orders'" (click)="chartMetric.set('orders')">All orders</button><button [class.selected]="chartMetric()==='collected'" [attr.aria-pressed]="chartMetric()==='collected'" (click)="chartMetric.set('collected')">Collected</button></div></div>
-        <div class="chart-headline"><strong>{{ activityTotal() | number }}</strong><span>{{ chartMetric()==='orders'?'orders created':'orders with captured or refunded payments' }} in this period</span></div>
-        <div class="chart-insight" aria-live="polite">@if(activeDay();as day){<strong>{{ day.date | date:'d MMM' }}</strong><span>{{ day.orders }} orders · {{ day.collected }} collected</span>}@else{<span>Hover, focus or tap a bar to inspect a day.</span>}</div>
+        <div class="panel-heading-row">
+          <div><span class="eyebrow">BUSINESS ACTIVITY</span><h2>How orders are moving</h2></div>
+          <div class="chart-switch">
+            <button [class.selected]="chartMetric()==='orders'" [attr.aria-pressed]="chartMetric()==='orders'" (click)="chartMetric.set('orders')">All orders</button>
+            <button [class.selected]="chartMetric()==='collected'" [attr.aria-pressed]="chartMetric()==='collected'" (click)="chartMetric.set('collected')">Collected</button>
+          </div>
+        </div>
+        <div class="chart-headline">
+          <strong>{{ activityTotal() | number }}</strong>
+          <span>{{ chartMetric()==='orders'?'orders created':'orders with captured or refunded payments' }} in this period</span>
+        </div>
+        <div class="chart-insight" aria-live="polite">
+          @if(activeDay();as day){
+            <strong>{{ day.date | date:'d MMM' }}</strong>
+            <span>{{ day.orders }} orders · {{ day.collected }} collected</span>
+          }@else{
+            <span>Hover, focus or tap a bar to inspect a day.</span>
+          }
+        </div>
         <div class="activity-chart" role="group" aria-label="Daily order activity, India time">
           <div class="chart-scale"><span>{{ chartMax() }}</span><span>{{ chartMax()/2 | number:'1.0-1' }}</span><span>0</span></div>
-          <div class="plot"><div class="grid-lines" aria-hidden="true"><i></i><i></i><i></i></div><div class="bars">@for(day of snapshot.overview.activity;track day.date){<button class="bar-slot" [class.highlighted]="selectedDay()===day.date" (mouseenter)="selectedDay.set(day.date)" (focus)="selectedDay.set(day.date)" (click)="selectedDay.set(day.date)" [attr.aria-label]="day.date + ': ' + day[chartMetric()] + (chartMetric()==='orders'?' orders':' collected orders')" [title]="day.date + ': ' + day[chartMetric()]"><span class="bar-fill" [style.height.%]="day[chartMetric()]/chartMax()*100"></span></button>}</div></div>
+          <div class="plot">
+            <div class="grid-lines" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="bars">
+              @for(day of snapshot.overview.activity;track day.date){
+                <button class="bar-slot" [class.highlighted]="selectedDay()===day.date" (mouseenter)="selectedDay.set(day.date)" (focus)="selectedDay.set(day.date)" (click)="selectedDay.set(day.date)" [attr.aria-label]="day.date + ': ' + day[chartMetric()] + (chartMetric()==='orders'?' orders':' collected orders')" [title]="day.date + ': ' + day[chartMetric()]">
+                  <span class="bar-fill" [style.height.%]="day[chartMetric()]/chartMax()*100"></span>
+                </button>
+              }
+            </div>
+          </div>
         </div>
-        <div class="chart-dates"><span>{{ snapshot.overview.activity[0]?.date | date:'d MMM' }}</span><span>Order creation date · India time</span><span>{{ snapshot.overview.activity[snapshot.overview.activity.length-1]?.date | date:'d MMM' }}</span></div>
+        <div class="chart-dates">
+          <span>{{ snapshot.overview.activity[0]?.date | date:'d MMM' }}</span>
+          <span>Order creation date · India time</span>
+          <span>{{ snapshot.overview.activity[snapshot.overview.activity.length-1]?.date | date:'d MMM' }}</span>
+        </div>
         @if(activityTotal()===0){<p class="empty-note">No {{ chartMetric()==='orders'?'orders':'collected orders' }} in this period.</p>}
         <button class="data-toggle" (click)="showChartData.set(!showChartData())" [attr.aria-expanded]="showChartData()">{{ showChartData()?'Hide':'View' }} chart data ↓</button>
-        @if(showChartData()){<div class="table-wrapper chart-data"><table><thead><tr><th>Date</th><th>Orders</th><th>Collected orders</th></tr></thead><tbody>@for(day of snapshot.overview.activity;track day.date){<tr><td>{{ day.date }}</td><td>{{ day.orders }}</td><td>{{ day.collected }}</td></tr>}</tbody></table></div>}
+        @if(showChartData()){
+          <div class="table-wrapper chart-data">
+            <table><thead><tr><th>Date</th><th>Orders</th><th>Collected orders</th></tr></thead><tbody>@for(day of snapshot.overview.activity;track day.date){<tr><td>{{ day.date }}</td><td>{{ day.orders }}</td><td>{{ day.collected }}</td></tr>}</tbody></table>
+          </div>
+        }
       </section>
-      <section class="dashboard-panel payment-panel"><div class="panel-heading-row"><div><span class="eyebrow">PAYMENT MIX</span><h2>Every order accounted for</h2></div><a routerLink="/admin/finance" aria-label="Open finance">↗</a></div>
-        <div class="donut-wrap"><svg viewBox="0 0 160 160" role="img" aria-label="Payment status distribution; counts listed below"><circle cx="80" cy="80" r="61" class="donut-track" />@for(slice of paymentSlices();track slice.status){<circle cx="80" cy="80" r="61" pathLength="100" fill="none" stroke-width="17" [attr.stroke]="slice.color" [attr.stroke-dasharray]="slice.percent+' '+(100-slice.percent)" [attr.stroke-dashoffset]="-slice.offset" transform="rotate(-90 80 80)"><title>{{ slice.status }}: {{ slice.count }} orders</title></circle>}</svg><div class="donut-label"><strong>{{ paymentTotal() | number }}</strong><span>orders in period</span></div></div>
-        <div class="payment-legend">@for(slice of paymentSlices();track slice.status){<div><span><i [style.background]="slice.color"></i>{{ slice.status | titlecase }}</span><strong>{{ slice.count }} <small>{{ slice.percent | number:'1.0-1' }}%</small></strong></div>}@empty{<p class="empty-note">No orders recorded for this period.</p>}</div>
+
+      <section class="dashboard-panel payment-panel">
+        <div class="panel-heading-row">
+          <div><span class="eyebrow">PAYMENT MIX</span><h2>Every order accounted for</h2></div>
+          @if(!isVendor()){<a routerLink="/admin/finance" aria-label="Open finance">↗</a>}
+        </div>
+        <div class="donut-wrap">
+          <svg viewBox="0 0 160 160" role="img" aria-label="Payment status distribution; counts listed below">
+            <circle cx="80" cy="80" r="61" class="donut-track" />
+            @for(slice of paymentSlices();track slice.status){
+              <circle cx="80" cy="80" r="61" pathLength="100" fill="none" stroke-width="17" [attr.stroke]="slice.color" [attr.stroke-dasharray]="slice.percent+' '+(100-slice.percent)" [attr.stroke-dashoffset]="-slice.offset" transform="rotate(-90 80 80)">
+                <title>{{ slice.status }}: {{ slice.count }} orders</title>
+              </circle>
+            }
+          </svg>
+          <div class="donut-label"><strong>{{ paymentTotal() | number }}</strong><span>orders in period</span></div>
+        </div>
+        <div class="payment-legend">
+          @for(slice of paymentSlices();track slice.status){
+            <div><span><i [style.background]="slice.color"></i>{{ slice.status | titlecase }}</span><strong>{{ slice.count }} <small>{{ slice.percent | number:'1.0-1' }}%</small></strong></div>
+          }@empty{<p class="empty-note">No orders recorded for this period.</p>}
+        </div>
       </section>
     </div>
-    <section class="operations-strip" aria-label="Current operations"><a routerLink="/admin/orders"><span>All-time orders</span><strong>{{ snapshot.overview.counts.orders | number }}</strong><small>View orders ↗</small></a><a routerLink="/admin/bookings"><span>Today's appointments</span><strong>{{ snapshot.overview.counts.bookings_today }}</strong><small>India time ↗</small></a><a routerLink="/admin/bookings"><span>Awaiting assignment</span><strong>{{ snapshot.overview.counts.unassigned }}</strong><small>{{ snapshot.overview.counts.active_stylists }} active stylists ↗</small></a><a routerLink="/admin/products"><span>Low-stock products</span><strong>{{ snapshot.overview.counts.low_stock }}</strong><small>15 available units or below ↗</small></a></section>
-    <div class="detail-grid">
-      <section class="dashboard-panel appointments-panel"><div class="panel-heading-row"><div><span class="eyebrow">THE APPOINTMENT BOOK</span><h2>Recent appointments</h2></div><a routerLink="/admin/bookings">View all ↗</a></div><div class="table-wrapper"><table><thead><tr><th>Customer</th><th>Schedule</th><th>Visit</th><th>Status</th><th class="numeric">Quoted price</th></tr></thead><tbody>@for(booking of snapshot.overview.bookings;track booking.id){<tr><td><span class="customer-name"><span class="customer-initial">{{ booking.customer_name.charAt(0) | uppercase }}</span>{{ booking.customer_name }}</span></td><td>{{ booking.booking_date | date:'d MMM' }}<small>{{ booking.time_slot }}</small></td><td>{{ booking.visit_type==='home'?'Home service':'Salon visit' }}</td><td><span class="booking-status" [class.completed]="booking.status==='completed'" [class.cancelled]="booking.status==='cancelled'">{{ booking.status | titlecase }}</span></td><td class="numeric">{{ booking.total_price | currency:'INR' }}</td></tr>}@empty{<tr><td colspan="5" class="empty-note">Your appointment book is empty. New bookings will appear here.</td></tr>}</tbody></table></div></section>
-      <aside class="dashboard-panel attention-panel"><span class="eyebrow">NEXT UP</span><h2>Needs attention</h2><a routerLink="/admin/finance"><span class="attention-count">{{ snapshot.finance.local.inventoryReview }}</span><div><strong>Paid orders to review</strong><p>Check inventory before fulfilment.</p></div><span>↗</span></a><a routerLink="/admin/finance"><span class="attention-count">{{ snapshot.finance.inventory.length }}</span><div><strong>Stock discrepancies</strong><p>Reconcile reservation totals.</p></div><span>↗</span></a><a routerLink="/admin/bookings"><span class="attention-count">{{ snapshot.overview.counts.unassigned }}</span><div><strong>Unassigned visits</strong><p>Assign a member of your team.</p></div><span>↗</span></a><p class="audit-footnote">Appointment quotes are separate from payment collections. Net collections are before fees and do not represent bank balance or profit.</p></aside>
-    </div>
+
+    @if(isVendor()){
+      <section class="operations-strip" aria-label="Vendor operations">
+        <a routerLink="/admin/orders"><span>Your orders</span><strong>{{ snapshot.overview.counts.orders | number }}</strong><small>View orders ↗</small></a>
+        <a routerLink="/admin/products"><span>Catalog items</span><strong>{{ snapshot.finance.inventory.length ? snapshot.finance.inventory.length : snapshot.overview.counts.orders }}</strong><small>View catalog ↗</small></a>
+        <a routerLink="/admin/products"><span>Low-stock alerts</span><strong>{{ snapshot.overview.counts.low_stock }}</strong><small>Units &le; 15 ↗</small></a>
+        <a routerLink="/admin/products"><span>Stock status</span><strong>{{ snapshot.overview.counts.low_stock > 0 ? 'Action needed' : 'Optimal' }}</strong><small>Check stock ↗</small></a>
+      </section>
+
+      <div class="detail-grid">
+        <section class="dashboard-panel appointments-panel">
+          <div class="panel-heading-row"><div><span class="eyebrow">YOUR ORDERS</span><h2>Recent store orders</h2></div><a routerLink="/admin/orders">View all ↗</a></div>
+          <div class="table-wrapper">
+            <table>
+              <thead><tr><th>Order ID</th><th>Placed on</th><th>Payment</th><th>Status</th><th class="numeric">Amount</th></tr></thead>
+              <tbody>
+                @for(order of vendorOrders();track order.id){
+                  <tr>
+                    <td><code>#{{ order.id.slice(0, 8) }}</code></td>
+                    <td>{{ order.created_at | date:'d MMM, h:mm a' }}</td>
+                    <td>{{ order.payment_method || 'Online' }}</td>
+                    <td><span class="booking-status" [class.completed]="order.status==='delivered'" [class.cancelled]="order.status==='cancelled'">{{ order.status | titlecase }}</span></td>
+                    <td class="numeric">{{ order.total_amount | currency:'INR' }}</td>
+                  </tr>
+                }@empty{
+                  <tr><td colspan="5" class="empty-note">No recent orders for your catalog products.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="dashboard-panel attention-panel">
+          <span class="eyebrow">FULFILMENT & STOCK</span>
+          <h2>Needs attention</h2>
+          <a routerLink="/admin/products">
+            <span class="attention-count">{{ snapshot.overview.counts.low_stock }}</span>
+            <div><strong>Low-stock products</strong><p>Replenish units to avoid stockouts.</p></div>
+            <span>↗</span>
+          </a>
+          <a routerLink="/admin/orders">
+            <span class="attention-count">{{ snapshot.finance.local.orders }}</span>
+            <div><strong>Recent orders to review</strong><p>Dispatch and fulfill pending orders.</p></div>
+            <span>↗</span>
+          </a>
+          <p class="audit-footnote">All calculations are strictly scoped to products registered under {{ vendorName() }}. Payout balances reflect delivered items after platform commission.</p>
+        </aside>
+      </div>
+    }@else{
+      <section class="operations-strip" aria-label="Current operations">
+        <a routerLink="/admin/orders"><span>All-time orders</span><strong>{{ snapshot.overview.counts.orders | number }}</strong><small>View orders ↗</small></a>
+        <a routerLink="/admin/bookings"><span>Today's appointments</span><strong>{{ snapshot.overview.counts.bookings_today }}</strong><small>India time ↗</small></a>
+        <a routerLink="/admin/bookings"><span>Awaiting assignment</span><strong>{{ snapshot.overview.counts.unassigned }}</strong><small>{{ snapshot.overview.counts.active_stylists }} active stylists ↗</small></a>
+        <a routerLink="/admin/products"><span>Low-stock products</span><strong>{{ snapshot.overview.counts.low_stock }}</strong><small>15 available units or below ↗</small></a>
+      </section>
+
+      <div class="detail-grid">
+        <section class="dashboard-panel appointments-panel"><div class="panel-heading-row"><div><span class="eyebrow">THE APPOINTMENT BOOK</span><h2>Recent appointments</h2></div><a routerLink="/admin/bookings">View all ↗</a></div><div class="table-wrapper"><table><thead><tr><th>Customer</th><th>Schedule</th><th>Visit</th><th>Status</th><th class="numeric">Quoted price</th></tr></thead><tbody>@for(booking of snapshot.overview.bookings;track booking.id){<tr><td><span class="customer-name"><span class="customer-initial">{{ booking.customer_name.charAt(0) | uppercase }}</span>{{ booking.customer_name }}</span></td><td>{{ booking.booking_date | date:'d MMM' }}<small>{{ booking.time_slot }}</small></td><td>{{ booking.visit_type==='home'?'Home service':'Salon visit' }}</td><td><span class="booking-status" [class.completed]="booking.status==='completed'" [class.cancelled]="booking.status==='cancelled'">{{ booking.status | titlecase }}</span></td><td class="numeric">{{ booking.total_price | currency:'INR' }}</td></tr>}@empty{<tr><td colspan="5" class="empty-note">Your appointment book is empty. New bookings will appear here.</td></tr>}</tbody></table></div></section>
+        <aside class="dashboard-panel attention-panel"><span class="eyebrow">NEXT UP</span><h2>Needs attention</h2><a routerLink="/admin/finance"><span class="attention-count">{{ snapshot.finance.local.inventoryReview }}</span><div><strong>Paid orders to review</strong><p>Check inventory before fulfilment.</p></div><span>↗</span></a><a routerLink="/admin/finance"><span class="attention-count">{{ snapshot.finance.inventory.length }}</span><div><strong>Stock discrepancies</strong><p>Reconcile reservation totals.</p></div><span>↗</span></a><a routerLink="/admin/bookings"><span class="attention-count">{{ snapshot.overview.counts.unassigned }}</span><div><strong>Unassigned visits</strong><p>Assign a member of your team.</p></div><span>↗</span></a><p class="audit-footnote">Appointment quotes are separate from payment collections. Net collections are before fees and do not represent bank balance or profit.</p></aside>
+      </div>
+    }
+
     <footer class="dashboard-footer"><span>Payments by order creation period · Operations show current records</span><span>Operations checked {{ snapshot.overview.asOf | date:'h:mm a' }}</span></footer>
   }@else if(loading()){<div class="dashboard-loading" role="status"><span></span>Loading your business overview…</div>}
 </div>

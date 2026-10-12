@@ -5,7 +5,7 @@ import { Router } from '@angular/router';
 import { AdminService } from '@core/services/admin.service';
 import { AccountService } from '@core/services/account.service';
 import { ToastService } from '@core/services/toast.service';
-import type { VendorAccount } from '@core/models/vendor.model';
+import type { VendorAccount, VendorPayoutAccount } from '@core/models/vendor.model';
 
 @Component({
   selector: 'app-admin-vendors',
@@ -27,29 +27,40 @@ export class AdminVendors {
   readonly isEditModalOpen = signal<boolean>(false);
   readonly editingVendor = signal<VendorAccount | null>(null);
 
+  // Validation helper for 10-digit Indian mobile numbers (allows +91, 0, spaces, dashes)
+  static readonly phoneValidator = (control: any) => {
+    if (!control.value) return { required: true };
+    const raw = String(control.value).trim().replace(/[\s\-()]/g, '');
+    const digits = raw.replace(/^(?:\+91|91|0)(?=[6-9]\d{9}$)/, '');
+    if (!/^[6-9]\d{9}$/.test(digits)) {
+      return { invalidPhone: true };
+    }
+    return null;
+  };
+
   // Form for Onboarding Vendor
   readonly createForm = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.minLength(2)]],
     email: ['', [Validators.required, Validators.email]],
-    password: ['', [Validators.required, Validators.minLength(12)]],
-    contact_person: ['', Validators.required],
-    phone: ['', [Validators.required, Validators.pattern('^[0-9]{10}$')]],
-    commission_rate: [12, [Validators.required, Validators.min(1), Validators.max(50)]],
-    bank_name: ['', Validators.required],
-    account_no: ['', Validators.required],
-    ifsc: ['', Validators.required],
+    password: ['', [Validators.required, Validators.minLength(10)]],
+    contact_person: ['', [Validators.required, Validators.minLength(2)]],
+    phone: ['', [Validators.required, AdminVendors.phoneValidator]],
+    commission_rate: [12, [Validators.required, Validators.min(0), Validators.max(50)]],
+    bank_name: [''],
+    account_no: [''],
+    ifsc: [''],
     upi: [''],
   });
 
   // Form for Editing Vendor
   readonly editForm = this.fb.nonNullable.group({
-    contact_person: ['', Validators.required],
-    phone: ['', [Validators.required, Validators.pattern('^[0-9]{10}$')]],
-    commission_rate: [12, [Validators.required, Validators.min(1), Validators.max(50)]],
+    contact_person: ['', [Validators.required, Validators.minLength(2)]],
+    phone: ['', [Validators.required, AdminVendors.phoneValidator]],
+    commission_rate: [12, [Validators.required, Validators.min(0), Validators.max(50)]],
     status: ['active', Validators.required],
-    bank_name: ['', Validators.required],
-    account_no: ['', Validators.required],
-    ifsc: ['', Validators.required],
+    bank_name: [''],
+    account_no: [''],
+    ifsc: [''],
     upi: [''],
   });
 
@@ -114,24 +125,46 @@ export class AdminVendors {
   submitCreateVendor(): void {
     if (this.createForm.invalid) {
       this.createForm.markAllAsTouched();
-      this.toast.error('Please fill in all required vendor business fields.');
+      const invalidFields: string[] = [];
+      const c = this.createForm.controls;
+      if (c.name.invalid) invalidFields.push('Business Name (min 2 characters)');
+      if (c.email.invalid) invalidFields.push('Valid Email Address');
+      if (c.password.invalid) invalidFields.push('Password (min 10 characters)');
+      if (c.contact_person.invalid) invalidFields.push('Representative Contact Person');
+      if (c.phone.invalid) invalidFields.push('10-digit Phone Number');
+      if (c.commission_rate.invalid) invalidFields.push('Commission Rate (0-50%)');
+      
+      this.toast.error(
+        invalidFields.length
+          ? `Please check: ${invalidFields.join(', ')}`
+          : 'Please fill in all required vendor business fields.'
+      );
       return;
     }
 
     const val = this.createForm.getRawValue();
+    // Normalize phone number to clean 10 digits
+    const rawPhone = String(val.phone).trim().replace(/[\s\-()]/g, '');
+    const cleanPhone = rawPhone.replace(/^(?:\+91|91|0)(?=[6-9]\d{9}$)/, '');
+
+    const hasPayoutDetails = Boolean(val.bank_name || val.account_no || val.ifsc || val.upi);
+    const payoutAccount: VendorPayoutAccount | undefined = hasPayoutDetails
+      ? {
+          bank: val.bank_name.trim(),
+          accountNo: val.account_no.trim(),
+          ifsc: val.ifsc.trim().toUpperCase(),
+          upi: val.upi ? val.upi.trim() : undefined,
+        }
+      : undefined;
+
     this.admin.addVendor({
-      name: val.name,
+      name: val.name.trim(),
       email: val.email.trim().toLowerCase(),
       password: val.password,
-      contact_person: val.contact_person,
-      phone: val.phone,
+      contact_person: val.contact_person.trim(),
+      phone: cleanPhone,
       commission_rate: Number(val.commission_rate),
-      payout_account: {
-        bank: val.bank_name,
-        accountNo: val.account_no,
-        ifsc: val.ifsc,
-        upi: val.upi || undefined,
-      },
+      payout_account: payoutAccount,
     });
 
     this.isCreateModalOpen.set(false);
@@ -159,23 +192,43 @@ export class AdminVendors {
 
   submitEditVendor(): void {
     const v = this.editingVendor();
-    if (!v || this.editForm.invalid) {
+    if (!v) return;
+    if (this.editForm.invalid) {
       this.editForm.markAllAsTouched();
+      const invalidFields: string[] = [];
+      const c = this.editForm.controls;
+      if (c.contact_person.invalid) invalidFields.push('Representative Contact');
+      if (c.phone.invalid) invalidFields.push('10-digit Phone Number');
+      if (c.commission_rate.invalid) invalidFields.push('Commission Rate (0-50%)');
+      
+      this.toast.error(
+        invalidFields.length
+          ? `Please check: ${invalidFields.join(', ')}`
+          : 'Please verify vendor details before saving.'
+      );
       return;
     }
 
     const val = this.editForm.getRawValue();
+    const rawPhone = String(val.phone).trim().replace(/[\s\-()]/g, '');
+    const cleanPhone = rawPhone.replace(/^(?:\+91|91|0)(?=[6-9]\d{9}$)/, '');
+
+    const hasPayoutDetails = Boolean(val.bank_name || val.account_no || val.ifsc || val.upi);
+    const payoutAccount: VendorPayoutAccount | undefined = hasPayoutDetails
+      ? {
+          bank: val.bank_name.trim(),
+          accountNo: val.account_no.trim(),
+          ifsc: val.ifsc.trim().toUpperCase(),
+          upi: val.upi ? val.upi.trim() : undefined,
+        }
+      : undefined;
+
     this.admin.updateVendor(v.id, {
-      contact_person: val.contact_person,
-      phone: val.phone,
+      contact_person: val.contact_person.trim(),
+      phone: cleanPhone,
       commission_rate: Number(val.commission_rate),
       status: val.status as VendorAccount['status'],
-      payout_account: {
-        bank: val.bank_name,
-        accountNo: val.account_no,
-        ifsc: val.ifsc,
-        upi: val.upi || undefined,
-      },
+      payout_account: payoutAccount,
     });
 
     this.isEditModalOpen.set(false);

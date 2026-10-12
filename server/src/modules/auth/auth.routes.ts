@@ -65,20 +65,32 @@ export async function authRoutes(app: FastifyInstance) {
           });
         }
 
-        // Vendor accounts created in the admin panel must also be able to use
+        // Vendor accounts created in the admin panel or seeded must also be able to use
         // the shared staff login. Provision their user row on first login.
-        // Use bcrypt to verify the vendor password (stored as hash in vendors table)
         if (!res.rows.length && vendorRecord && vendorRecord.password) {
-          const isValidPassword = await bcrypt.compare(password, vendorRecord.password);
+          const isBcrypt = typeof vendorRecord.password === 'string' && vendorRecord.password.startsWith('$2');
+          let isValidPassword = false;
+          try {
+            isValidPassword = isBcrypt
+              ? await bcrypt.compare(password, vendorRecord.password)
+              : password === vendorRecord.password;
+          } catch {
+            isValidPassword = false;
+          }
+
           if (isValidPassword) {
             const hash = await bcrypt.hash(password, 10);
             res = await query(
               `INSERT INTO users (name, email, password_hash, role)
                VALUES ($1, $2, $3, 'vendor')
-               ON CONFLICT (email) DO NOTHING
+               ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash
                RETURNING id, name, email, password_hash, role;`,
               [vendorRecord.name, normalizedEmail, hash]
             );
+            // Upgrade plaintext vendor password in DB to bcrypt hash
+            if (!isBcrypt) {
+              await query(`UPDATE vendors SET password = $1 WHERE id = $2`, [hash, vendorRecord.id]);
+            }
           }
         }
 

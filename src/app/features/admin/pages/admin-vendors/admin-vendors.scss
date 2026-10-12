@@ -616,6 +616,15 @@
           font-size: 0.78rem;
           font-weight: 700;
           color: #334155;
+          display: flex;
+          align-items: center;
+          gap: 0.35rem;
+
+          .field-hint {
+            font-size: 0.72rem;
+            font-weight: 500;
+            color: #64748b;
+          }
         }
 
         input,
@@ -626,10 +635,29 @@
           font-size: 0.875rem;
           color: #0f172a;
           outline: none;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
           &:focus {
             border-color: #0f172a;
           }
+
+          &.is-invalid {
+            border-color: #ef4444;
+            background-color: #fef2f2;
+
+            &:focus {
+              border-color: #dc2626;
+              box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+            }
+          }
+        }
+
+        .field-error-text {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #dc2626;
+          margin-top: 0.15rem;
+          line-height: 1.25;
         }
       }
     }

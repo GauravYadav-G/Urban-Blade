@@ -67,27 +67,91 @@ export class AdminBookings implements OnInit {
     '08:00 PM',
   ];
 
-  private readonly stylistApi=inject(StylistsService);
-  readonly stylistRecords=signal<Stylist[]>([]);
-  readonly stylists=computed(()=>this.stylistRecords().filter(s=>s.is_active));
-  readonly stylistError=signal('');
-  readonly stylistSaving=signal(false);
-  readonly editingStylist=signal<string|null>(null);
-  readonly staffName=signal('');
-  readonly staffRole=signal('Stylist');
-  loadStylists():void {
-    this.stylistApi.list().subscribe({next:r=>{this.stylistRecords.set(r.data);this.stylistError.set('');},error:()=>this.stylistError.set('Stylist records could not be loaded. Retry before assigning staff.')});
+  private readonly stylistApi = inject(StylistsService);
+  readonly stylistRecords = signal<Stylist[]>([]);
+  readonly stylists = computed(() => {
+    const seen = new Set<string>();
+    return this.stylistRecords()
+      .filter((s) => s.is_active)
+      .filter((s) => {
+        const key = s.name.trim().toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  });
+  readonly stylistError = signal('');
+  readonly stylistSaving = signal(false);
+  readonly editingStylist = signal<string | null>(null);
+  readonly staffName = signal('');
+  readonly staffRole = signal('Stylist');
+
+  loadStylists(): void {
+    this.stylistApi.list().subscribe({
+      next: (r) => {
+        const seen = new Set<string>();
+        const unique = (r.data || []).filter((s) => {
+          const key = s.name.trim().toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        this.stylistRecords.set(unique);
+        this.stylistError.set('');
+      },
+      error: () => this.stylistError.set('Stylist records could not be loaded. Retry before assigning staff.')
+    });
   }
-  editStylist(stylist:Stylist):void {this.editingStylist.set(stylist.id);this.staffName.set(stylist.name);this.staffRole.set(stylist.role);}
-  resetStylist():void {this.editingStylist.set(null);this.staffName.set('');this.staffRole.set('Stylist');}
-  saveStylist():void {
-    if(this.stylistSaving())return;
+
+  editStylist(stylist: Stylist): void {
+    this.editingStylist.set(stylist.id);
+    this.staffName.set(stylist.name);
+    this.staffRole.set(stylist.role);
+  }
+
+  resetStylist(): void {
+    this.editingStylist.set(null);
+    this.staffName.set('');
+    this.staffRole.set('Stylist');
+  }
+
+  saveStylist(): void {
+    if (this.stylistSaving()) return;
+    const name = this.staffName().trim();
+    const role = this.staffRole().trim();
+    if (name.length < 2 || role.length < 2) {
+      this.stylistError.set('Enter a stylist name and role of at least 2 characters.');
+      return;
+    }
+    if (!this.editingStylist()) {
+      const exists = this.stylistRecords().some((s) => s.name.trim().toLowerCase() === name.toLowerCase());
+      if (exists) {
+        this.stylistError.set(`A stylist named "${name}" already exists in the roster.`);
+        return;
+      }
+    }
     this.stylistSaving.set(true);
-    this.stylistApi.save(this.editingStylist(),{name:this.staffName().trim(),role:this.staffRole().trim(),is_active:true}).subscribe({next:()=>{this.stylistSaving.set(false);this.resetStylist();this.loadStylists();this.admin.refreshBookings();},error:()=>{this.stylistSaving.set(false);this.stylistError.set('Stylist could not be saved. Enter a name and role of at least two characters.');}});
+    this.stylistApi.save(this.editingStylist(), { name, role, is_active: true }).subscribe({
+      next: () => {
+        this.stylistSaving.set(false);
+        this.resetStylist();
+        this.loadStylists();
+        this.admin.refreshBookings();
+      },
+      error: (err) => {
+        this.stylistSaving.set(false);
+        const msg = err?.error?.message || 'Stylist could not be saved. Enter a name and role of at least two characters.';
+        this.stylistError.set(msg);
+      }
+    });
   }
-  removeStylist(stylist:Stylist):void {
-    if(!confirm(`Remove ${stylist.name} from new assignments? Existing booking assignments remain in the history.`))return;
-    this.stylistApi.remove(stylist.id).subscribe({next:()=>this.loadStylists(),error:()=>this.stylistError.set('Stylist could not be removed. Retry.')});
+
+  removeStylist(stylist: Stylist): void {
+    if (!confirm(`Remove ${stylist.name} from new assignments? Existing booking assignments remain in the history.`)) return;
+    this.stylistApi.remove(stylist.id).subscribe({
+      next: () => this.loadStylists(),
+      error: () => this.stylistError.set('Stylist could not be removed. Retry.')
+    });
   }
 
   readonly salonCount = computed(() =>

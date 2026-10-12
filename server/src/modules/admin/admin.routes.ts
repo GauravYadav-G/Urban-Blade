@@ -24,7 +24,8 @@ export async function adminRoutes(app: FastifyInstance) {
     const route = request.url.split('?')[0];
     const allowed = (route === '/api/admin/products' && ['GET', 'POST'].includes(request.method))
       || (/^\/api\/admin\/products\/[^/]+$/.test(route) && ['PUT', 'DELETE'].includes(request.method))
-      || (route === '/api/admin/orders' && request.method === 'GET');
+      || (route === '/api/admin/orders' && request.method === 'GET')
+      || (route === '/api/admin/overview' && request.method === 'GET');
     if (!allowed) return reply.code(403).send({ error: 'FORBIDDEN_ADMIN_ONLY' });
   });
 
@@ -165,8 +166,8 @@ export async function adminRoutes(app: FastifyInstance) {
         })),
       });
     } catch (err: any) {
-      request.log.error({err}, 'Daily metrics unavailable');
-      return reply.code(503).send({error:'METRICS_UNAVAILABLE'});
+      request.log.error({ err }, 'Daily metrics unavailable');
+      return reply.code(503).send({ error: 'METRICS_UNAVAILABLE' });
     }
   });
 
@@ -666,7 +667,7 @@ export async function adminRoutes(app: FastifyInstance) {
         }
         return saved;
       });
-      await invalidateCatalog().catch(() => {});
+      await invalidateCatalog().catch(() => { });
       return reply.code(201).send({ ok: true, order });
     } catch (error) {
       request.log.warn({ error }, 'POS order rejected');
@@ -708,15 +709,15 @@ export async function adminRoutes(app: FastifyInstance) {
           if (current.payment_method === 'Razorpay' && current.payment_status !== 'captured') throw new Error('PAYMENT_NOT_CAPTURED');
           if (status === 'shipped' && !(trackingNumber?.trim() || current.tracking_number)) throw new Error('TRACKING_NUMBER_REQUIRED');
           if (status === 'shipped' && !(carrier?.trim() || current.carrier)) throw new Error('CARRIER_REQUIRED');
-          if (['shipped','delivered','cancelled'].includes(current.status) && ((trackingNumber && trackingNumber !== current.tracking_number) || (carrier && carrier !== current.carrier))) throw new Error('DISPATCH_DETAILS_LOCKED');
+          if (['shipped', 'delivered', 'cancelled'].includes(current.status) && ((trackingNumber && trackingNumber !== current.tracking_number) || (carrier && carrier !== current.carrier))) throw new Error('DISPATCH_DETAILS_LOCKED');
           if (trackingNumber) {
-            const duplicate=await client.query('SELECT id FROM orders WHERE tracking_number=$1 AND id<>$2 LIMIT 1',[trackingNumber,current.id]);
-            if(duplicate.rowCount)throw new Error('TRACKING_NUMBER_IN_USE');
+            const duplicate = await client.query('SELECT id FROM orders WHERE tracking_number=$1 AND id<>$2 LIMIT 1', [trackingNumber, current.id]);
+            if (duplicate.rowCount) throw new Error('TRACKING_NUMBER_IN_USE');
           }
           const updated = await client.query(`UPDATE orders SET status = $2,
             tracking_number = COALESCE($3, tracking_number), carrier = COALESCE($4, carrier), notes = COALESCE($5, notes), updated_at = NOW(), version = version + 1
             WHERE id = $1 RETURNING *`, [current.id, status, trackingNumber?.trim() || null, carrier || null, notes ?? null]);
-          await client.query(`INSERT INTO order_fulfilment_events(order_id,actor_id,source,previous_status,resulting_status,details) VALUES($1,$2,'admin',$3,$4,$5::jsonb)`,[current.id,request.user!.id,current.status,status,JSON.stringify({trackingNumber:updated.rows[0].tracking_number,carrier:updated.rows[0].carrier,notes:notes || null})]);
+          await client.query(`INSERT INTO order_fulfilment_events(order_id,actor_id,source,previous_status,resulting_status,details) VALUES($1,$2,'admin',$3,$4,$5::jsonb)`, [current.id, request.user!.id, current.status, status, JSON.stringify({ trackingNumber: updated.rows[0].tracking_number, carrier: updated.rows[0].carrier, notes: notes || null })]);
           return updated.rows[0];
         });
         const items = await query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
@@ -755,7 +756,7 @@ export async function adminRoutes(app: FastifyInstance) {
         const code = String(error?.message || 'REFUND_FAILED');
         const status = code === 'ORDER_NOT_FOUND' ? 404
           : ['PAYMENT_NOT_CAPTURED', 'ONLINE_REFUND_ONLY', 'ORDER_ALREADY_FULFILLED', 'REFUND_PAYMENT_MISMATCH', 'REFUND_AMOUNT_MISMATCH'].includes(code) ? 409
-          : code === 'PAYMENT_UNAVAILABLE' ? 503 : 502;
+            : code === 'PAYMENT_UNAVAILABLE' ? 503 : 502;
         request.log.error({ error, orderId: request.params.id }, 'Order refund failed');
         return reply.code(status).send({ error: code, message: `Refund could not be completed: ${code.replaceAll('_', ' ').toLowerCase()}.` });
       }
@@ -771,11 +772,13 @@ export async function adminRoutes(app: FastifyInstance) {
       try {
         const order = await reconcileOrderPayment(id);
         const items = await query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
-        return { ok: true, updated: true, paymentStatus: order.payment_status,
+        return {
+          ok: true, updated: true, paymentStatus: order.payment_status,
           order: { ...order, items: items.rows },
           message: order.payment_reconciliation_error
             ? 'Payment captured. Inventory needs reconciliation before dispatch.'
-            : `Gateway checked. Payment is ${order.payment_status}.` };
+            : `Gateway checked. Payment is ${order.payment_status}.`
+        };
 
       } catch (err: any) {
         request.log.error(err, 'Payment reconciliation error');
@@ -788,39 +791,39 @@ export async function adminRoutes(app: FastifyInstance) {
   );
 
   // ─── REAL-TIME DELIVERY PARTNER WEBSITE STATUS SYNC ────────────────────────
-  const carrierRequest=z.object({orderIdOrNumber:z.string().trim().min(1).max(100),carrier:z.string().trim().max(100).optional(),trackingNumber:z.string().trim().max(100).optional()}).strict();
-  const carrierErrors:Record<string,string>={
-    ORDER_NOT_FOUND:'No order matches this full order ID or saved AWB.',
-    TRACKING_NUMBER_REQUIRED:'Save the courier-issued AWB on the order before checking tracking.',
-    CARRIER_REQUIRED:'Assign the carrier on the order first.',
-    CARRIER_NOT_CONFIGURED:'Delhivery tracking is not connected. Configure the server courier token or use the official portal.',
-    CARRIER_PORTAL_ONLY:'Automatic tracking is not available for this carrier. Verify on its portal and record fulfilment manually.',
-    CARRIER_AUTH_FAILED:'The courier rejected the configured credentials. Check the courier account connection.',
-    CARRIER_RATE_LIMITED:'The courier rate limit was reached. Wait before retrying.',
-    CARRIER_MISMATCH:'The selected carrier differs from the saved shipment carrier.',
-    CARRIER_SHIPMENT_MISMATCH:'The carrier response did not match the saved AWB. No update was applied.',
-    SHIPMENT_CHANGED_RETRY:'Shipment details changed during lookup. Refresh and retry.',
+  const carrierRequest = z.object({ orderIdOrNumber: z.string().trim().min(1).max(100), carrier: z.string().trim().max(100).optional(), trackingNumber: z.string().trim().max(100).optional() }).strict();
+  const carrierErrors: Record<string, string> = {
+    ORDER_NOT_FOUND: 'No order matches this full order ID or saved AWB.',
+    TRACKING_NUMBER_REQUIRED: 'Save the courier-issued AWB on the order before checking tracking.',
+    CARRIER_REQUIRED: 'Assign the carrier on the order first.',
+    CARRIER_NOT_CONFIGURED: 'Delhivery tracking is not connected. Configure the server courier token or use the official portal.',
+    CARRIER_PORTAL_ONLY: 'Automatic tracking is not available for this carrier. Verify on its portal and record fulfilment manually.',
+    CARRIER_AUTH_FAILED: 'The courier rejected the configured credentials. Check the courier account connection.',
+    CARRIER_RATE_LIMITED: 'The courier rate limit was reached. Wait before retrying.',
+    CARRIER_MISMATCH: 'The selected carrier differs from the saved shipment carrier.',
+    CARRIER_SHIPMENT_MISMATCH: 'The carrier response did not match the saved AWB. No update was applied.',
+    SHIPMENT_CHANGED_RETRY: 'Shipment details changed during lookup. Refresh and retry.',
   };
-  app.get('/admin/carriers',async()=>({data:carrierCapabilities()}));
-  app.get<{Params:{id:string}}>('/admin/orders/:id/fulfilment-history',async(request,reply)=>{
-    if(!z.string().uuid().safeParse(request.params.id).success)return reply.code(400).send({error:'INVALID_ORDER_ID'});
-    return {data:(await query('SELECT id,source,previous_status,resulting_status,details,created_at FROM order_fulfilment_events WHERE order_id=$1 ORDER BY created_at DESC LIMIT 100',[request.params.id])).rows};
+  app.get('/admin/carriers', async () => ({ data: carrierCapabilities() }));
+  app.get<{ Params: { id: string } }>('/admin/orders/:id/fulfilment-history', async (request, reply) => {
+    if (!z.string().uuid().safeParse(request.params.id).success) return reply.code(400).send({ error: 'INVALID_ORDER_ID' });
+    return { data: (await query('SELECT id,source,previous_status,resulting_status,details,created_at FROM order_fulfilment_events WHERE order_id=$1 ORDER BY created_at DESC LIMIT 100', [request.params.id])).rows };
   });
-  app.post('/admin/orders/fetch-carrier-website',async(request,reply)=>{
-    const parsed=carrierRequest.safeParse(request.body);
-    if(!parsed.success)return reply.code(400).send({error:'INVALID_LOOKUP',message:'Enter the full order ID or saved AWB.'});
-    try{return {ok:true,...await syncOrderFromCarrierWebsite(parsed.data.orderIdOrNumber,parsed.data.carrier)};}
-    catch(error){const code=error instanceof Error?error.message:'CARRIER_STATUS_UNAVAILABLE';return reply.code(code==='ORDER_NOT_FOUND'?404:409).send({error:code,message:carrierErrors[code] || 'Tracking could not be verified. No fulfilment update was applied.'});}
+  app.post('/admin/orders/fetch-carrier-website', async (request, reply) => {
+    const parsed = carrierRequest.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_LOOKUP', message: 'Enter the full order ID or saved AWB.' });
+    try { return { ok: true, ...await syncOrderFromCarrierWebsite(parsed.data.orderIdOrNumber, parsed.data.carrier) }; }
+    catch (error) { const code = error instanceof Error ? error.message : 'CARRIER_STATUS_UNAVAILABLE'; return reply.code(code === 'ORDER_NOT_FOUND' ? 404 : 409).send({ error: code, message: carrierErrors[code] || 'Tracking could not be verified. No fulfilment update was applied.' }); }
   });
-  app.post('/admin/orders/bulk-fetch-carrier-websites',async(request,reply)=>{
-    const parsed=z.object({orderIds:z.array(z.string().uuid()).min(1).max(25),carrier:z.string().max(100).optional()}).strict().safeParse(request.body);
-    if(!parsed.success)return reply.code(400).send({error:'INVALID_BATCH',message:'Select between 1 and 25 orders.'});
-    const results=[];
-    for(const id of [...new Set(parsed.data.orderIds)]){
-      try{results.push({id,ok:true,...await syncOrderFromCarrierWebsite(id,parsed.data.carrier)});}
-      catch(error){const code=error instanceof Error?error.message:'CARRIER_STATUS_UNAVAILABLE';results.push({id,ok:false,error:code,message:carrierErrors[code] || 'Tracking unavailable; order unchanged.'});}
+  app.post('/admin/orders/bulk-fetch-carrier-websites', async (request, reply) => {
+    const parsed = z.object({ orderIds: z.array(z.string().uuid()).min(1).max(25), carrier: z.string().max(100).optional() }).strict().safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_BATCH', message: 'Select between 1 and 25 orders.' });
+    const results = [];
+    for (const id of [...new Set(parsed.data.orderIds)]) {
+      try { results.push({ id, ok: true, ...await syncOrderFromCarrierWebsite(id, parsed.data.carrier) }); }
+      catch (error) { const code = error instanceof Error ? error.message : 'CARRIER_STATUS_UNAVAILABLE'; results.push({ id, ok: false, error: code, message: carrierErrors[code] || 'Tracking unavailable; order unchanged.' }); }
     }
-    return {ok:true,updatedCount:results.filter(r=>'applied' in r && r.applied).length,checkedCount:results.filter(r=>r.ok).length,failedCount:results.filter(r=>!r.ok).length,results};
+    return { ok: true, updatedCount: results.filter(r => 'applied' in r && r.applied).length, checkedCount: results.filter(r => r.ok).length, failedCount: results.filter(r => !r.ok).length, results };
   });
 
   // ─── 4. APPOINTMENT BOOKINGS MANAGEMENT ────────────────────────────────────
@@ -849,8 +852,8 @@ export async function adminRoutes(app: FastifyInstance) {
         return reply.send({ data: res.rows });
       }
     } catch (error) {
-      request.log.error({error}, 'Bookings unavailable');
-      return reply.code(503).send({error:'BOOKINGS_UNAVAILABLE'});
+      request.log.error({ error }, 'Bookings unavailable');
+      return reply.code(503).send({ error: 'BOOKINGS_UNAVAILABLE' });
     }
 
     return reply.send({ data: [] });
@@ -914,10 +917,10 @@ export async function adminRoutes(app: FastifyInstance) {
       let stylistName: string | null = null;
       const rawStylist = b.stylistId || b.stylist_id;
       if (rawStylist) {
-        if (!z.string().uuid().safeParse(rawStylist).success) return reply.code(400).send({error:'INVALID_STYLIST'});
-        const stylist = (await query('SELECT id,name FROM stylists WHERE id=$1 AND is_active=true',[rawStylist])).rows[0];
-        if (!stylist) return reply.code(400).send({error:'STYLIST_UNAVAILABLE'});
-        stylistId=stylist.id; stylistName=stylist.name;
+        if (!z.string().uuid().safeParse(rawStylist).success) return reply.code(400).send({ error: 'INVALID_STYLIST' });
+        const stylist = (await query('SELECT id,name FROM stylists WHERE id=$1 AND is_active=true', [rawStylist])).rows[0];
+        if (!stylist) return reply.code(400).send({ error: 'STYLIST_UNAVAILABLE' });
+        stylistId = stylist.id; stylistName = stylist.name;
       }
 
       const res = await query(
@@ -944,7 +947,7 @@ export async function adminRoutes(app: FastifyInstance) {
       );
       return reply.status(201).send({ ...res.rows[0], stylist_name: stylistName });
     } catch (err: any) {
-      return reply.status(err.code==='23505'?409:500).send({ error: 'FAILED_TO_CREATE_BOOKING', message: 'Could not save booking. Check the stylist schedule and retry.' });
+      return reply.status(err.code === '23505' ? 409 : 500).send({ error: 'FAILED_TO_CREATE_BOOKING', message: 'Could not save booking. Check the stylist schedule and retry.' });
     }
   });
 
@@ -953,13 +956,13 @@ export async function adminRoutes(app: FastifyInstance) {
     '/admin/bookings/:id/status',
     async (request, reply) => {
       const { id } = request.params;
-      const parsed=z.object({status:z.enum(['pending','confirmed','cancelled','completed'])}).strict().safeParse(request.body);
-      if(!parsed.success) return reply.code(400).send({error:'INVALID_STATUS'});
+      const parsed = z.object({ status: z.enum(['pending', 'confirmed', 'cancelled', 'completed']) }).strict().safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'INVALID_STATUS' });
       try {
-        const result=await query("UPDATE bookings SET status=$2,version=version+1 WHERE id::text=$1 RETURNING *,to_char(booking_date,'YYYY-MM-DD') AS booking_date",[id,parsed.data.status]);
-        if(!result.rowCount) return reply.code(404).send({error:'BOOKING_NOT_FOUND'});
+        const result = await query("UPDATE bookings SET status=$2,version=version+1 WHERE id::text=$1 RETURNING *,to_char(booking_date,'YYYY-MM-DD') AS booking_date", [id, parsed.data.status]);
+        if (!result.rowCount) return reply.code(404).send({ error: 'BOOKING_NOT_FOUND' });
         return result.rows[0];
-      }catch(error){return reply.code(409).send({error:'STATUS_NOT_SAVED',message:'Check the booking and stylist schedule before retrying.'});}
+      } catch (error) { return reply.code(409).send({ error: 'STATUS_NOT_SAVED', message: 'Check the booking and stylist schedule before retrying.' }); }
 
     }
   );
@@ -981,24 +984,24 @@ export async function adminRoutes(app: FastifyInstance) {
       let stylistName: string | null = null;
       const rawStylist = request.body.stylistId;
       if (rawStylist) {
-        if (!z.string().uuid().safeParse(rawStylist).success) return reply.code(400).send({error:'INVALID_STYLIST'});
-        const stylist = (await query('SELECT id,name FROM stylists WHERE id=$1 AND is_active=true',[rawStylist])).rows[0];
-        if (!stylist) return reply.code(400).send({error:'STYLIST_UNAVAILABLE'});
-        stylistId=stylist.id; stylistName=stylist.name;
+        if (!z.string().uuid().safeParse(rawStylist).success) return reply.code(400).send({ error: 'INVALID_STYLIST' });
+        const stylist = (await query('SELECT id,name FROM stylists WHERE id=$1 AND is_active=true', [rawStylist])).rows[0];
+        if (!stylist) return reply.code(400).send({ error: 'STYLIST_UNAVAILABLE' });
+        stylistId = stylist.id; stylistName = stylist.name;
       }
       try {
-      const updated = await query(
-        `UPDATE bookings
+        const updated = await query(
+          `UPDATE bookings
          SET booking_date = $2, time_slot = $3, visit_type = $4,
              service_address = $5, stylist_id = $6, version = version + 1
          WHERE id::text = $1
          RETURNING *, to_char(booking_date, 'YYYY-MM-DD') as booking_date`,
-        [request.params.id, parsed.data.bookingDate, parsed.data.timeSlot, parsed.data.visitType, parsed.data.serviceAddress, stylistId]
-      );
-      if (!updated.rowCount) return reply.code(404).send({ error: 'BOOKING_NOT_FOUND' });
-      return reply.send({ ...updated.rows[0], stylist_name: stylistName });
+          [request.params.id, parsed.data.bookingDate, parsed.data.timeSlot, parsed.data.visitType, parsed.data.serviceAddress, stylistId]
+        );
+        if (!updated.rowCount) return reply.code(404).send({ error: 'BOOKING_NOT_FOUND' });
+        return reply.send({ ...updated.rows[0], stylist_name: stylistName });
       } catch (error: any) {
-        return reply.code(error.code==='23505'?409:503).send({error:'SCHEDULE_NOT_SAVED',message:'The stylist may already be booked for this slot. Refresh and choose another time or stylist.'});
+        return reply.code(error.code === '23505' ? 409 : 503).send({ error: 'SCHEDULE_NOT_SAVED', message: 'The stylist may already be booked for this slot. Refresh and choose another time or stylist.' });
       }
     }
   );
@@ -1021,7 +1024,7 @@ export async function adminRoutes(app: FastifyInstance) {
         ORDER BY total_spent DESC, u.created_at DESC;
       `);
       if (res.rows.length > 0) return reply.send({ data: res.rows });
-    } catch (error) {return reply.code(503).send({error:'RECORDS_UNAVAILABLE'});}
+    } catch (error) { return reply.code(503).send({ error: 'RECORDS_UNAVAILABLE' }); }
 
     return reply.send({ data: [] });
   });
@@ -1094,7 +1097,7 @@ export async function adminRoutes(app: FastifyInstance) {
           [role, id]
         );
         if (res.rows.length > 0) return reply.send(res.rows[0]);
-      } catch {}
+      } catch { }
       return reply.send({ id, role });
     }
   );
@@ -1262,7 +1265,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const res = await withTransaction(async client => {
         const old = (await client.query('SELECT name, email FROM vendors WHERE id = $1 FOR UPDATE', [id])).rows[0];
         const result = await client.query(
-        `
+          `
         UPDATE vendors
         SET
           name = COALESCE($1, name),
@@ -1276,17 +1279,17 @@ export async function adminRoutes(app: FastifyInstance) {
         WHERE id = $8
         RETURNING *;
         `,
-        [
-          v.name || null,
-          v.email || null,
-          v.contactPerson || v.contact_person || null,
-          v.phone || null,
-          v.commissionRate ?? v.commission_rate ?? null,
-          v.status || null,
-          payout ? JSON.stringify(payout) : null,
-          id,
-        ]
-      );
+          [
+            v.name || null,
+            v.email || null,
+            v.contactPerson || v.contact_person || null,
+            v.phone || null,
+            v.commissionRate ?? v.commission_rate ?? null,
+            v.status || null,
+            payout ? JSON.stringify(payout) : null,
+            id,
+          ]
+        );
         if (old && result.rowCount) {
           if (v.name) await client.query('UPDATE products SET vendor = $1 WHERE LOWER(vendor) = LOWER($2)', [v.name, old.name]);
           await client.query("UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email) WHERE LOWER(email) = LOWER($3) AND role = 'vendor'", [v.name, v.email, old.email]);
@@ -1491,7 +1494,7 @@ export async function adminRoutes(app: FastifyInstance) {
           if (!effectiveCustomer) effectiveCustomer = inq.user_name;
           if (!targetOrderId) targetOrderId = inq.order_id;
         }
-      } catch {}
+      } catch { }
     }
 
     const aiResult = await generateAiReply({

@@ -246,51 +246,100 @@
           <div class="form-grid">
             <div class="form-group full">
               <label>Business / Brand Name *</label>
-              <input type="text" formControlName="name" placeholder="e.g. Apex Razor Co." />
+              <input 
+                type="text" 
+                formControlName="name" 
+                placeholder="e.g. Apex Razor Co."
+                [class.is-invalid]="createForm.controls.name.invalid && createForm.controls.name.touched"
+              />
+              @if (createForm.controls.name.invalid && createForm.controls.name.touched) {
+                <span class="field-error-text">Business name is required (min 2 characters).</span>
+              }
             </div>
 
             <div class="form-group">
               <label>Vendor Login Email *</label>
-              <input type="email" formControlName="email" placeholder="e.g. sales@apexrazors.in" />
+              <input 
+                type="email" 
+                formControlName="email" 
+                placeholder="e.g. sales@apexrazors.in"
+                [class.is-invalid]="createForm.controls.email.invalid && createForm.controls.email.touched"
+              />
+              @if (createForm.controls.email.invalid && createForm.controls.email.touched) {
+                <span class="field-error-text">Enter a valid email address.</span>
+              }
             </div>
 
             <div class="form-group">
-              <label>Initial Login Password *</label>
-              <input type="text" formControlName="password" />
+              <label>Initial Login Password * <span class="field-hint">(min. 10 characters)</span></label>
+              <input 
+                type="text" 
+                formControlName="password" 
+                placeholder="Min. 10 characters"
+                [class.is-invalid]="createForm.controls.password.invalid && createForm.controls.password.touched"
+              />
+              @if (createForm.controls.password.invalid && createForm.controls.password.touched) {
+                <span class="field-error-text">Password must be at least 10 characters long.</span>
+              }
             </div>
 
             <div class="form-group">
               <label>Representative / Contact Person *</label>
-              <input type="text" formControlName="contact_person" placeholder="Full Name" />
+              <input 
+                type="text" 
+                formControlName="contact_person" 
+                placeholder="Full Name"
+                [class.is-invalid]="createForm.controls.contact_person.invalid && createForm.controls.contact_person.touched"
+              />
+              @if (createForm.controls.contact_person.invalid && createForm.controls.contact_person.touched) {
+                <span class="field-error-text">Contact representative name is required.</span>
+              }
             </div>
 
             <div class="form-group">
-              <label>Phone Number (10 digits) *</label>
-              <input type="text" formControlName="phone" placeholder="9876543210" />
+              <label>Phone Number * <span class="field-hint">(10 digits)</span></label>
+              <input 
+                type="text" 
+                formControlName="phone" 
+                placeholder="e.g. 9876543210"
+                [class.is-invalid]="createForm.controls.phone.invalid && createForm.controls.phone.touched"
+              />
+              @if (createForm.controls.phone.invalid && createForm.controls.phone.touched) {
+                <span class="field-error-text">Enter a valid 10-digit mobile number.</span>
+              }
             </div>
 
             <div class="form-group">
               <label>Commission estimate (%) *</label>
-              <input type="number" formControlName="commission_rate" min="1" max="50" />
+              <input 
+                type="number" 
+                formControlName="commission_rate" 
+                min="0" 
+                max="50"
+                [class.is-invalid]="createForm.controls.commission_rate.invalid && createForm.controls.commission_rate.touched"
+              />
+              @if (createForm.controls.commission_rate.invalid && createForm.controls.commission_rate.touched) {
+                <span class="field-error-text">Commission must be between 0% and 50%.</span>
+              }
             </div>
 
             <div class="form-group">
-              <label>Settlement Bank *</label>
+              <label>Settlement Bank <span class="field-hint">(Optional)</span></label>
               <input type="text" formControlName="bank_name" placeholder="HDFC, ICICI, etc." />
             </div>
 
             <div class="form-group">
-              <label>Bank Account Number *</label>
+              <label>Bank Account Number <span class="field-hint">(Optional)</span></label>
               <input type="text" formControlName="account_no" placeholder="Account No" />
             </div>
 
             <div class="form-group">
-              <label>IFSC Code *</label>
+              <label>IFSC Code <span class="field-hint">(Optional)</span></label>
               <input type="text" formControlName="ifsc" placeholder="HDFC0001234" />
             </div>
 
             <div class="form-group full">
-              <label>UPI ID (Optional)</label>
+              <label>UPI ID <span class="field-hint">(Optional)</span></label>
               <input type="text" formControlName="upi" placeholder="vendor@upi" />
             </div>
           </div>
@@ -320,17 +369,40 @@
           <div class="form-grid">
             <div class="form-group">
               <label>Representative Contact *</label>
-              <input type="text" formControlName="contact_person" />
+              <input 
+                type="text" 
+                formControlName="contact_person"
+                [class.is-invalid]="editForm.controls.contact_person.invalid && editForm.controls.contact_person.touched"
+              />
+              @if (editForm.controls.contact_person.invalid && editForm.controls.contact_person.touched) {
+                <span class="field-error-text">Contact representative name is required.</span>
+              }
             </div>
 
             <div class="form-group">
-              <label>Phone Number *</label>
-              <input type="text" formControlName="phone" />
+              <label>Phone Number * <span class="field-hint">(10 digits)</span></label>
+              <input 
+                type="text" 
+                formControlName="phone"
+                [class.is-invalid]="editForm.controls.phone.invalid && editForm.controls.phone.touched"
+              />
+              @if (editForm.controls.phone.invalid && editForm.controls.phone.touched) {
+                <span class="field-error-text">Enter a valid 10-digit mobile number.</span>
+              }
             </div>
 
             <div class="form-group">
               <label>Commission estimate (%) *</label>
-              <input type="number" formControlName="commission_rate" min="1" max="50" />
+              <input 
+                type="number" 
+                formControlName="commission_rate" 
+                min="0" 
+                max="50"
+                [class.is-invalid]="editForm.controls.commission_rate.invalid && editForm.controls.commission_rate.touched"
+              />
+              @if (editForm.controls.commission_rate.invalid && editForm.controls.commission_rate.touched) {
+                <span class="field-error-text">Commission must be between 0% and 50%.</span>
+              }
             </div>
 
             <div class="form-group">
@@ -343,22 +415,22 @@
             </div>
 
             <div class="form-group">
-              <label>Bank Name *</label>
+              <label>Bank Name <span class="field-hint">(Optional)</span></label>
               <input type="text" formControlName="bank_name" />
             </div>
 
             <div class="form-group">
-              <label>Account Number *</label>
+              <label>Account Number <span class="field-hint">(Optional)</span></label>
               <input type="text" formControlName="account_no" />
             </div>
 
             <div class="form-group">
-              <label>IFSC Code *</label>
+              <label>IFSC Code <span class="field-hint">(Optional)</span></label>
               <input type="text" formControlName="ifsc" />
             </div>
 
             <div class="form-group">
-              <label>UPI ID</label>
+              <label>UPI ID <span class="field-hint">(Optional)</span></label>
               <input type="text" formControlName="upi" />
             </div>
           </div>

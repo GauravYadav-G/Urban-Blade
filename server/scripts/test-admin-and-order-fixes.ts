@@ -97,6 +97,7 @@ async function runAdminAndOrderFixesTest() {
       payload: {
         stockQuantity: targetStock,
         price: firstProd.price,
+        expectedVersion: firstProd.version ?? 1,
       },
     });
     if (updateProdRes.statusCode !== 200) {
@@ -151,6 +152,19 @@ async function runAdminAndOrderFixesTest() {
       role: 'customer',
       name: 'Vikas Verma',
     });
+    const quoteRes = await app.inject({
+      method: 'POST',
+      url: '/api/orders/quote',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: `Bearer ${customerToken}`,
+      },
+      payload: {
+        items: [{ productId: testProductId, quantity: 1 }],
+      },
+    });
+    const quoteData = JSON.parse(quoteRes.body);
+
     const orderRes = await app.inject({
       method: 'POST',
       url: '/api/orders/cod-order',
@@ -165,6 +179,7 @@ async function runAdminAndOrderFixesTest() {
             quantity: 1,
           },
         ],
+        expectedTotal: quoteData.totalAmount,
         shippingAddress: {
           fullName: 'Vikas Verma',
           phone: '9811223344',
@@ -188,6 +203,9 @@ async function runAdminAndOrderFixesTest() {
     const customerOrdersRes = await app.inject({
       method: 'GET',
       url: `/api/orders?email=${encodeURIComponent(testCustomerEmail)}`,
+      headers: {
+        authorization: `Bearer ${customerToken}`,
+      },
     });
     if (customerOrdersRes.statusCode !== 200) {
       throw new Error(`Failed to query customer orders: ${customerOrdersRes.statusCode}`);
@@ -211,6 +229,7 @@ async function runAdminAndOrderFixesTest() {
         headers: adminHeaders,
         payload: {
           status: st,
+          carrier: 'BlueDart',
           trackingNumber: `TRK-TEST-${createdOrderId.slice(0, 6).toUpperCase()}`,
         },
       });

@@ -4,7 +4,7 @@ import { query } from '../../db/pool.js';
 import { requireAdmin } from '../../core/auth.middleware.js';
 import { getSiteSettings } from './commerce.service.js';
 const couponSchema = z.object({
-  code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{2,40}$/),
+  code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{2,40}$/, 'Coupon code must be 2-40 alphanumeric characters or hyphens'),
   discountType: z.enum(['percentage', 'fixed']), discountValue: z.number().positive().max(100000),
   minOrderValue: z.number().min(0).max(1000000), maxDiscountAmount: z.number().positive().max(100000).nullish(),
   isActive: z.boolean(), description: z.string().max(500), expiresAt: z.string().datetime().nullish(),
@@ -42,7 +42,7 @@ export async function commerceRoutes(app: FastifyInstance) {
           : await query(`UPDATE coupons SET code=$1,discount_type=$2,discount_value=$3,min_order_value=$4,max_discount_amount=$5,is_active=$6,description=$7,expires_at=$8 WHERE id::text=$9 RETURNING ${fields}`, [...values,(req.params as any).id]);
         if (!result.rows.length) return reply.code(404).send({ error: 'NOT_FOUND' });
         return { ...result.rows[0], usageCount: 0 };
-      } catch (err: any) { if (err.code === '23505') return reply.code(409).send({ error: 'DUPLICATE_CODE' }); throw err; }
+      } catch (err: any) { if (err.code === '23505') return reply.code(409).send({ error: 'DUPLICATE_CODE', message: 'A coupon with this code already exists.' }); throw err; }
     }});
   }
   app.delete('/admin/coupons/:id', { preHandler: requireAdmin }, async req => {

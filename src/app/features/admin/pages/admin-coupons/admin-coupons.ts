@@ -25,7 +25,7 @@ export class AdminCoupons implements OnInit, OnDestroy {
   readonly editingCouponId = signal<string | null>(null);
 
   readonly couponForm = this.fb.group({
-    code: ['', [Validators.required, Validators.pattern(/^[A-Za-z0-9_-]+$/)]],
+    code: ['', [Validators.required, Validators.minLength(2), Validators.pattern(/^[A-Za-z0-9_-]+$/)]],
     description: [''],
     discountType: ['percentage' as 'percentage' | 'fixed', Validators.required],
     discountValue: [10, [Validators.required, Validators.min(1)]],
@@ -149,7 +149,17 @@ export class AdminCoupons implements OnInit, OnDestroy {
 
   async saveCoupon(): Promise<void> {
     if (this.couponForm.invalid) {
-      this.toast.error('Please verify coupon details before saving.');
+      this.couponForm.markAllAsTouched();
+      const invalidFields: string[] = [];
+      const c = this.couponForm.controls;
+      if (c.code.invalid) invalidFields.push('Coupon Code (2-40 letters/numbers)');
+      if (c.discountValue.invalid) invalidFields.push('Discount Value (greater than 0)');
+      if (c.minOrderValue.invalid) invalidFields.push('Minimum Cart Total');
+      this.toast.error(
+        invalidFields.length
+          ? `Please check: ${invalidFields.join(', ')}`
+          : 'Please verify coupon details before saving.'
+      );
       return;
     }
 
@@ -158,11 +168,24 @@ export class AdminCoupons implements OnInit, OnDestroy {
     const discountType = val.discountType || 'percentage';
     const discountValue = Number(val.discountValue) || 0;
     const minOrderValue = Number(val.minOrderValue) || 0;
+
+    if (discountType === 'percentage' && discountValue > 100) {
+      this.toast.error('Percentage discount cannot exceed 100%.');
+      return;
+    }
+
     const maxDiscountAmount =
       discountType === 'percentage' && val.maxDiscountAmount
         ? Number(val.maxDiscountAmount)
         : undefined;
-    const expiresAt = val.expiresAt ? new Date(val.expiresAt).toISOString() : undefined;
+
+    let expiresAt: string | undefined = undefined;
+    if (val.expiresAt) {
+      const d = new Date(val.expiresAt);
+      if (!isNaN(d.getTime())) {
+        expiresAt = d.toISOString();
+      }
+    }
     const isActive = Boolean(val.isActive);
 
     const editId = this.editingCouponId();

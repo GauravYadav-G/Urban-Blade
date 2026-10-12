@@ -110,7 +110,11 @@ export async function seedDatabase(): Promise<boolean> {
         `
         INSERT INTO stylists (name, role, avatar_url, bio, rating)
         VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT DO NOTHING;
+        ON CONFLICT (name) DO UPDATE SET
+          role = EXCLUDED.role,
+          avatar_url = EXCLUDED.avatar_url,
+          bio = EXCLUDED.bio,
+          rating = EXCLUDED.rating;
         `,
         [s.name, s.role, s.avatar_url, s.bio, s.rating]
       );

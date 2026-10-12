@@ -38,3 +38,4 @@ CREATE INDEX IF NOT EXISTS idx_products_vendor_lower ON products(LOWER(vendor));
 CREATE INDEX IF NOT EXISTS idx_vendors_email_lower ON vendors(LOWER(email));
 CREATE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(idempotency_key);
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stylists_name_unique ON stylists(LOWER(TRIM(name)));

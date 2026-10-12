@@ -260,8 +260,15 @@
                 placeholder="e.g. FESTIVE20"
                 class="code-input"
                 style="text-transform: uppercase;"
+                [class.is-invalid]="couponForm.controls.code.invalid && couponForm.controls.code.touched"
               />
-              <span class="field-hint">Uppercase letters and numbers only.</span>
+              @if (couponForm.controls.code.invalid && couponForm.controls.code.touched) {
+                <span class="field-error-text" style="color: #ef4444; font-size: 0.75rem; font-weight: 600; display: block; margin-top: 0.2rem;">
+                  Code must be 2-40 alphanumeric characters (no spaces).
+                </span>
+              } @else {
+                <span class="field-hint">Uppercase letters and numbers only.</span>
+              }
             </div>
 
             <div class="form-field">
@@ -310,7 +317,13 @@
                 formControlName="discountValue"
                 min="1"
                 placeholder="e.g. 20"
+                [class.is-invalid]="couponForm.controls.discountValue.invalid && couponForm.controls.discountValue.touched"
               />
+              @if (couponForm.controls.discountValue.invalid && couponForm.controls.discountValue.touched) {
+                <span class="field-error-text" style="color: #ef4444; font-size: 0.75rem; font-weight: 600; display: block; margin-top: 0.2rem;">
+                  Enter a valid discount value greater than 0.
+                </span>
+              }
             </div>
           </div>
 
@@ -387,7 +400,7 @@
           <!-- Modal Actions -->
           <div class="modal-actions">
             <button type="button" class="btn-ghost" (click)="closeModal()">Cancel</button>
-            <button type="submit" class="btn-primary-glow" [disabled]="couponForm.invalid">
+            <button type="submit" class="btn-primary-glow">
               {{ editingCouponId() ? 'Save Changes & Timeline' : 'Create & Schedule Coupon' }}
             </button>
           </div>

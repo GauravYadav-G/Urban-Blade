@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS products (
 -- ─── STYLISTS ───────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS stylists (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name VARCHAR(255) NOT NULL,
+  name VARCHAR(255) NOT NULL UNIQUE,
   role VARCHAR(100) NOT NULL,
   avatar_url TEXT NOT NULL,
   bio TEXT,
