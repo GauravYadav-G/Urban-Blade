@@ -35,7 +35,9 @@
           <p>Available balance from delivered merchandise orders.</p>
           <div class="hero-bottom">
             <span>Commission: {{ vendorSettlement()?.commission_rate ?? 12 }}%</span>
-            <span class="hero-icon">✓ Verified</span>
+            <span class="vendor-account-status" [class.pending]="!vendorSettlement()">
+              {{ vendorSettlement() ? '✓ Account active' : 'Settlement pending' }}
+            </span>
           </div>
         </article>
         <article class="metric-tile">
@@ -146,7 +148,7 @@
     @if(isVendor()){
       <section class="operations-strip" aria-label="Vendor operations">
         <a routerLink="/admin/orders"><span>Your orders</span><strong>{{ snapshot.overview.counts.orders | number }}</strong><small>View orders ↗</small></a>
-        <a routerLink="/admin/products"><span>Catalog items</span><strong>{{ snapshot.finance.inventory.length ? snapshot.finance.inventory.length : snapshot.overview.counts.orders }}</strong><small>View catalog ↗</small></a>
+        <a routerLink="/admin/products"><span>Catalog items</span><strong>{{ snapshot.overview.counts.product_count ?? 0 }}</strong><small>View catalog ↗</small></a>
         <a routerLink="/admin/products"><span>Low-stock alerts</span><strong>{{ snapshot.overview.counts.low_stock }}</strong><small>Units &le; 15 ↗</small></a>
         <a routerLink="/admin/products"><span>Stock status</span><strong>{{ snapshot.overview.counts.low_stock > 0 ? 'Action needed' : 'Optimal' }}</strong><small>Check stock ↗</small></a>
       </section>

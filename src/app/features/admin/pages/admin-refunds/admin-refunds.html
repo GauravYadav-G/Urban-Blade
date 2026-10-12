@@ -2,12 +2,6 @@
   <!-- Page Header -->
   <header class="page-header">
     <div class="header-left">
-      <div class="stream-badge-row">
-        <span class="status-indicator live">
-          <span class="pulse-dot"></span> Razorpay Direct Settlement
-        </span>
-        <span class="treasury-badge">ACID Cancellation &amp; Inventory Reacquisition</span>
-      </div>
       <h1 class="page-title">Refund Management &amp; Audit Desk</h1>
       <p class="page-subtitle">
         Monitor payment gateway reversals, reconcile real-time settlement receipts, retry failed transfers, and audit restocked inventory.
@@ -33,7 +27,7 @@
   <!-- Metric KPI Cards -->
   <section class="metrics-grid">
     <article class="metric-card">
-      <div class="metric-icon total-icon">🧾</div>
+      <div class="metric-icon total-icon" aria-hidden="true">#</div>
       <div class="metric-copy">
         <span class="metric-label">Total Refund Cases</span>
         <strong class="metric-val">{{ refunds().length }}</strong>
@@ -42,7 +36,7 @@
     </article>
 
     <article class="metric-card pending">
-      <div class="metric-icon pending-icon">⏳</div>
+      <div class="metric-icon pending-icon" aria-hidden="true">…</div>
       <div class="metric-copy">
         <span class="metric-label">In-Flight Processing</span>
         <strong class="metric-val">{{ pendingCount() }}</strong>
@@ -51,7 +45,7 @@
     </article>
 
     <article class="metric-card failed">
-      <div class="metric-icon failed-icon">⚠️</div>
+      <div class="metric-icon failed-icon" aria-hidden="true">!</div>
       <div class="metric-copy">
         <span class="metric-label">Action Required</span>
         <strong class="metric-val">{{ failedCount() }}</strong>
@@ -222,7 +216,6 @@
                     <strong class="amount-val">
                       {{ (order.refund_amount || order.total_amount) | currency:order.currency:'symbol':'1.0-0' }}
                     </strong>
-                    <span class="amount-badge">Full Reimbursement</span>
                   </div>
                 </td>
 

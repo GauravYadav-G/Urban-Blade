@@ -404,3 +404,42 @@ CREATE TABLE IF NOT EXISTS order_fulfilment_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_fulfilment_events_order ON order_fulfilment_events(order_id,created_at DESC);
+
+-- Verified carrier snapshots and durable scheduling shared by all API workers.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_data JSONB;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_checked_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_next_check_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_failures INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_error TEXT;
+CREATE INDEX IF NOT EXISTS idx_orders_tracking_due ON orders(tracking_next_check_at)
+  WHERE tracking_number IS NOT NULL AND status IN ('processing', 'shipped');
+
+CREATE OR REPLACE FUNCTION reset_order_tracking() RETURNS trigger AS $$
+BEGIN
+  IF NEW.tracking_number IS DISTINCT FROM OLD.tracking_number OR NEW.carrier IS DISTINCT FROM OLD.carrier THEN
+    NEW.tracking_data := NULL;
+    NEW.tracking_checked_at := NULL;
+    NEW.tracking_next_check_at := NOW();
+    NEW.tracking_failures := 0;
+    NEW.tracking_error := NULL;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS reset_order_tracking ON orders;
+CREATE TRIGGER reset_order_tracking BEFORE UPDATE OF tracking_number, carrier ON orders
+  FOR EACH ROW EXECUTE FUNCTION reset_order_tracking();
+
+-- Tokens submitted through the admin UI are encrypted with an environment-owned key.
+CREATE TABLE IF NOT EXISTS carrier_connections (
+  carrier TEXT PRIMARY KEY CHECK (carrier = 'delhivery'),
+  token_ciphertext TEXT,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  auto_assign BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE carrier_connections ADD COLUMN IF NOT EXISTS booking_settings JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipment_booking_state TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipment_booking_error TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipment_booking_started_at TIMESTAMPTZ;

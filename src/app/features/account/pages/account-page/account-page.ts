@@ -1,3 +1,8 @@
+import { DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { interval } from 'rxjs';
+import type { TrackedOrder } from '@core/models/shipment-tracking.model';
+import { ShipmentTrackingComponent } from '@shared/components/shipment-tracking/shipment-tracking';
 import { Component, computed, inject, signal, OnInit, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, FormsModule, Validators } from '@angular/forms';
@@ -40,7 +45,7 @@ interface NominatimReverseHit {
   };
 }
 
-export interface CustomerOrder {
+export interface CustomerOrder extends TrackedOrder {
   id: string;
   status: 'pending' | 'accepted' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
   subtotal: number;
@@ -92,11 +97,13 @@ export interface CustomerBooking {
 @Component({
   selector: 'app-account-page',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, RouterLink, InrPipe, OrderInvoice],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, RouterLink, InrPipe, OrderInvoice, ShipmentTrackingComponent],
   templateUrl: './account-page.html',
   styleUrl: './account-page.scss',
 })
 export class AccountPage implements OnInit {
+  private readonly destroyRef = inject(DestroyRef);
+  private fetchingOrders = false;
   protected readonly account = inject(AccountService);
   protected readonly addresses = inject(AddressService);
   private readonly admin = inject(AdminService);
@@ -252,6 +259,9 @@ export class AccountPage implements OnInit {
 
     this.fetchUserOrders();
     this.fetchUserBookings();
+    interval(15_000).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (typeof document !== 'undefined' && !document.hidden) this.fetchUserOrders(true);
+    });
   }
 
   switchTab(tab: 'overview' | 'orders' | 'bookings' | 'addresses' | 'profile'): void {
@@ -263,22 +273,29 @@ export class AccountPage implements OnInit {
     });
   }
 
-  fetchUserOrders(): void {
-    this.loadingOrders.set(true);
+  fetchUserOrders(background = false): void {
+    if (this.fetchingOrders) return;
+    this.fetchingOrders = true;
+    if (!background) this.loadingOrders.set(true);
+    const identity = this.account.user();
     const email = this.account.user()?.email;
     const url = email ? `/api/orders?email=${encodeURIComponent(email)}` : '/api/orders';
 
-    this.http.get<CustomerOrder[]>(url).subscribe({
+    this.http.get<CustomerOrder[]>(url).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
+        this.fetchingOrders = false;
         this.loadingOrders.set(false);
+        if (identity !== this.account.user()) return;
         // An empty response is authoritative. Never replace it with the shared
         // admin cache, which contains orders belonging to other customers.
         this.orders.set(Array.isArray(data) ? data : []);
+        const activeId = this.activeTrackingOrder()?.id;
+        if (activeId) this.activeTrackingOrder.set(this.orders().find(order => order.id === activeId) || null);
       },
       error: () => {
+        this.fetchingOrders = false;
         this.loadingOrders.set(false);
-        this.orders.set([]);
-        this.toast.error('Orders could not be loaded. Please retry.');
+        if (!background) this.toast.error('Orders could not be loaded. Please retry.');
       },
     });
   }
@@ -379,34 +396,7 @@ export class AccountPage implements OnInit {
   trackWithAi(order: CustomerOrder): void {
     this.activeTrackingOrder.set(order);
     this.trackingModalOpen.set(true);
-    this.aiTrackingInsight.set(null);
-    this.isFetchingAiTrack.set(true);
-
-    this.http
-      .post<{ ok: boolean; reply: string }>('/api/support/ai-chat', {
-        message: `Track parcel status for order #${order.id.slice(0, 8)}`,
-        orderId: order.id,
-        customerName: this.account.user()?.name || order.shipping_address?.fullName,
-        customerEmail: this.account.user()?.email || order.shipping_address?.email,
-      })
-      .subscribe({
-        next: (res) => {
-          this.isFetchingAiTrack.set(false);
-          if (res && res.reply) {
-            this.aiTrackingInsight.set(res.reply);
-          } else {
-            this.aiTrackingInsight.set(
-              `📦 Order #${order.id.slice(0, 8).toUpperCase()} is currently ${order.status.toUpperCase()}. Live transit updates synchronized via Delhivery Air Express.`
-            );
-          }
-        },
-        error: () => {
-          this.isFetchingAiTrack.set(false);
-          this.aiTrackingInsight.set(
-            `📦 Order #${order.id.slice(0, 8).toUpperCase()} is in ${order.status.toUpperCase()} state. Expected doorstep delivery in 24-48 hours.`
-          );
-        },
-      });
+    this.fetchUserOrders(true);
   }
 
   closeTrackingModal(): void {

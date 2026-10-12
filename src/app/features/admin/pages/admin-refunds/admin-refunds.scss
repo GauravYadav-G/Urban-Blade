@@ -612,6 +612,52 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* Keep refund state legible without turning every row into a stack of pills. */
+.refunds-page {
+  .treasury-badge,
+  .amount-badge {
+    display: none;
+  }
+
+  .metric-icon,
+  .metric-icon.pending-icon,
+  .metric-icon.failed-icon,
+  .metric-icon.processed-icon {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #334155;
+  }
+
+  .metric-card,
+  .metric-card.pending,
+  .metric-card.failed,
+  .metric-card.processed {
+    border-left: 1px solid #edf2f7;
+  }
+
+  .metric-copy .metric-meta,
+  .metric-copy .metric-meta.text-amber,
+  .metric-copy .metric-meta.text-red,
+  .metric-copy .metric-meta.text-emerald {
+    color: #64748b;
+    font-weight: 600;
+  }
+
+  .status-pill,
+  .settled-tag {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    color: #334155;
+    box-shadow: none;
+  }
+
+  .filter-pill.active {
+    background: #0b0f19;
+    border-color: #0b0f19;
+    color: #ffffff;
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    5. EMPTY STATE
    ───────────────────────────────────────────────────────────────────────── */

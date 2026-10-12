@@ -1,3 +1,4 @@
+import { AdminDialog } from '@shared/directives/admin-dialog';
 import { Component, input, output, signal, effect, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -12,11 +13,11 @@ interface ImagePreset {
 @Component({
   selector: 'app-product-drawer',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, AdminDialog],
   template: `
     @if (open()) {
-      <div class="studio-backdrop" (click)="close.emit()">
-        <div class="studio-modal" (click)="$event.stopPropagation()">
+      <div class="studio-backdrop" (click)="requestClose()">
+        <dialog appAdminDialog class="studio-modal" aria-labelledby="product-studio-title" (cancel)="$event.preventDefault(); requestClose()" (click)="$event.stopPropagation()">
           
           <!-- ═════════════════════════════════════════════════════════════════
                1. STUDIO HEADER BAR
@@ -36,7 +37,7 @@ interface ImagePreset {
                   </span>
                 }
               </div>
-              <h2>{{ isEdit() ? (form.name || 'Edit Catalog Item') : 'Create New Product' }}</h2>
+              <h2 id="product-studio-title">{{ isEdit() ? (form.name || 'Edit Catalog Item') : 'Create New Product' }}</h2>
               <span class="sh-id-tag">ID: {{ form.id || 'Generated on save' }} · Slug: /product/{{ form.slug || 'slug' }}</span>
             </div>
 
@@ -51,24 +52,25 @@ interface ImagePreset {
                 </button>
               }
 
-              <button type="button" class="btn-cancel" (click)="close.emit()">Cancel</button>
+              <button type="button" class="btn-cancel" (click)="requestClose()">Cancel</button>
 
-              <button type="button" class="btn-save" (click)="submitForm()">
+              <button type="button" class="btn-save" [disabled]="saving()" (click)="submitForm()">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
                   <polyline points="17 21 17 13 7 13 7 21"></polyline>
                   <polyline points="7 3 7 8 15 8"></polyline>
                 </svg>
-                <span>{{ isEdit() ? 'Update & Sync Storefront' : 'Publish Product' }}</span>
+                <span>{{ saving() ? 'Saving…' : (isEdit() ? 'Save changes' : 'Publish product') }}</span>
               </button>
 
-              <button type="button" class="btn-close-modal" (click)="close.emit()" title="Close studio">✕</button>
+              <button type="button" class="btn-close-modal" (click)="requestClose()" title="Close studio">✕</button>
             </div>
           </header>
 
           <!-- ═════════════════════════════════════════════════════════════════
                2. STUDIO TABBED NAVIGATION
                ═════════════════════════════════════════════════════════════════ -->
+          @if (validationError()) { <p class="alert-error" role="alert">{{ validationError() }}</p> }
           <nav class="studio-nav">
             <button type="button" class="tab-btn" [class.active]="activeTab() === 'general'" (click)="activeTab.set('general')">
               <span>1. General &amp; Category</span>
@@ -282,8 +284,8 @@ interface ImagePreset {
 
                     <div class="presets-grid">
                       @for (item of filteredPresets(); track item.url) {
-                        <div 
-                          class="preset-card" 
+                        <button
+                          type="button" class="preset-card"
                           [class.selected]="form.imageUrl === item.url" 
                           (click)="form.imageUrl = item.url"
                         >
@@ -291,7 +293,7 @@ interface ImagePreset {
                             <img [src]="item.url" [alt]="item.name" loading="lazy" />
                           </div>
                           <span class="preset-name">{{ item.name }}</span>
-                        </div>
+                        </button>
                       }
                     </div>
                   </div>
@@ -429,7 +431,7 @@ interface ImagePreset {
 
           </div>
 
-        </div>
+        </dialog>
       </div>
     }
   `,
@@ -448,8 +450,14 @@ interface ImagePreset {
         padding: 1.5rem;
       }
 
+      .studio-modal::backdrop { background: rgba(15, 23, 42, .65); }
       .studio-modal {
-        width: 100%;
+        margin: auto;
+        padding: 0;
+        border: 1px solid var(--admin-border);
+        color: var(--admin-text);
+        max-height: calc(100dvh - 2rem);
+        width: calc(100% - 2rem);
         max-width: 1180px;
         height: 90vh;
         background: #ffffff;
@@ -1346,6 +1354,8 @@ interface ImagePreset {
 })
 export class ProductDrawer {
   readonly open = input<boolean>(false);
+  readonly saving = input(false);
+  readonly validationError = signal('');
   readonly product = input<AdminProduct | null>(null);
   readonly save = output<Partial<AdminProduct>>();
   readonly close = output<void>();
@@ -1354,14 +1364,14 @@ export class ProductDrawer {
   readonly activeTab = signal<'general' | 'pricing' | 'media' | 'details'>('general');
   readonly presetFilter = signal<'hair' | 'beard' | 'skin' | 'tools' | 'services'>('hair');
 
-  readonly discountPercent = computed(() => {
+  discountPercent(): number {
     const price = this.form.price;
     const compare = this.form.compareAtPrice;
     if (price && compare && compare > price) {
       return Math.round(((compare - price) / compare) * 100);
     }
     return 0;
-  });
+  }
 
   readonly allPresets: ImagePreset[] = [
     // Hair Care
@@ -1418,10 +1428,14 @@ export class ProductDrawer {
 
   constructor() {
     effect(() => {
+      if (!this.open()) return;
+      this.activeTab.set('general');
+      this.validationError.set('');
       const p = this.product();
       if (p) {
         this.isEdit.set(Boolean(p.id));
         this.form = {
+          ...this.createEmptyForm(),
           ...p,
           highlights: p.highlights && p.highlights.length > 0 ? [...p.highlights] : ['Salon Grade Formula', 'Crafted in Delhi NCR'],
           stock_quantity: p.stock_quantity ?? 100,
@@ -1512,10 +1526,22 @@ export class ProductDrawer {
     this.generateSlug();
   }
 
+  requestClose(): void {
+    if (!this.saving()) this.close.emit();
+  }
+
   submitForm(): void {
+    if (this.saving()) return;
+    this.validationError.set('');
+    this.form.name = (this.form.name || '').trim();
     if (!this.form.name) {
-      alert('Please enter a product title.');
+      this.validationError.set('Enter a product title in General & Category.');
       this.activeTab.set('general');
+      return;
+    }
+    if (!Number.isFinite(this.form.price) || this.form.price < 0 || !Number.isInteger(this.form.stock_quantity) || this.form.stock_quantity < 0) {
+      this.validationError.set('Enter a valid non-negative price and whole-number stock quantity.');
+      this.activeTab.set('pricing');
       return;
     }
     if (!this.form.slug) {
@@ -1525,7 +1551,6 @@ export class ProductDrawer {
     if (Array.isArray(this.form.highlights)) {
       this.form.highlights = this.form.highlights.filter((h: string) => h && h.trim().length > 0);
     }
-    this.save.emit(this.form);
-    this.close.emit();
+    this.save.emit({ ...this.form });
   }
 }

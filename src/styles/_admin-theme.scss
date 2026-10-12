@@ -586,6 +586,7 @@ app-admin-layout,
     color: var(--admin-text-muted) !important;
 
     th {
+      background: var(--admin-surface-inset) !important;
       font-size: 0.74rem;
       font-weight: 700;
       letter-spacing: 0.06em;
@@ -691,4 +692,35 @@ app-admin-layout .admin-shell {
   .order-inspector-modal { width: min(1200px, calc(100vw - 2rem)); }
   .order-inspector-modal .modal-footer { display: flex; flex-wrap: wrap; gap: .65rem; }
   .pos-modal-card { max-width: calc(100vw - 2rem); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+}
+
+/* Shared accessibility and small-screen behavior for all admin workflows. */
+app-admin-layout .admin-shell {
+  color-scheme: light;
+  .admin-skip-link { position: fixed; top: .5rem; left: .5rem; z-index: 2000; padding: .75rem 1rem; background: var(--admin-primary); color: white; border-radius: 8px; transform: translateY(-180%); }
+  .admin-skip-link:focus { transform: translateY(0); }
+  :is(button, a, input, select) { touch-action: manipulation; }
+  :is(.studio-modal, .modal-box, .dialog-box, .order-inspector-modal) { overscroll-behavior: contain; }
+  .catalog-empty { padding: 3rem 1rem; text-align: center; }
+  .catalog-empty h2 { font-size: 1.2rem; }
+  .results-summary { margin: 0; color: var(--admin-text-muted); font-size: .875rem; }
+  :is(.dark-savings-card, .balance-card-dark, .bankio-card-dark, .primary-hero-card) :is(h1, h2, h3, h4) { color: white !important; }
+  @media (max-width: 600px) {
+    :is(input, select, textarea) { font-size: 16px; }
+    :is(.studio-header, .studio-nav) { padding: 1rem; }
+    .studio-nav { overflow-x: auto; flex-shrink: 0; }
+    .studio-nav button { flex-shrink: 0; }
+    :is(.sh-actions, .controls-bar, .search-and-date-group) { flex-wrap: wrap; min-width: 0; }
+    :is(.btn-icon, .icon-btn, .step-btn) { min-width: 44px; min-height: 44px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+}
+
+app-admin-layout .admin-shell {
+  .search-wrap input { background: transparent !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+  .search-wrap:focus-within { outline: 2px solid var(--admin-border-focus); outline-offset: 2px; }
+  .stock-display small { display: block; font-size: .75rem; font-weight: 400; color: var(--admin-text-muted); }
+  .sidebar-brand-header .brand-crest .crest-emblem { background: var(--admin-primary); color: var(--admin-accent); box-shadow: none; }
 }

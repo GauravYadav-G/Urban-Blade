@@ -4,7 +4,6 @@ import { firstValueFrom } from 'rxjs';
 import type { LoginCredentials, StoreUser } from '@core/models/user.model';
 import { CartService } from './cart.service';
 import type { CartLine } from '../models/cart.model';
-import { ADMIN_ACCOUNT } from '@core/constants/salon.constants';
 
 const STORAGE_KEY = 'urban-blade-user';
 const TOKEN_KEY = 'urban-blade-token';
@@ -15,6 +14,11 @@ const API_AUTH_URL =
   typeof window !== 'undefined' && window.location.port === '4200'
     ? 'http://localhost:4000/api/auth'
     : '/api/auth';
+
+const ADMIN_API_URL =
+  typeof window !== 'undefined' && window.location.port === '4200'
+    ? 'http://localhost:4000/api/admin'
+    : '/api/admin';
 
 interface AuthResponse {
   token: string;
@@ -30,6 +34,9 @@ export class AccountService {
   private cartSync = Promise.resolve();
   private readonly userSignal = signal<StoreUser | null>(this.readStored());
   private refreshPromise: Promise<string | null> | null = null;
+  private previewAdminUser: StoreUser | null = null;
+  private previewAdminToken: string | null = null;
+  private previewAdminRefreshToken: string | null = null;
 
   readonly user = this.userSignal.asReadonly();
   readonly isSignedIn = computed(() => this.userSignal() !== null);
@@ -137,30 +144,36 @@ export class AccountService {
     return false;
   }
 
-  switchVendorPreview(vendorName: string, vendorId: string): void {
+  async switchVendorPreview(vendorName: string, vendorId: string): Promise<boolean> {
     const current = this.userSignal();
-    if (!current || (current.role !== 'admin' && !current.isImpersonated)) return;
+    if (!current || current.role !== 'admin' || current.isImpersonated) return false;
 
-    const impersonated: StoreUser = {
-      email: `${vendorId}@vendor.urbanblade.in`,
-      name: `${vendorName} (Vendor Mode)`,
-      role: 'vendor',
-      vendorId,
-      vendorName,
-      isImpersonated: true,
-    };
-    this.userSignal.set(impersonated);
-    this.persist(impersonated);
+    try {
+      const response = await firstValueFrom(this.http.post<{ token: string; user: StoreUser }>(
+        `${ADMIN_API_URL}/vendors/${encodeURIComponent(vendorId)}/preview-token`, {}
+      ));
+      this.previewAdminUser = current;
+      this.previewAdminToken = this.getToken();
+      this.previewAdminRefreshToken = this.getRefreshToken();
+      this.persistTokens(response.token);
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      this.userSignal.set(response.user);
+      this.persist(response.user);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   exitVendorPreview(): void {
-    const adminUser: StoreUser = {
-      email: ADMIN_ACCOUNT.email,
-      name: ADMIN_ACCOUNT.name,
-      role: 'admin',
-    };
-    this.userSignal.set(adminUser);
-    this.persist(adminUser);
+    if (this.previewAdminUser && this.previewAdminToken) {
+      this.persistTokens(this.previewAdminToken, this.previewAdminRefreshToken || undefined);
+      this.userSignal.set(this.previewAdminUser);
+      this.persist(this.previewAdminUser);
+    }
+    this.previewAdminUser = null;
+    this.previewAdminToken = null;
+    this.previewAdminRefreshToken = null;
   }
 
   adminSignOut(): void {

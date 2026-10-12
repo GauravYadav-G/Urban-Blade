@@ -56,11 +56,11 @@ export class AdminLayout implements OnInit {
     const q = this.globalSearchQuery().trim();
     if (!q) return;
     if (q.startsWith('#') || q.toLowerCase().startsWith('ord') || q.toLowerCase().startsWith('trk') || /\d{3,}/.test(q)) {
-      void this.router.navigate(['/admin/orders']);
+      void this.router.navigate(['/admin/orders'], { queryParams: { q: q.replace(/^#/, '') } });
     } else {
-      void this.router.navigate(['/admin/products']);
+      void this.router.navigate(['/admin/products'], { queryParams: { q } });
     }
-    this.toast.info(`Searching for "${q}"`);
+
   }
 
   readonly supportInquiryCount = computed(() => {
@@ -68,9 +68,11 @@ export class AdminLayout implements OnInit {
   });
 
   ngOnInit(): void {
-    this.admin.refreshInquiries();
-    this.admin.refreshTasks();
-    this.admin.refreshVendors();
+    if (!this.account.isVendor()) {
+      this.admin.refreshInquiries();
+      this.admin.refreshTasks();
+      this.admin.refreshVendors();
+    }
   }
 
   onSignOut(): void {

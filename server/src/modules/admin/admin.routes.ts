@@ -1,3 +1,4 @@
+import { getCarrierConnection, saveCarrierConnection, bookingSettingsSchema } from '../orders/carrier-connection.service.js';
 import { reconcileOrderPayment } from '../orders/payment-reconciliation.service.js';
 import { vendorBalances } from './vendor-finance.service.js';
 import bcrypt from 'bcryptjs';
@@ -8,7 +9,7 @@ import { invalidateCatalog, getOrSetCache } from '../../redis/cache.service.js';
 import { checkDbHealth } from '../../db/pool.js';
 import { checkRedisHealth } from '../../redis/client.js';
 import { getEventLoopLag, getMemoryUsage } from '../../core/circuit-breaker.js';
-import { syncOrderFromCarrierWebsite, carrierCapabilities } from '../orders/carrier-portal.service.js';
+import { syncOrderFromCarrierWebsite, carrierCapabilities, trackingAutomatic } from '../orders/carrier-portal.service.js';
 import { paymentGateway, settleCapturedPayment } from '../orders/payment-settlement.service.js';
 import { initiateOrderRefund } from '../orders/refund.service.js';
 import { reserveStock, commitStockReservation, cancelOrderAndReleaseStock } from '../orders/stock-reservation.service.js';
@@ -28,6 +29,37 @@ export async function adminRoutes(app: FastifyInstance) {
       || (route === '/api/admin/overview' && request.method === 'GET');
     if (!allowed) return reply.code(403).send({ error: 'FORBIDDEN_ADMIN_ONLY' });
   });
+
+  app.post<{ Params: { id: string } }>(
+    '/admin/vendors/:id/preview-token',
+    { preHandler: [requireAdmin] },
+    async (request, reply) => {
+      const vendor = (await query(
+        "SELECT id, name, email FROM vendors WHERE id::text = $1 AND status = 'active'",
+        [request.params.id]
+      )).rows[0];
+      if (!vendor) return reply.code(404).send({ error: 'VENDOR_NOT_FOUND' });
+
+      const token = app.jwt.sign({
+        id: request.user!.id,
+        email: vendor.email,
+        name: vendor.name,
+        role: 'vendor',
+        vendorId: vendor.id,
+        vendorName: vendor.name,
+        isImpersonated: true,
+      }, { expiresIn: '15m' });
+
+      return reply.send({ token, user: {
+        email: vendor.email,
+        name: `${vendor.name} (Vendor Mode)`,
+        role: 'vendor',
+        vendorId: vendor.id,
+        vendorName: vendor.name,
+        isImpersonated: true,
+      } });
+    }
+  );
 
   // ─── 1. DYNAMIC EXECUTIVE DASHBOARD KPI METRICS ────────────────────────────
   app.get('/admin/metrics', async (request, reply) => {
@@ -541,7 +573,7 @@ export async function adminRoutes(app: FastifyInstance) {
           o.tax_amount::numeric,
           o.tax_rate_percent::numeric,
           o.tax_inclusive,
-          o.tracking_number,
+          o.tracking_number, o.carrier, o.tracking_data, o.tracking_checked_at, o.tracking_error, o.shipment_booking_state, o.shipment_booking_error,
           o.currency,
           o.payment_method,
           o.payment_status, o.payment_reconciliation_error, o.payment_checked_at,
@@ -596,7 +628,8 @@ export async function adminRoutes(app: FastifyInstance) {
       `;
 
       const res = await query(sql, params);
-      return reply.send({ data: res.rows });
+      const connection = await getCarrierConnection();
+      return reply.send({ data: res.rows.map(order => ({ ...order, tracking_automatic: trackingAutomatic(order, connection.configured && connection.enabled) })) });
     } catch (err: any) {
       request.log.error(err, 'Failed to fetch admin orders');
       return reply.code(503).send({ error: 'ORDERS_UNAVAILABLE', message: 'Orders could not be loaded. Please retry.' });
@@ -800,11 +833,31 @@ export async function adminRoutes(app: FastifyInstance) {
     CARRIER_PORTAL_ONLY: 'Automatic tracking is not available for this carrier. Verify on its portal and record fulfilment manually.',
     CARRIER_AUTH_FAILED: 'The courier rejected the configured credentials. Check the courier account connection.',
     CARRIER_RATE_LIMITED: 'The courier rate limit was reached. Wait before retrying.',
+    CARRIER_STATUS_UNAVAILABLE: 'The carrier service could not be reached. Try again shortly.',
+    CARRIER_RESPONSE_INVALID: 'The carrier returned an unexpected response. No order status was changed.',
+    CARRIER_STALE_RESPONSE: 'A newer carrier observation is already saved. Refresh the order before checking again.',
+    CARRIER_STATUS_UNRECOGNIZED: 'The carrier returned a status that cannot be mapped safely. Review it on the official portal.',
     CARRIER_MISMATCH: 'The selected carrier differs from the saved shipment carrier.',
     CARRIER_SHIPMENT_MISMATCH: 'The carrier response did not match the saved AWB. No update was applied.',
     SHIPMENT_CHANGED_RETRY: 'Shipment details changed during lookup. Refresh and retry.',
   };
-  app.get('/admin/carriers', async () => ({ data: carrierCapabilities() }));
+  app.get('/admin/carriers/delhivery/connection', { preHandler: [requireAdmin] }, async (_request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return getCarrierConnection();
+  });
+  app.put('/admin/carriers/delhivery/connection', { preHandler: [requireAdmin] }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const parsed = z.object({
+      token: z.string().trim().min(10).max(1024).regex(/^[A-Za-z0-9._-]+$/).optional(),
+      enabled: z.boolean(), autoAssign: z.boolean(), bookingSettings: bookingSettingsSchema.optional(),
+    }).strict().safeParse(request.body);
+    if (!parsed.success || (parsed.data.autoAssign && !parsed.data.bookingSettings)) {
+      return reply.code(400).send({ message: 'Enter a valid API token and complete pickup, tax and parcel settings for automatic shipment creation.' });
+    }
+    try { return await saveCarrierConnection(parsed.data, request.user!.id); }
+    catch { return reply.code(503).send({ message: 'Credentials could not be saved. Configure CARRIER_CREDENTIALS_KEY on the server and retry.' }); }
+  });
+  app.get('/admin/carriers', async () => ({ data: await carrierCapabilities() }));
   app.get<{ Params: { id: string } }>('/admin/orders/:id/fulfilment-history', async (request, reply) => {
     if (!z.string().uuid().safeParse(request.params.id).success) return reply.code(400).send({ error: 'INVALID_ORDER_ID' });
     return { data: (await query('SELECT id,source,previous_status,resulting_status,details,created_at FROM order_fulfilment_events WHERE order_id=$1 ORDER BY created_at DESC LIMIT 100', [request.params.id])).rows };
@@ -1548,7 +1601,7 @@ export async function adminRoutes(app: FastifyInstance) {
           COUNT(*)::int as total_bookings,
           COUNT(*) FILTER (WHERE status = 'completed')::int as completed_bookings,
           COUNT(*) FILTER (WHERE status = 'cancelled')::int as cancelled_bookings,
-          COALESCE(SUM(CASE WHEN status != 'cancelled' THEN total_price ELSE 0 END), 0)::numeric as quoted_value, NULL::numeric as gross_revenue,
+          COALESCE(SUM(CASE WHEN status != 'cancelled' THEN total_price ELSE 0 END), 0)::numeric as gross_revenue,
           ROUND(COALESCE(AVG(CASE WHEN status != 'cancelled' THEN total_price ELSE NULL END), 0), 2)::numeric as avg_ticket_size,
           NULL::numeric as travel_surcharge_collected
         FROM bookings

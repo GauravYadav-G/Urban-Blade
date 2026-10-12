@@ -1,6 +1,7 @@
+import type { TrackedOrder } from '@core/models/shipment-tracking.model';
 import { Injectable, inject, signal, computed, effect, untracked } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, tap, firstValueFrom, Subject, takeUntil } from 'rxjs';
+import { Observable, tap, firstValueFrom, Subject, takeUntil, finalize } from 'rxjs';
 import { AccountService } from './account.service';
 import { CatalogService } from './catalog.service';
 import { ToastService } from './toast.service';
@@ -53,7 +54,7 @@ export interface AdminProduct extends Product {
   availableQuantity?: number;
 }
 
-export interface AdminOrder {
+export interface AdminOrder extends TrackedOrder {
   id: string;
   status: 'accepted' | 'processing' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled' | 'pending';
   subtotal: number;
@@ -354,7 +355,7 @@ export class AdminService {
     return 'Payment Incomplete';
   }
 
-  updateOrderStatus(orderId: string, status: AdminOrder['status'], trackingNumber?: string): void {
+  updateOrderStatus(orderId: string, status: AdminOrder['status'], trackingNumber?: string, onSaved?: (order: AdminOrder) => void): void {
     const existing = this.orders().find((o) => o.id === orderId);
     if (existing && this.isPaymentIncomplete(existing) && (status === 'processing' || status === 'shipped' || status === 'delivered')) {
       this.toast.error(`Cannot advance order #${orderId.slice(0, 8)}: Customer payment is incomplete (${existing.payment_status}).`);
@@ -370,12 +371,13 @@ export class AdminService {
         this.saveOrders(this.orders());
         this.recomputeAndPersistMetrics();
         this.toast.success('Order status updated.');
+        onSaved?.(res.order);
       },
       error: (err) => this.toast.error(err.error?.message || 'Unable to update order. Please try again.'),
     });
   }
 
-  updateOrderDetails(orderId: string, updates: Partial<AdminOrder>): void {
+  updateOrderDetails(orderId: string, updates: Partial<AdminOrder>, onSaved?: (order: AdminOrder) => void): void {
     const order = this.orders().find(item => item.id === orderId);
     if (!order) return;
     this.http.put<{ order: AdminOrder }>(`${API_BASE}/orders/${orderId}/status`, {
@@ -387,6 +389,8 @@ export class AdminService {
       next: response => {
         this.orders.update(list => list.map(item => item.id === orderId ? { ...item, ...response.order } : item));
         this.recomputeAndPersistMetrics();
+        this.toast.success('Order details saved.');
+        onSaved?.(response.order);
       },
       error: error => this.toast.error(error.error?.message || 'Order details could not be saved.'),
     });
@@ -439,9 +443,9 @@ export class AdminService {
     );
   }
 
-  fetchCarrierWebsiteStatus(orderIdOrNumber: string, carrier?: string): Observable<{ ok: boolean; order?: AdminOrder; websiteData: any }> {
+  fetchCarrierWebsiteStatus(orderIdOrNumber: string, carrier?: string): Observable<{ ok: boolean; order?: AdminOrder; websiteData: any; applied?: boolean; reason?: string }> {
     return this.http
-      .post<{ ok: boolean; order?: AdminOrder; websiteData: any }>(
+      .post<{ ok: boolean; order?: AdminOrder; websiteData: any; applied?: boolean; reason?: string }>(
         `${API_BASE}/orders/fetch-carrier-website`,
         { orderIdOrNumber, carrier }
       )
@@ -586,7 +590,7 @@ export class AdminService {
     });
   }
 
-  saveProduct(item: Partial<AdminProduct>): void {
+  saveProduct(item: Partial<AdminProduct>, onSaved?: () => void, onSettled?: () => void): void {
     const slug =
       item.slug ||
       item.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') ||
@@ -603,7 +607,7 @@ export class AdminService {
       description: item.description || '',
       longDescription: item.longDescription || item.description || '',
       highlights: item.highlights || ['Salon Grade', 'Premium Formula'],
-      price: item.price || 499,
+      price: item.price ?? 499,
       compareAtPrice: item.compareAtPrice,
       currency: 'INR',
       imageUrl: item.imageUrl || '/images/products/hc-shampoo.jpg',
@@ -632,25 +636,25 @@ export class AdminService {
     };
 
     const request = item.id ? this.http.put(`${ADMIN_API_BASE}/products/${item.id}`, payload) : this.http.post(`${ADMIN_API_BASE}/products`, payload);
-    request.pipe(takeUntil(this.sessionEnded)).subscribe({
-      next: () => { this.refreshProducts(); void this.catalog.refreshCatalog(); this.toast.success('Product saved.'); },
+    request.pipe(takeUntil(this.sessionEnded), finalize(() => onSettled?.())).subscribe({
+      next: () => { this.refreshProducts(); void this.catalog.refreshCatalog(); this.toast.success('Product saved.'); onSaved?.(); },
       error: error => { this.toast.error(error.error?.message || 'Product could not be saved. Refresh and retry.'); this.refreshProducts(); },
     });
   }
 
   deleteProduct(id: string): void {
-    this.products.update((list) => list.filter((p) => p.id !== id && p.slug !== id));
-    this.catalog.deleteProduct(id);
-    this.saveProducts(this.products());
-    this.recomputeAndPersistMetrics();
-    this.toast.info('Product removed from catalog and database.');
     this.http.delete(`${ADMIN_API_BASE}/products/${id}`).pipe(takeUntil(this.sessionEnded)).subscribe({
-      next: () => void this.catalog.refreshCatalog(),
-      error: () => {
-        this.http.delete(`${PUBLIC_API_BASE}/products/${id}`).pipe(takeUntil(this.sessionEnded)).subscribe({
-          next: () => void this.catalog.refreshCatalog(),
-          error: () => {},
-        });
+      next: () => {
+        this.products.update((list) => list.filter((p) => p.id !== id && p.slug !== id));
+        this.catalog.deleteProduct(id);
+        this.saveProducts(this.products());
+        this.recomputeAndPersistMetrics();
+        void this.catalog.refreshCatalog();
+        this.toast.success('Product removed from catalog and database.');
+      },
+      error: error => {
+        this.toast.error(error.error?.message || 'Product could not be deleted. Refresh and retry.');
+        this.refreshProducts();
       },
     });
   }
@@ -679,6 +683,7 @@ export class AdminService {
   }
 
   setBadge(productId: string, badge: any): void {
+    const previous = this.products().find((product) => product.id === productId || product.slug === productId);
     this.products.update((list) =>
       list.map((p) =>
         p.id === productId || p.slug === productId ? { ...p, badge } : p
@@ -691,14 +696,20 @@ export class AdminService {
     }
 
     this.saveProducts(this.products());
-    this.toast.info(`Product badge updated.`);
     this.http.put(`${ADMIN_API_BASE}/products/${productId}`, { badge }).pipe(takeUntil(this.sessionEnded)).subscribe({
-      next: () => void this.catalog.refreshCatalog(),
-      error: () => {
-        this.http.put(`${PUBLIC_API_BASE}/products/${productId}`, { badge }).pipe(takeUntil(this.sessionEnded)).subscribe({
-          next: () => void this.catalog.refreshCatalog(),
-          error: () => {},
-        });
+      next: () => {
+        void this.catalog.refreshCatalog();
+        this.toast.success('Product badge updated.');
+      },
+      error: error => {
+        if (previous) {
+          this.products.update((list) => list.map((product) =>
+            product.id === previous.id ? previous : product
+          ));
+          this.saveProducts(this.products());
+          this.recomputeAndPersistMetrics();
+        }
+        this.toast.error(error.error?.message || 'Product badge could not be updated.');
       },
     });
   }
@@ -863,7 +874,7 @@ export class AdminService {
   }
 
   refreshOrders(notify = false): void {
-    if (!this.account.isAdmin() && !this.account.isVendor()) return;
+    if ((!this.account.isAdmin() && !this.account.isVendor()) || this.isSyncing()) return;
     const identity = this.account.user();
     this.isSyncing.set(true);
     this.http.get<{ data: any[] }>(`${API_BASE}/orders`).pipe(takeUntil(this.sessionEnded)).subscribe({
@@ -918,11 +929,12 @@ export class AdminService {
               image_url: i.image_url || '/images/products/hc-hair-serum.jpg',
               vendor: i.vendor || undefined,
             })),
-            tracking_number:
-              o.tracking_number ||
-              (((o.status || '').toLowerCase().trim() === 'shipped' || ((o.status || '').toLowerCase().trim() === 'delivered'))
-                ? `TRK-UB-${o.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
-                : undefined),
+            tracking_number: o.tracking_number || undefined,
+            carrier: o.carrier || undefined,
+            tracking_data: o.tracking_data,
+            tracking_checked_at: o.tracking_checked_at,
+            tracking_error: o.tracking_error,
+            tracking_automatic: o.tracking_automatic,
             coupon_code: o.coupon_code || undefined,
             discount_amount: Number(o.discount_amount) || 0,
             shipping_fee: Number(o.shipping_fee) || 0,
@@ -948,11 +960,16 @@ export class AdminService {
     });
   }
 
+  readonly productsLoading = signal(false);
+  readonly productsError = signal(false);
+
   refreshProducts(notify = false): void {
     if (!this.account.isAdmin() && !this.account.isVendor()) return;
     const identity = this.account.user();
+    this.productsLoading.set(true);
+    this.productsError.set(false);
     const fetchFresh = () => {
-      this.http.get<{ data: any[] }>(`${ADMIN_API_BASE}/products?limit=200&t=${Date.now()}`).pipe(takeUntil(this.sessionEnded)).subscribe({
+      this.http.get<{ data: any[] }>(`${ADMIN_API_BASE}/products?limit=200&t=${Date.now()}`).pipe(takeUntil(this.sessionEnded), finalize(() => this.productsLoading.set(false))).subscribe({
         next: (res) => {
           if (identity !== this.account.user()) return;
           if (Array.isArray(res?.data)) {
@@ -991,7 +1008,7 @@ export class AdminService {
             }
           }
         },
-        error: () => this.toast.error('Inventory could not be loaded. Please retry.'),
+        error: () => { this.productsError.set(true); this.toast.error('Inventory could not be loaded. Please retry.'); },
       });
     };
 

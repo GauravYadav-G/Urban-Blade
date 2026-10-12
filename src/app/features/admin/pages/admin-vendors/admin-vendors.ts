@@ -243,8 +243,13 @@ export class AdminVendors {
    * Impersonate / Preview as Vendor in 1 Click
    */
   impersonateVendor(vendor: VendorAccount): void {
-    this.account.switchVendorPreview(vendor.name, vendor.id);
-    this.toast.info(`🔐 Switched to ${vendor.name} Portal View. Scoped access applied.`);
-    void this.router.navigate(['/admin/dashboard']);
+    void this.account.switchVendorPreview(vendor.name, vendor.id).then((switched) => {
+      if (!switched) {
+        this.toast.error('Vendor preview could not be started.');
+        return;
+      }
+      this.toast.info(`Switched to ${vendor.name} Portal View. Scoped access applied.`);
+      void this.router.navigate(['/admin/dashboard']);
+    });
   }
 }

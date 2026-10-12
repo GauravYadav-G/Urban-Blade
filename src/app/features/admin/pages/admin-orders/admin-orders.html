@@ -4,14 +4,6 @@
        ═════════════════════════════════════════════════════════════════════════ -->
   <header class="page-header">
     <div class="header-left">
-      <div class="stream-badge-row">
-        <span class="status-indicator live">
-          <span class="pulse-dot"></span> Order management
-        </span>
-        @if (autoPollSeconds() > 0) {
-          <span class="radar-active-tag">Radar: {{ autoPollSeconds() }}s active</span>
-        }
-      </div>
       <h1 class="page-title">Orders &amp; fulfilment</h1>
       <p class="page-subtitle">
         Review payments, manage fulfilment and track customer orders.
@@ -56,7 +48,7 @@
   <section class="telemetry-strip">
     <!-- GMV Revenue -->
     <div class="kpi-card gmv">
-      <div class="kpi-icon-box">₹</div>
+      <div class="kpi-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v18M16.5 7.5c-.8-1-2.2-1.5-4.2-1.5-2.4 0-4 1.2-4 3s1.3 2.6 4 3c2.7.4 4 1.4 4 3.2s-1.5 3.3-4.3 3.3c-2 0-3.5-.6-4.5-1.8"/></svg></div>
       <div class="kpi-content">
         <span class="kpi-label">GROSS MERCHANDISE VALUE</span>
         <strong class="kpi-val">₹{{ executiveTelemetry().gmv | number:'1.0-0' }}</strong>
@@ -66,7 +58,7 @@
 
     <!-- Average Order Value (AOV) -->
     <div class="kpi-card aov">
-      <div class="kpi-icon-box">📊</div>
+      <div class="kpi-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5M4 19h16"/><path d="m7 15 3-4 3 2 5-7"/></svg></div>
       <div class="kpi-content">
         <span class="kpi-label">AVERAGE ORDER VALUE</span>
         <strong class="kpi-val">₹{{ executiveTelemetry().aov | number:'1.0-0' }}</strong>
@@ -76,7 +68,7 @@
 
     <!-- Active Logistics Pipeline -->
     <div class="kpi-card pipeline">
-      <div class="kpi-icon-box">🚚</div>
+      <div class="kpi-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg></div>
       <div class="kpi-content">
         <span class="kpi-label">ACTIVE DISPATCH PIPELINE</span>
         <strong class="kpi-val">{{ executiveTelemetry().activePipeline }} active</strong>
@@ -86,7 +78,7 @@
 
     <!-- Fulfilled & Delivered -->
     <div class="kpi-card delivered">
-      <div class="kpi-icon-box">🎉</div>
+      <div class="kpi-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 12 4 4L19 6"/><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/></svg></div>
       <div class="kpi-content">
         <span class="kpi-label">SUCCESSFUL DELIVERIES</span>
         <strong class="kpi-val">{{ executiveTelemetry().deliveredCount }} delivered</strong>
@@ -96,7 +88,7 @@
 
     <!-- SLA Aging Radar -->
     <div class="kpi-card sla" [class.alert]="executiveTelemetry().delayedSlaCount > 0">
-      <div class="kpi-icon-box">⏱️</div>
+      <div class="kpi-icon-box" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="13" r="7"/><path d="M12 9v4l2.5 1.5M9 3h6M12 3v3"/></svg></div>
       <div class="kpi-content">
         <span class="kpi-label">SLA DISPATCH ATTENTION</span>
         <strong class="kpi-val">{{ executiveTelemetry().delayedSlaCount }} overdue</strong>
@@ -148,7 +140,7 @@
         </button>
 
         <button type="button" class="btn-bulk clear" (click)="clearSelection()" title="Clear multi-selection">
-          ✕ Cancel
+          Cancel
         </button>
       </div>
     </div>
@@ -160,14 +152,14 @@
   <div class="carrier-web-fetch-bar">
     <div class="cwf-header">
       <div class="cwf-title-group">
-        <span class="cwf-tag">🌐 LIVE CARRIER PORTAL WEB-FETCHING</span>
+        <span class="cwf-tag">CARRIER STATUS</span>
         <h3 class="cwf-title">Direct Public Portal Scraper &amp; Status Synchronizer</h3>
         <p class="cwf-sub">
-          Scrapes and fetches package tracking checkpoints in real-time directly from official carrier websites (Delhivery, BlueDart, DTDC, Urban Express). No API credentials required.
+          Verifies shipment checkpoints through the configured carrier integration. Public carrier pages that require CAPTCHA or JavaScript are opened for manual verification.
         </p>
       </div>
       <div class="cwf-sources-badge">
-        <span>Verified Sources: Delhivery · BlueDart · DTDC · Urban Express</span>
+        <span>API verification where configured · portal review where required</span>
       </div>
     </div>
 
@@ -185,7 +177,8 @@
 
       <div class="cwf-portal-select-wrap">
         <select [ngModel]="selectedCarrierPortal()" (ngModelChange)="selectedCarrierPortal.set($event)" class="cwf-select">
-          <option value="auto">🌐 Auto-Detect Website</option>
+          <option value="auto">Auto-detect carrier</option>
+          <option value="Shiprocket">Shiprocket Portal</option>
           <option value="Delhivery Express">Delhivery Web Portal</option>
           <option value="BlueDart Express">BlueDart Web Portal</option>
           <option value="DTDC Air">DTDC Web Portal</option>
@@ -287,7 +280,7 @@
         <div class="sub-filter-pills">
           <button type="button" [class.active]="selectedPaymentFilter() === 'all'" (click)="selectedPaymentFilter.set('all')">All Pay</button>
           <button type="button" [class.active]="selectedPaymentFilter() === 'paid'" (click)="selectedPaymentFilter.set('paid')">✓ Paid</button>
-          <button type="button" [class.active]="selectedPaymentFilter() === 'incomplete'" (click)="selectedPaymentFilter.set('incomplete')" [class.has-incomplete]="incompleteOrdersCount() > 0">⚠️ Incomplete ({{ incompleteOrdersCount() }})</button>
+          <button type="button" [class.active]="selectedPaymentFilter() === 'incomplete'" (click)="selectedPaymentFilter.set('incomplete')" [class.has-incomplete]="incompleteOrdersCount() > 0">Incomplete ({{ incompleteOrdersCount() }})</button>
           <button type="button" [class.active]="selectedPaymentFilter() === 'prepaid'" (click)="selectedPaymentFilter.set('prepaid')">Prepaid</button>
           <button type="button" [class.active]="selectedPaymentFilter() === 'cod'" (click)="selectedPaymentFilter.set('cod')">COD</button>
         </div>
@@ -301,7 +294,7 @@
             [class.has-delayed]="executiveTelemetry().delayedSlaCount > 0"
             title="Filter to orders pending dispatch > 24 hours"
           >
-            ⚡ Delayed SLA ({{ executiveTelemetry().delayedSlaCount }})
+            Delayed SLA ({{ executiveTelemetry().delayedSlaCount }})
           </button>
           <button
             type="button"
@@ -309,7 +302,7 @@
             (click)="selectedUrgencyFilter.set(selectedUrgencyFilter() === 'high_value' ? 'all' : 'high_value')"
             title="Filter to VIP orders over ₹2,000"
           >
-            👑 VIP &ge;₹2k ({{ executiveTelemetry().highValueCount }})
+            High value &ge;₹2k ({{ executiveTelemetry().highValueCount }})
           </button>
         </div>
       </div>
@@ -318,7 +311,7 @@
         <!-- Timeframe Selector -->
         <div class="select-wrapper">
           <select [ngModel]="selectedTimeFilter()" (ngModelChange)="selectedTimeFilter.set($event)" class="time-select">
-            <option value="all">📅 All Time</option>
+            <option value="all">All time</option>
             <option value="today">Today (24h)</option>
             <option value="7days">Last 7 Days</option>
             <option value="month">This Month</option>
@@ -408,24 +401,9 @@
                 <div class="ref-cell">
                   <div class="ref-id-row">
                     <span class="order-id-badge">#{{ order.id.slice(0, 10) }}</span>
-                    @if (order.payment_status === 'refunded') {
-                      <span class="pay-status-pill pay-status-pill--refunded">Refunded</span>
-                    } @else if (admin.isPaymentIncomplete(order)) {
-                      <span class="unpaid-badge" title="Customer checkout initiated but payment has not been captured">
-                        ⚠️ Incomplete Pay
-                      </span>
-                    }
-                    @if (isDelayed(order)) {
-                      <span class="sla-warning-pill" title="Order delayed: placed >24 hours ago without dispatch!">
-                        ⚡ &gt;24h Delay
-                      </span>
-                    }
-                    @if (isHighValue(order)) {
-                      <span class="vip-badge" title="High value VIP order &ge; ₹2,000">👑 VIP</span>
-                    }
                   </div>
                   <span class="order-time">{{ order.created_at | date:'mediumDate' }} • {{ order.created_at | date:'shortTime' }}</span>
-                  <span class="carrier-tag">{{ order.carrier || 'Urban Express' }}</span>
+                  <span class="carrier-name">{{ order.carrier || 'Urban Express' }}</span>
                 </div>
               </td>
 
@@ -445,12 +423,12 @@
                         (click)="openWhatsApp(order, $event)"
                         title="Send WhatsApp notification to customer"
                       >
-                        💬
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9.6 9.6 0 0 1-4-.9L3 20l1.4-4A8.2 8.2 0 0 1 3 11.5 8.5 8.5 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>
                       </button>
                     </div>
                     <span class="customer-city">{{ order.shipping_address.city || 'Ghaziabad' }}</span>
                     <span class="customer-phone" (click)="copyCustomerPhone(order.shipping_address.phone, $event)" title="Click to copy phone">
-                      📞 {{ order.shipping_address.phone || 'N/A' }}
+                      {{ order.shipping_address.phone || 'N/A' }}
                     </span>
                   </div>
                 </div>
@@ -490,15 +468,15 @@
                 <div class="payment-cell">
                   <div class="pay-method-row">
                     <span class="pay-badge" [class.upi]="order.payment_method === 'upi' || order.payment_method === 'Razorpay'" [class.cod]="order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery'">
-                      {{ (order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery') ? '💵 COD' : '💳 ' + (order.payment_method || 'Prepaid') }}
+                      {{ (order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery') ? 'COD' : (order.payment_method || 'Prepaid') }}
                     </span>
                     @if (admin.isPaymentIncomplete(order)) {
                       <span class="pay-status-pill pay-status-pill--incomplete" title="Payment pending confirmation / abandoned">
-                        ⚠️ Incomplete
+                        Incomplete
                       </span>
                     } @else if (admin.isPaymentFailed(order)) {
                       <span class="pay-status-pill pay-status-pill--failed" title="Payment transaction failed">
-                        ✕ Failed
+                        Failed
                       </span>
                     } @else if (admin.isPaymentPaid(order)) {
                       <span class="pay-status-pill pay-status-pill--paid" title="Payment received">
@@ -544,7 +522,7 @@
                     </div>
                     <div class="pipeline-label-row">
                       <span class="status-pill status-pill--awaiting-payment">
-                        ⚠️ Awaiting Payment
+                          Awaiting payment
                       </span>
                     </div>
                   } @else {
@@ -568,7 +546,7 @@
                           (click)="copyTrackingNumber(order.tracking_number, $event)"
                           [title]="'Click to copy tracking code: ' + order.tracking_number"
                         >
-                          <span class="trk-icon">🚚</span>
+                          <span class="trk-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg></span>
                           <span class="trk-text">{{ order.tracking_number }}</span>
                           @if (copiedTrackingId() === order.tracking_number) {
                             <span class="trk-copied">✓</span>
@@ -585,7 +563,7 @@
                 <div class="actions-cell">
                   @if (admin.isPaymentIncomplete(order)) {
                     <span class="unpaid-action-tag" title="Customer payment is incomplete. Dispatch is locked.">
-                      ⚠️ Awaiting Payment
+                        Awaiting payment
                     </span>
                   } @else {
                     @let action = getNextStageAction(order);
@@ -596,7 +574,6 @@
                         (click)="advanceStatus(order, $event)"
                         [title]="'Advance order: ' + action.label"
                       >
-                        <span class="btn-icon">{{ action.icon }}</span>
                         <span class="btn-text">{{ action.label }}</span>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                           <polyline points="9 18 15 12 9 6"></polyline>
@@ -617,7 +594,8 @@
                   }
                   <!-- 1-Click WhatsApp -->
                   <button class="icon-btn wa-btn" (click)="openWhatsApp(order, $event)" title="Notify customer on WhatsApp">
-                    💬
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9.6 9.6 0 0 1-4-.9L3 20l1.4-4A8.2 8.2 0 0 1 3 11.5 8.5 8.5 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>
+                    <span class="sr-only">WhatsApp</span>
                   </button>
 
                   <!-- 1-Click Shipping Label -->
@@ -642,7 +620,7 @@
                     (click)="fetchSingleOrderWebsite(order, $event)"
                     title="Scrape and fetch live status directly from carrier public portal"
                   >
-                    🌐
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
                   </button>
 
                   <!-- Direct External Carrier Web Page Link -->
@@ -692,10 +670,10 @@
             <div class="modal-badge-row">
               <span class="order-tag">Order Inspector</span>
               @if (isDelayed(o)) {
-                <span class="sla-warning-pill">⚡ Delayed &gt; 24h</span>
+                <span class="sla-warning-pill">Delayed &gt; 24h</span>
               }
               @if (isHighValue(o)) {
-                <span class="vip-badge">👑 VIP</span>
+                <span class="vip-badge">High value</span>
               }
             </div>
             <h2 class="modal-id">#{{ o.id }}</h2>
@@ -709,10 +687,12 @@
           </button>
         </div>
 
+        <app-shipment-tracking [order]="o" />
+
         <!-- Incomplete Payment High-Priority Alert Banner -->
         @if (admin.isPaymentIncomplete(o)) {
           <div class="inspector-unpaid-banner">
-            <span class="banner-icon">⚠️</span>
+            <span class="banner-icon" aria-hidden="true">!</span>
             <div class="banner-text">
               <strong class="banner-title">Customer Payment Incomplete ({{ o.payment_status | uppercase }})</strong>
               <p class="banner-desc">
@@ -749,7 +729,7 @@
             </div>
             @if (admin.isPaymentIncomplete(o)) {
               <span class="btn-fast-advance unpaid-blocked" title="Cannot advance while payment is incomplete">
-                <span class="adv-icon">⚠️</span>
+                <span class="adv-icon" aria-hidden="true">!</span>
                 <span class="adv-label">Awaiting Payment</span>
               </span>
             } @else if (getNextStatus(o.status); as nextSt) {
@@ -845,7 +825,7 @@
           @if (o.tracking_number || o.status === 'shipped' || o.status === 'delivered') {
             <div class="tracking-action-bar">
               <div class="tracking-left">
-                <div class="tracking-carrier-icon">🚚</div>
+                <div class="tracking-carrier-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg></div>
                 <div class="tracking-info-col">
                   <span class="tracking-carrier-title">{{ o.carrier || 'Urban Express Logistics' }} • Live Consignment Tracking</span>
                   <div class="tracking-code-capsule">
@@ -1009,7 +989,7 @@
         <div class="modal-footer">
           <!-- WhatsApp Trigger Button -->
           <button type="button" class="modal-action-btn wa-action-btn" (click)="openWhatsApp(o)">
-            <span>💬 Notify via WhatsApp</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9.6 9.6 0 0 1-4-.9L3 20l1.4-4A8.2 8.2 0 0 1 3 11.5 8.5 8.5 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg><span>Notify via WhatsApp</span>
           </button>
 
           <!-- Shipping Label Trigger Button -->
@@ -1031,7 +1011,7 @@
 
           @if (admin.isPaymentIncomplete(o)) {
             <button class="modal-action-btn advance unpaid-locked" disabled title="Dispatch is locked until payment is captured">
-              <span class="adv-btn-icon">⚠️</span>
+              <span class="adv-btn-icon" aria-hidden="true">!</span>
               <span>Payment Incomplete (Dispatch Locked)</span>
             </button>
           } @else if (getNextStatus(o.status); as nextSt) {
@@ -1284,9 +1264,9 @@
         <div class="modal-header">
           <div class="modal-title-box">
             <div class="modal-badge-row">
-              <span class="carrier-badge-pill">🌐 Public Web Scraping Stream</span>
+              <span class="carrier-badge-pill">Carrier verification</span>
               <span class="carrier-sync-source-pill" [class.live]="tm.websiteData.source === 'live_web_fetch'">
-                {{ tm.websiteData.source === 'live_web_fetch' ? '● Real-Time Portal Sync' : '● Authentic Stream Synced' }}
+                {{ tm.websiteData.source === 'live_web_fetch' ? '● Portal Fetch' : '● Carrier API Verification' }}
               </span>
             </div>
             <h2 class="modal-id">{{ tm.websiteData.carrier }} Tracking</h2>
@@ -1306,10 +1286,10 @@
             <div class="ctm-status-left">
               <span class="ctm-status-icon">
                 @switch (tm.websiteData.status) {
-                  @case ('delivered') { ✅ }
-                  @case ('shipped') { 🚚 }
-                  @case ('processing') { 📦 }
-                  @default { ⏳ }
+                  @case ('delivered') { <span aria-hidden="true">✓</span> }
+                  @case ('shipped') { <span aria-hidden="true">In transit</span> }
+                  @case ('processing') { <span aria-hidden="true">Packing</span> }
+                  @default { <span aria-hidden="true">Pending</span> }
                 }
               </span>
               <div class="ctm-status-info">

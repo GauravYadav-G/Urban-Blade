@@ -1,4 +1,5 @@
 <div class="admin-shell">
+  <a class="admin-skip-link" href="#admin-main-content" (click)="$event.preventDefault(); mainContent.focus()">Skip to main content</a>
   <!-- Vendor Impersonation Top Banner -->
   @if (account.isImpersonatingVendor()) {
     <div class="vendor-impersonation-banner">
@@ -104,7 +105,7 @@
             <input
               #searchInput
               type="text"
-              placeholder="Search for orders, catalog, tasks..."
+              placeholder="Search orders or products…"
               aria-label="Global admin search"
               [ngModel]="globalSearchQuery()"
               (ngModelChange)="globalSearchQuery.set($event)"
@@ -118,7 +119,7 @@
             type="button"
             class="circle-action-btn"
             (click)="isSupportChatOpen.set(true)"
-            title="Open AI Support Desk"
+            title="Open AI Support Desk" aria-label="Open support desk"
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
@@ -159,7 +160,7 @@
       </header>
 
       <!-- Main Content Canvas -->
-      <main class="admin-content">
+      <main #mainContent id="admin-main-content" tabindex="-1" class="admin-content">
         <div class="canvas-wrapper">
           <router-outlet />
         </div>

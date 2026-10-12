@@ -667,3 +667,16 @@
   .welcome-box .welcome-greeting { font-size: 1rem; }
   .vendor-impersonation-banner .banner-content { flex-wrap: wrap; }
 }
+
+@media (max-width: 768px) {
+  .admin-sidebar:not(.open) { visibility: hidden; }
+  .admin-sidebar.open { visibility: visible; }
+  .admin-topbar { flex-wrap: wrap; }
+  .topbar-right { flex-wrap: wrap; }
+}
+@media (max-width: 1100px) {
+  .admin-topbar { flex-wrap: wrap; }
+  .topbar-right { flex: 1 1 100%; }
+  .topbar-search { display: flex; flex: 1; width: auto; min-width: 0; }
+  .session-pill.warning { display: inline-flex; }
+}

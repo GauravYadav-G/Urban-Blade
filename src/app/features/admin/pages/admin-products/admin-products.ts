@@ -1,3 +1,5 @@
+import { ActivatedRoute } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -22,6 +24,7 @@ export class AdminProducts implements OnInit {
   readonly selectedStockFilter = signal<'all' | 'in-stock' | 'low-stock' | 'out-of-stock'>('all');
 
   readonly drawerOpen = signal(false);
+  readonly saving = signal(false);
   readonly editingProduct = signal<AdminProduct | null>(null);
 
   availableStock(product: AdminProduct): number {
@@ -34,6 +37,12 @@ export class AdminProducts implements OnInit {
 
   isAvailable(product: AdminProduct): boolean {
     return product.inStock && this.availableStock(product) > 0;
+  }
+
+  constructor() {
+    inject(ActivatedRoute).queryParamMap.pipe(takeUntilDestroyed()).subscribe(params => {
+      this.searchQuery.set(params.get('q') || '');
+    });
   }
 
   ngOnInit(): void {
@@ -88,9 +97,9 @@ export class AdminProducts implements OnInit {
     if (q) {
       list = list.filter(
         (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.description.toLowerCase().includes(q) ||
-          p.vendor.toLowerCase().includes(q)
+          (p.name || '').toLowerCase().includes(q) ||
+          (p.description || '').toLowerCase().includes(q) ||
+          (p.vendor || '').toLowerCase().includes(q)
       );
     }
     return list;
@@ -129,14 +138,16 @@ export class AdminProducts implements OnInit {
   }
 
   closeDrawer(): void {
-    this.drawerOpen.set(false);
+    if (!this.saving()) this.drawerOpen.set(false);
   }
 
   onSave(product: Partial<AdminProduct>): void {
+    if (this.saving()) return;
     if (this.account.isVendor() && this.account.activeVendorName()) {
       product.vendor = this.account.activeVendorName()!;
     }
-    this.admin.saveProduct(product);
+    this.saving.set(true);
+    this.admin.saveProduct(product, () => this.drawerOpen.set(false), () => this.saving.set(false));
   }
 
   onDelete(p: AdminProduct): void {
@@ -169,7 +180,15 @@ export class AdminProducts implements OnInit {
     document.body.removeChild(link);
   }
 
+  resetFilters(): void {
+    this.searchQuery.set('');
+    this.selectedCategory.set('all');
+    this.selectedKind.set('all');
+    this.selectedStockFilter.set('all');
+  }
+
   batchRestock(amount = 25): void {
+    if (!this.filteredProducts().length || !confirm(`Add ${amount} units to each of ${this.filteredProducts().length} matching products?`)) return;
     this.filteredProducts().forEach((p) => {
       this.admin.updateStock(p.id, amount);
     });

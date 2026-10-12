@@ -1,3 +1,5 @@
+import { getCarrierConnection } from './carrier-connection.service.js';
+import { trackingAutomatic } from './carrier-portal.service.js';
 import { reconcileOrderPayment } from './payment-reconciliation.service.js';
 import type { PoolClient } from 'pg';
 import { FastifyInstance, FastifyRequest } from 'fastify';
@@ -664,7 +666,7 @@ export async function ordersRoutes(app: FastifyInstance) {
             ${totalSelect} AS total_amount,
             ${isVendorView ? '0::numeric' : 'o.discount_amount::numeric'} AS discount_amount,
             o.coupon_code,
-            o.tracking_number,
+            o.tracking_number, o.carrier, o.tracking_data, o.tracking_checked_at, o.tracking_error,
             o.currency,
             o.payment_method,
             o.payment_status, o.return_status, o.return_reason, o.return_review_note, o.refund_status, o.refund_amount, o.refunded_at,
@@ -722,8 +724,10 @@ export async function ordersRoutes(app: FastifyInstance) {
 
         sql += ` GROUP BY o.id ORDER BY o.created_at DESC LIMIT 50; `;
         const res = await query(sql, params);
+        const connection = await getCarrierConnection();
         const mapped = res.rows.map((r) => ({
           ...r,
+          tracking_automatic: trackingAutomatic(r, connection.configured && connection.enabled),
           subtotal: Number(r.subtotal),
           total_amount: Number(r.total_amount),
           discount_amount: Number(r.discount_amount || 0),

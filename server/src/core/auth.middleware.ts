@@ -11,6 +11,7 @@ export interface AuthUser {
   phone?: string | null;
   vendorId?: string;
   vendorName?: string;
+  isImpersonated?: boolean;
 }
 
 declare module '@fastify/jwt' {

@@ -1,3 +1,4 @@
+import { startCarrierTrackingWorker } from './modules/orders/carrier-tracking.worker.js';
 import { stylistsRoutes } from './modules/admin/stylists.routes.js';
 import { financeAuditRoutes } from './modules/admin/finance-audit.routes.js';
 import { inventoryRoutes } from './modules/admin/inventory.routes.js';
@@ -130,6 +131,8 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // ─── 7. INITIALIZE BACKGROUND SAGA QUEUES & CLEANUP TASKS ─────────────────
   startAbandonedCheckoutReaper();
+  const stopCarrierTracking = startCarrierTrackingWorker(app.log);
+  app.addHook('onClose', async () => { await stopCarrierTracking(); });
 
 
   // Root welcome route

@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { query } from '../../db/pool.js';
 import { getOrSetCache, invalidateCatalog } from '../../redis/cache.service.js';
+import { requireAdmin } from '../../core/auth.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -319,7 +320,7 @@ export async function productsRoutes(app: FastifyInstance) {
   app.put<{
     Params: { id: string };
     Body: any;
-  }>('/products/:id', async (request, reply) => {
+  }>('/products/:id', { preHandler: [requireAdmin] }, async (request, reply) => {
     const { id } = request.params;
     const b: any = request.body || {};
     const cleanId = id.replace(/^(hc|bd|sk|tl|gf|sv)-/, '');

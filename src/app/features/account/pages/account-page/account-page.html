@@ -205,7 +205,7 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                     <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                   </svg>
-                  <span>Track with AI</span>
+                  <span>Track shipment</span>
                 </button>
               </div>
             </div>
@@ -514,7 +514,7 @@
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
                         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                       </svg>
-                      <span>Track with AI</span>
+                      <span>Track shipment</span>
                     </button>
                   </div>
                 </div>
@@ -1007,7 +1007,7 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
             </svg>
-            <span>LIVE CARRIER RADAR</span>
+            <span>SHIPMENT TRACKING</span>
           </div>
           <h3>Order #{{ trkOrder.id.slice(0, 8).toUpperCase() }}</h3>
         </div>
@@ -1015,48 +1015,8 @@
       </div>
 
       <div class="atm-body">
-        <div class="atm-status-strip">
-          <span class="atm-status {{ trkOrder.status }}">{{ trkOrder.status | uppercase }}</span>
-          <span class="atm-carrier">Carrier: <strong>Delhivery Air Express</strong></span>
-        </div>
-
-        <div class="atm-carrier-card">
-          <div class="acc-row">
-            <span>Tracking AWB:</span>
-            <strong class="awb-code" (click)="copyTracking(trkOrder.tracking_number, $event)" title="Click to copy">
-              {{ trkOrder.tracking_number || 'TRK-UB-EXPRESS' }}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
-            </strong>
-          </div>
-          <div class="acc-row">
-            <span>Estimated Handover:</span>
-            <strong>Tomorrow by 6:00 PM</strong>
-          </div>
-          <div class="acc-row">
-            <span>Delivery Destination:</span>
-            <span>{{ trkOrder.shipping_address?.city || 'Ghaziabad' }}, {{ trkOrder.shipping_address?.state || 'Uttar Pradesh' }}</span>
-          </div>
-        </div>
-
-        <div class="atm-ai-insight">
-          <div class="ai-badge-row">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-            </svg>
-            <strong>Urban AI Concierge Checkpoint:</strong>
-          </div>
-          @if (isFetchingAiTrack()) {
-            <div class="ai-pulse-loading">
-              <span class="spin-mini"></span>
-              <span>Syncing live transit telemetry from carrier hub...</span>
-            </div>
-          } @else {
-            <p>{{ aiTrackingInsight() }}</p>
-          }
-        </div>
+        <p>Order status: {{ trkOrder.status | uppercase }}</p>
+        <app-shipment-tracking [order]="trkOrder" />
       </div>
 
       <div class="atm-footer">

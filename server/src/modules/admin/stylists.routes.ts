@@ -71,6 +71,7 @@ export async function stylistsRoutes(app: FastifyInstance) {
       if (isVendor && vendorName) {
         const counts = (await client.query(`SELECT
           (SELECT COUNT(DISTINCT o.id)::int FROM orders o JOIN order_items oi ON oi.order_id = o.id JOIN products pr ON pr.id = oi.product_id WHERE LOWER(pr.vendor) = LOWER($1)) AS orders,
+          (SELECT COUNT(*)::int FROM products WHERE LOWER(vendor) = LOWER($1)) AS product_count,
           0::int AS bookings_today,
           0::int AS unassigned,
           (SELECT COUNT(*)::int FROM products WHERE LOWER(vendor) = LOWER($1) AND stock_quantity - stock_reserved <= 15) AS low_stock,

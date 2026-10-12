@@ -1,5 +1,8 @@
+import { ShipmentTrackingComponent } from '@shared/components/shipment-tracking/shipment-tracking';
+import { ActivatedRoute } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
-import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
+import { Component, inject, signal, computed, effect, untracked, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminService, type AdminOrder } from '@core/services/admin.service';
@@ -10,7 +13,7 @@ import { OrderInvoice } from '@shared/components/order-invoice/order-invoice';
 @Component({
   selector: 'app-admin-orders',
   standalone: true,
-  imports: [CommonModule, FormsModule, OrderInvoice],
+  imports: [CommonModule, FormsModule, OrderInvoice, ShipmentTrackingComponent],
   templateUrl: './admin-orders.html',
   styleUrl: './admin-orders.scss',
 })
@@ -57,14 +60,16 @@ export class AdminOrders implements OnInit, OnDestroy {
   readonly tempNotes = signal<string>('');
 
   // Auto-Polling Interval (0 = Off, 15 = 15s, 30 = 30s)
-  readonly autoPollSeconds = signal<number>(0);
+  readonly autoPollSeconds = signal<number>(15);
   private pollTimer: any = null;
 
   // Available Carriers
   readonly carrierOptions = [
     'Urban Express Logistics',
+    'Shiprocket',
     'BlueDart Express',
     'Delhivery Surface',
+    'Delhivery Express',
     'DTDC Air',
     'Porter Local',
   ];
@@ -79,9 +84,28 @@ export class AdminOrders implements OnInit, OnDestroy {
   readonly manualQuantity = signal(1);
   readonly manualPaymentMethod = signal<'UPI' | 'Cash' | 'Card'>('UPI');
 
+  constructor() {
+    effect(() => {
+      const orders = this.admin.orders();
+      untracked(() => {
+        const selected = this.selectedOrder();
+        if (selected) this.selectedOrder.set(orders.find(order => order.id === selected.id) || null);
+        const telemetry = this.websiteTelemetryModal();
+        if (telemetry) {
+          const order = orders.find(order => order.id === telemetry.order.id);
+          if (order?.tracking_data) this.websiteTelemetryModal.set({ order, websiteData: order.tracking_data });
+        }
+      });
+    });
+    inject(ActivatedRoute).queryParamMap.pipe(takeUntilDestroyed()).subscribe(params => {
+      this.searchQuery.set(params.get('q') || '');
+    });
+  }
+
   ngOnInit(): void {
     this.admin.refreshOrders();
     this.admin.refreshVendors();
+    this.setAutoPoll(15, false);
   }
 
   ngOnDestroy(): void {
@@ -93,13 +117,13 @@ export class AdminOrders implements OnInit, OnDestroy {
   }
 
   // ─── AUTO-POLLING TELEMETRY ───────────────────────────────────────────────
-  setAutoPoll(seconds: number): void {
+  setAutoPoll(seconds: number, notify = true): void {
     this.autoPollSeconds.set(seconds);
     this.stopPolling();
     if (seconds > 0) {
-      this.toast.info(`⚡ Live Radar enabled: auto-syncing every ${seconds}s`);
+      if (notify) this.toast.info(`Automatic refresh enabled: every ${seconds}s`);
       this.pollTimer = setInterval(() => {
-        this.admin.refreshOrders(false);
+        if (typeof document !== 'undefined' && !document.hidden) this.admin.refreshOrders(false);
       }, seconds * 1000);
     } else {
       this.toast.info('Radar auto-sync paused.');
@@ -222,9 +246,9 @@ export class AdminOrders implements OnInit, OnDestroy {
       const now = Date.now();
       list = list.filter((o) => {
         const t = new Date(o.created_at).getTime();
-        if (isNaN(t)) return true;
+        if (isNaN(t) || t > now) return false;
         const diffHours = (now - t) / (1000 * 60 * 60);
-        if (timeFilter === 'today') return diffHours <= 24;
+        if (timeFilter === 'today') return new Date(t).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) === new Date(now).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
         if (timeFilter === '7days') return diffHours <= 24 * 7;
         if (timeFilter === 'month') return diffHours <= 24 * 30;
         return true;
@@ -302,7 +326,7 @@ export class AdminOrders implements OnInit, OnDestroy {
 
     orders.forEach((order) => {
       const next = this.getNextStatus(order.status);
-      if (next) {
+      if (next && !this.admin.isPaymentIncomplete(order)) {
         const generatedTracking = (next === 'shipped' || next === 'delivered') && !order.tracking_number
           ? `TRK-UB-${order.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
           : order.tracking_number;
@@ -311,7 +335,7 @@ export class AdminOrders implements OnInit, OnDestroy {
       }
     });
 
-    this.toast.success(`⚡ Batch Operation: Advanced ${advancedCount} order(s) along the dispatch pipeline!`);
+    this.toast.info(`Submitted ${advancedCount} eligible order updates. Each result will be confirmed separately.`);
     this.clearSelection();
   }
 
@@ -322,13 +346,13 @@ export class AdminOrders implements OnInit, OnDestroy {
     let marked = 0;
     const orders = this.admin.orders().filter((o) => ids.includes(o.id));
     orders.forEach((o) => {
-      if (o.status !== 'delivered' && o.status !== 'cancelled') {
+      if (o.status !== 'delivered' && o.status !== 'cancelled' && !this.admin.isPaymentIncomplete(o)) {
         this.admin.updateOrderStatus(o.id, 'delivered');
         marked++;
       }
     });
 
-    this.toast.success(`🎉 Batch Operation: Marked ${marked} order(s) as Delivered!`);
+    this.toast.info(`Submitted ${marked} delivery updates. Each result will be confirmed separately.`);
     this.clearSelection();
   }
 
@@ -346,7 +370,7 @@ export class AdminOrders implements OnInit, OnDestroy {
       }
     });
 
-    this.toast.success(`🚚 Assigned Airway Bill (AWB) tracking codes to ${assigned} order(s)!`);
+    this.toast.info(`Submitted ${assigned} tracking updates. Each result will be confirmed separately.`);
     this.clearSelection();
   }
 
@@ -383,11 +407,32 @@ export class AdminOrders implements OnInit, OnDestroy {
         if (res.ok && res.websiteData) {
           const wd = res.websiteData;
           this.toast.success(
-            `🌐 Fetched from ${wd.carrier} website: Package is ${wd.rawPortalStatus} (${wd.currentLocation}). Order status updated to ${wd.status.toUpperCase()}!`
+            `${wd.source === 'live_web_fetch' ? '🌐 Portal' : '🔗 Carrier API'} verification from ${wd.carrier}: ${wd.rawPortalStatus} (${wd.currentLocation || 'location unavailable'}). ${res.applied ? `Order status updated to ${wd.status?.toUpperCase()}.` : 'No automatic status transition was applied.'}`
           );
           if (res.order) {
             this.websiteTelemetryModal.set({
               order: res.order,
+              websiteData: wd,
+            });
+          } else {
+            const virtualOrder: AdminOrder = {
+              id: wd.awb,
+              tracking_number: wd.awb,
+              carrier: wd.carrier,
+              status: wd.status || 'processing',
+              subtotal: 0,
+              total_amount: 0,
+              discount_amount: 0,
+              currency: 'INR',
+              payment_method: 'Prepaid',
+              payment_status: 'captured',
+              shipping_address: { fullName: 'Consignment Recipient', city: wd.currentLocation || 'In Transit' } as any,
+              items: [],
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            } as any;
+            this.websiteTelemetryModal.set({
+              order: virtualOrder,
               websiteData: wd,
             });
           }
@@ -398,7 +443,8 @@ export class AdminOrders implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.isFetchingWebsite.set(false);
-        this.toast.error(`Carrier website fetch error: ${err.message || 'Unable to connect to portal'}`);
+        const message = err.error?.message || err.error?.error || 'Unable to connect to the carrier portal.';
+        this.toast.error(message);
       },
     });
   }
@@ -413,7 +459,7 @@ export class AdminOrders implements OnInit, OnDestroy {
         if (res.ok && res.websiteData) {
           const wd = res.websiteData;
           this.toast.success(
-            `🌐 Verified with ${wd.carrier} website: #${order.id.slice(0, 8)} is ${wd.rawPortalStatus} @ ${wd.currentLocation}!`
+            `${wd.source === 'live_web_fetch' ? '🌐 Portal' : '🔗 Carrier API'} verification from ${wd.carrier}: #${order.id.slice(0, 8)} is ${wd.rawPortalStatus} @ ${wd.currentLocation || 'location unavailable'}.`
           );
           this.websiteTelemetryModal.set({
             order: res.order || order,
@@ -421,9 +467,10 @@ export class AdminOrders implements OnInit, OnDestroy {
           });
         }
       },
-      error: () => {
+      error: (err) => {
         this.isFetchingWebsite.set(false);
-        this.toast.error('Unable to fetch live status from carrier website.');
+        const message = err.error?.message || err.error?.error || 'Carrier status could not be verified. Check the tracking number, carrier, and connection settings.';
+        this.toast.error(message);
       },
     });
   }
@@ -458,7 +505,7 @@ export class AdminOrders implements OnInit, OnDestroy {
     if (carrier.includes('bluedart')) {
       url = `https://www.bluedart.com/tracking`;
     } else if (carrier.includes('dtdc')) {
-      url = `https://www.dtdc.in/tracking/shipment-tracking.asp?trkType=awb&strCnno=${encodeURIComponent(awb)}`;
+      url = `https://www.dtdc.com/track-your-shipment/`;
     }
     window.open(url, '_blank', 'noopener,noreferrer');
   }
@@ -542,10 +589,9 @@ export class AdminOrders implements OnInit, OnDestroy {
       const generatedTracking = (next === 'shipped' || next === 'delivered') && !order.tracking_number
         ? `TRK-UB-${order.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
         : order.tracking_number;
-      this.admin.updateOrderStatus(order.id, next, generatedTracking);
-      if (this.selectedOrder()?.id === order.id) {
-        this.selectedOrder.update((o) => (o ? { ...o, status: next, tracking_number: generatedTracking || o.tracking_number } : null));
-      }
+      this.admin.updateOrderStatus(order.id, next, generatedTracking, saved => {
+        if (this.selectedOrder()?.id === order.id) this.selectedOrder.set(saved);
+      });
     }
   }
 
@@ -560,10 +606,9 @@ export class AdminOrders implements OnInit, OnDestroy {
     const generatedTracking = (targetStage === 'shipped' || targetStage === 'delivered') && !order.tracking_number
       ? `TRK-UB-${order.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
       : order.tracking_number;
-    this.admin.updateOrderStatus(order.id, targetStage, generatedTracking);
-    if (this.selectedOrder()?.id === order.id) {
-      this.selectedOrder.update((o) => (o ? { ...o, status: targetStage, tracking_number: generatedTracking || o.tracking_number } : null));
-    }
+    this.admin.updateOrderStatus(order.id, targetStage, generatedTracking, saved => {
+        if (this.selectedOrder()?.id === order.id) this.selectedOrder.set(saved);
+      });
   }
 
   // ─── CUSTOMER COMMUNICATION & WHATSAPP ─────────────────────────────────────
@@ -586,11 +631,15 @@ export class AdminOrders implements OnInit, OnDestroy {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
-  copyCustomerPhone(phone: string, event?: Event): void {
+  async copyCustomerPhone(phone: string, event?: Event): Promise<void> {
     event?.stopPropagation();
     if (!phone) return;
-    navigator.clipboard?.writeText(phone);
-    this.toast.success(`Copied customer phone: ${phone}`);
+    try {
+      await navigator.clipboard.writeText(phone);
+      this.toast.success('Customer phone copied.');
+    } catch {
+      this.toast.error('Clipboard unavailable. Select and copy the phone number manually.');
+    }
   }
 
   // ─── ORDER DETAILS INSPECTOR ──────────────────────────────────────────────
@@ -608,11 +657,9 @@ export class AdminOrders implements OnInit, OnDestroy {
     this.admin.updateOrderDetails(order.id, {
       carrier: this.tempCarrier(),
       notes: this.tempNotes(),
+    }, saved => {
+      if (this.selectedOrder()?.id === order.id) this.selectedOrder.set(saved);
     });
-    if (this.selectedOrder()?.id === order.id) {
-      this.selectedOrder.update((o) => (o ? { ...o, carrier: this.tempCarrier(), notes: this.tempNotes() } : null));
-    }
-    this.toast.success(`Updated order #${order.id.slice(0, 8).toUpperCase()} logistics specifications.`);
   }
 
   recordCollection(order: AdminOrder): void {
@@ -715,7 +762,7 @@ export class AdminOrders implements OnInit, OnDestroy {
         this.copiedTrackingId.set(tracking);
         this.toast.success(`📋 Copied tracking code ${tracking} to clipboard!`);
         setTimeout(() => this.copiedTrackingId.set(null), 2500);
-      });
+      }).catch(() => this.toast.error('Clipboard unavailable. Select and copy the tracking number manually.'));
     } else {
       this.toast.info(`Tracking code: ${tracking}`);
     }
@@ -727,11 +774,9 @@ export class AdminOrders implements OnInit, OnDestroy {
     const custom = prompt('Enter Courier Tracking Code / Airway Bill (AWB):', current);
     if (custom && custom.trim() && custom.trim() !== current) {
       const clean = custom.trim().toUpperCase();
-      this.admin.updateOrderStatus(order.id, order.status, clean);
-      if (this.selectedOrder()?.id === order.id) {
-        this.selectedOrder.update((o) => (o ? { ...o, tracking_number: clean } : null));
-      }
-      this.toast.success(`Tracking number updated to ${clean}`);
+      this.admin.updateOrderStatus(order.id, order.status, clean, saved => {
+        if (this.selectedOrder()?.id === order.id) this.selectedOrder.set(saved);
+      });
     }
   }
 

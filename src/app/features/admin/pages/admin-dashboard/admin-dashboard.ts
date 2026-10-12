@@ -9,7 +9,7 @@ import { AccountService } from '@core/services/account.service';
 
 interface Overview {
   asOf: string; days: number;
-  counts: { orders:number; bookings_today:number; unassigned:number; low_stock:number; active_stylists:number };
+  counts: { orders:number; product_count?:number; bookings_today:number; unassigned:number; low_stock:number; active_stylists:number };
   bookings: Array<{id:string; customer_name:string; booking_date:string; time_slot:string; visit_type:string; status:string; total_price:number}>;
   activity: Array<{date:string; orders:number; collected:number}>;
   payments: Array<{status:string; count:number}>;
