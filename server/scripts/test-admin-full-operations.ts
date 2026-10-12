@@ -1,3 +1,4 @@
+import { isolatedAuditDatabase } from './isolated-audit-db.js';
 import { buildApp } from '../src/app.js';
 import { query, pool } from '../src/db/pool.js';
 import type { FastifyInstance } from 'fastify';
@@ -53,6 +54,7 @@ async function runAdminOperationsFullAudit() {
   console.log('║   Testing Every Endpoint, Lifecycle Transition, RBAC Barrier & Quality    ║');
   console.log('╚═══════════════════════════════════════════════════════════════════════════╝\n');
 
+  await isolatedAuditDatabase();
   const app: FastifyInstance = await buildApp();
   await app.ready();
 
@@ -228,6 +230,7 @@ async function runAdminOperationsFullAudit() {
         payload: {
           price: 2699,
           stockQuantity: 90,
+          expectedVersion: Number((await query('SELECT version FROM products WHERE id=$1', [createdProductId])).rows[0].version),
           description: 'Updated premium edition with engraved handle.',
         },
       });

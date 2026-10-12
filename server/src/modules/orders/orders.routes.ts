@@ -1,3 +1,4 @@
+import { reconcileOrderPayment } from './payment-reconciliation.service.js';
 import type { PoolClient } from 'pg';
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import crypto from 'crypto';
@@ -155,17 +156,15 @@ export async function ordersRoutes(app: FastifyInstance) {
     const result = await query('SELECT * FROM orders WHERE id::text = $1 AND user_id = $2', [request.params.orderId, request.user.id]);
     let order = result.rows[0];
     if (!order) return reply.code(404).send({ error: 'ORDER_NOT_FOUND' });
-    if (order.payment_method === 'Razorpay' && order.payment_status !== 'captured') {
-      try {
-        const payments = await paymentGateway().orders.fetchPayments(order.idempotency_key);
-        const paid = payments.items.find(p => p.status === 'captured' || p.status === 'authorized');
-        if (paid) await settleCapturedPayment(paid.id, order.id);
-      } catch (err) {
+    if (order.payment_method === 'Razorpay') {
+      try { order = await reconcileOrderPayment(order.id); }
+      catch (err) {
         request.log.error({ err, orderId: order.id }, 'Payment confirmation pending');
         return reply.code(503).send({ error: 'CONFIRMATION_PENDING', message: 'Payment status is still being checked. Do not pay again.' });
       }
-      order = (await query('SELECT * FROM orders WHERE id = $1', [order.id])).rows[0];
     }
+    if (order.payment_reconciliation_error) return reply.code(409).send({ error: 'FULFILMENT_REVIEW_REQUIRED', message: 'Your payment was received. Inventory is being reviewed; do not pay again. Contact support with this order ID.' });
+    if (order.payment_status === 'refunded') return { refunded: true, pending: false, cancelled: true };
     if (order.payment_status === 'captured' || (order.payment_method === 'Cash on Delivery' && order.status !== 'cancelled')) return { receipt: await orderReceipt(order) };
     return { pending: order.status !== 'cancelled', cancelled: order.status === 'cancelled' };
   });
@@ -372,6 +371,7 @@ export async function ordersRoutes(app: FastifyInstance) {
       await settleCapturedPayment(razorpayPaymentId, orderId);
       const current = await query('SELECT * FROM orders WHERE id = $1', [orderId]);
       const order = current.rows[0];
+      if (order.payment_reconciliation_error) return reply.code(409).send({ error: 'FULFILMENT_REVIEW_REQUIRED', message: 'Payment received. Inventory needs review; do not pay again.' });
       if (order.payment_status !== 'captured' || order.razorpay_payment_id !== razorpayPaymentId) {
         return reply.code(409).send({ error: 'ORDER_NOT_PENDING', message: 'Order requires payment reconciliation. Please contact support.' });
       }
@@ -656,20 +656,20 @@ export async function ordersRoutes(app: FastifyInstance) {
           : 'o.total_amount::numeric';
         const itemScope = isVendorView ? 'AND LOWER(p.vendor) = LOWER($1)' : '';
         let sql = `
-          SELECT 
-            o.id, 
+          SELECT
+            o.id,
             o.user_id,
-            o.status, 
+            o.status,
             ${subtotalSelect} AS subtotal,
             ${totalSelect} AS total_amount,
             ${isVendorView ? '0::numeric' : 'o.discount_amount::numeric'} AS discount_amount,
             o.coupon_code,
             o.tracking_number,
             o.currency,
-            o.payment_method, 
-            o.payment_status, 
+            o.payment_method,
+            o.payment_status, o.return_status, o.return_reason, o.return_review_note, o.refund_status, o.refund_amount, o.refunded_at,
             o.transaction_id,
-            o.shipping_address, 
+            o.shipping_address,
             o.created_at,
             o.updated_at,
             COALESCE(

@@ -57,6 +57,19 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
       return reply.code(503).send({ error: 'AUTH_UNAVAILABLE', message: 'Unable to validate your session. Please retry.' });
     }
 
+    if (request.user.role === 'vendor') {
+      try {
+        const result = await query('SELECT id, name, status FROM vendors WHERE LOWER(email) = LOWER($1)', [request.user.email]);
+        const vendor = result.rows[0];
+        if (!vendor || vendor.status !== 'active') return reply.code(403).send({ error: 'VENDOR_INACTIVE' });
+        request.user.vendorId = vendor.id;
+        request.user.vendorName = vendor.name;
+      } catch (err) {
+        request.log.error({ err }, 'Vendor validation unavailable');
+        return reply.code(503).send({ error: 'AUTH_UNAVAILABLE' });
+      }
+    }
+
     (request as any)._authChecked = true;
   } catch (err: any) {
     return reply.status(401).send({

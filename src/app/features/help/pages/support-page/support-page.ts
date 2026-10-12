@@ -258,6 +258,11 @@ export class SupportPage implements OnInit {
   addToCart(product: any): void {
     if (!product?.id) return;
 
+    if (product.kind === 'service' || product.category === 'services') {
+      void this.router.navigate(['/book'], { queryParams: { service: product.id } });
+      return;
+    }
+
     const p: Product = {
       id: product.id,
       name: product.name,
@@ -270,7 +275,7 @@ export class SupportPage implements OnInit {
       currency: 'INR',
       imageUrl: product.image_url || '/images/products/svc-mens-spa.jpg',
       category: (product.category as any) || 'hair',
-      kind: 'retail',
+      kind: product.kind === 'gift' ? 'gift' : 'retail',
       vendor: 'Urban Blade Flagship',
       audience: 'men',
       rating: Number(product.rating || 4.8),
@@ -318,15 +323,11 @@ export class SupportPage implements OnInit {
 
     const user = this.account.user();
     const defaultService = bk.services?.find((s: any) => s.id === bk.preselectedServiceId) || bk.services?.[0] || {
-      id: 'svc-mens-haircut',
-      name: "Men's Precision Cut & Style",
-      price: 599,
+      id: '',
+      name: '',
+      price: 0,
     };
-    const defaultStylist = bk.stylists?.find((s: any) => s.id === bk.preselectedStylistId) || bk.stylists?.[0] || {
-      id: 'vikram-singh',
-      name: 'Vikram Singh',
-      avatar_url: '/images/team/vikram.jpg',
-    };
+    const defaultStylist = {id:'',name:'',avatar_url:''};
     const defaultDate = bk.preselectedDate || (this.dateOptions()[0]?.dateStr ?? new Date().toISOString().split('T')[0]);
     const defaultSlot = bk.preselectedTimeSlot || '11:00 AM';
 
@@ -432,7 +433,7 @@ export class SupportPage implements OnInit {
     const user = this.account.user();
     const finalName = (form.customerName || user?.name || 'Valued Guest').trim();
     const finalPhone = (form.customerPhone || user?.phone || '').trim();
-    const finalEmail = user?.email || form.customerEmail || 'client@urbanblade.in';
+    const finalEmail = user?.email || form.customerEmail || '';
 
     this.isSubmittingBooking.update((map) => ({ ...map, [msgId]: true }));
     this.bookingError.update((map) => ({ ...map, [msgId]: null }));
@@ -441,13 +442,12 @@ export class SupportPage implements OnInit {
       customerName: finalName,
       customerEmail: finalEmail,
       customerPhone: finalPhone,
-      stylistId: form.stylistId,
       serviceId: form.serviceId,
       serviceName: form.serviceName,
       bookingDate: form.dateStr,
       timeSlot: form.timeSlot,
       totalPrice: form.price,
-      notes: `Direct in-chat reservation via Urban AI Concierge · Barber: ${form.stylistName}`,
+      notes: form.serviceName,
     };
 
     this.http.post<{ id: string; status: string; message: string }>('/api/bookings', payload).subscribe({
@@ -473,7 +473,7 @@ export class SupportPage implements OnInit {
         const receiptMsg: ChatBubble = {
           id: `bkg-confirm-${Date.now()}`,
           sender: 'ai',
-          text: `🎉 Appointment Confirmed!\n\nYour chair is reserved with Master Barber ${form.stylistName} for ${form.serviceName} on ${form.dateStr} at ${form.timeSlot}.\n\nBooking Reference: #${res.id.slice(0, 8).toUpperCase()}`,
+          text: `🎉 Appointment Confirmed!\n\nYour salon visit is reserved for ${form.serviceName} on ${form.dateStr} at ${form.timeSlot}.\n\nBooking Reference: #${res.id.slice(0, 8).toUpperCase()}`,
           timestamp: new Date().toISOString(),
           operation: {
             type: 'salon_booking_confirmed',

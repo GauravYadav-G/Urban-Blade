@@ -3,7 +3,6 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AccountService } from '@core/services/account.service';
-import { ADMIN_ACCOUNT } from '@core/constants/salon.constants';
 
 @Component({
   selector: 'app-admin-login',
@@ -18,7 +17,6 @@ export class AdminLogin {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
 
-  readonly masterCreds = ADMIN_ACCOUNT;
   readonly showPassword = signal(false);
   readonly errorMessage = signal('');
   readonly isSubmitting = signal(false);
@@ -27,27 +25,6 @@ export class AdminLogin {
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(4)]],
   });
-
-  fillMasterAdmin(): void {
-    this.form.setValue({
-      email: ADMIN_ACCOUNT.email,
-      password: ADMIN_ACCOUNT.password,
-    });
-    this.errorMessage.set('');
-  }
-
-  fillVendor(type: 'lab' | 'grooming' | 'tools'): void {
-    const emails: Record<string, string> = {
-      lab: 'lab@urbanblade.in',
-      grooming: 'grooming@urbanblade.in',
-      tools: 'tools@urbanblade.in',
-    };
-    this.form.setValue({
-      email: emails[type] || 'lab@urbanblade.in',
-      password: 'Vendor@2026',
-    });
-    this.errorMessage.set('');
-  }
 
   togglePassword(): void {
     this.showPassword.update((val) => !val);

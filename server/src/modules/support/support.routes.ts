@@ -190,7 +190,7 @@ export async function generateAiReply(
       customerEmail: opts.userEmail,
       orderSummary,
       inStockProducts,
-      stylists,
+      stylists: [],
     });
 
     if (aiText && aiText.length > 10) {
@@ -320,7 +320,7 @@ export async function generateAiReply(
             hours: 'Monday – Sunday: 7:00 AM – 11:00 PM',
             hotline: '+91 90156 18265',
             services,
-            stylists,
+            stylists: [],
           },
         };
         actionChips = [
@@ -667,45 +667,9 @@ export async function generateAiReply(
   );
 
   if (isStylistIntent && !text.includes('book') && !text.includes('appointment')) {
-    action = 'stylist_roster';
-    sentiment = 'positive';
-    confidence = 0.98;
-
-    let stylists: any[] = [];
-    try {
-      const stRes = await query('SELECT id, name, role, rating, avatar_url, bio FROM stylists WHERE is_active = true LIMIT 3');
-      stylists = stRes.rows.map(s => ({
-        id: s.id,
-        name: s.name,
-        role: s.role,
-        rating: Number(s.rating || 4.9),
-        avatar_url: s.avatar_url
-      }));
-    } catch {}
-
-    replyText = `✂️ Meet the Urban Blade Master Stylists Roster:\n\n` +
-      `• Vikram Sharma (Master Barber & Stylist, ★ 4.95): 12+ years of luxury salon precision, razor fades, and textured executive styling.\n` +
-      `• Rohan Verma (Senior Hair Specialist, ★ 4.88): Specialist in modern crop tapers, scalp wellness, and beard architecture.\n` +
-      `• Ayesha Khan (Skin & Esthetics Expert, ★ 4.92): Certified aesthetician focusing on de-tan therapy, high-frequency scalp detox, and luxury facials.\n\n` +
-      `Would you like to reserve your session with one of our master barbers?`;
-
-    operation = {
-      type: 'salon_booking',
-      booking: {
-        stylists,
-        venue: 'Urban Blade Flagship Studio, Sector 63, Noida',
-        hours: 'Monday – Sunday: 7:00 AM – 11:00 PM',
-        hotline: '+91 90156 18265'
-      }
-    };
-
-    actionChips = [
-      { label: '✂️ Reserve with Vikram Sharma', query: 'Book appointment with Vikram Sharma' },
-      { label: '✂️ Reserve with Rohan Verma', query: 'Book appointment with Rohan Verma' },
-      { label: '💈 Salon Rate Card', query: 'What are your haircut prices?' }
-    ];
-
-    return { replyText, action, sentiment, confidence, operation, actionChips };
+    action = 'salon_booking';
+    replyText = 'Our admin team assigns staff to all appointments. Salon bookings do not display stylist names. Home-service bookings show the assigned stylist after assignment. Choose your service, date and time to book.';
+    actionChips = [{label:'Book an appointment',query:'Book appointment'}];
   }
 
   // 5. HAIR FALL, HAIR LOSS, THINNING, BALDNESS & ROSEMARY/BIOTIN PROTOCOL
@@ -792,7 +756,7 @@ export async function generateAiReply(
       `  - True Dandruff: Greasy, yellowish clumped flakes caused by Malassezia yeast overgrowth. Requires salicylic acid and tea tree clarifying.\n` +
       `• The Master Wash Ritual: Lather our Anti-Dandruff Treatment into your scalp, let the botanical lather sit for 3 full minutes before rinsing.\n` +
       `• Flake Reduction Rule: Never scrape with nails; use a soft silicone scalp brush to dislodge buildup without scratching live tissue.\n` +
-      `• Studio Scalp Detox: Book a 45-minute High-Frequency Ozone Scalp Detox with Master Barber Rohan Verma.`;
+      `• Studio Scalp Detox: Book a 45-minute High-Frequency Ozone Scalp Detox with Master Barber our salon team.`;
 
     let products: any[] = [];
     try {
@@ -917,7 +881,7 @@ export async function generateAiReply(
       `1. Microneedling Activation: Use a 0.5mm titanium derma roller once per week across patchy cheek areas. This induces collagen-elastin micro-healing and awakens dormant vellus hair follicles.\n` +
       `2. Follicle Nutrition: Apply Cold-Pressed Rosemary & Cedarwood Beard Growth Serum immediately after rolling and every evening. It stimulates micro-vascular flow to hair roots.\n` +
       `3. Hydration & Protein Lock: Nourish the emerging stubble with non-comedogenic Beard Balm to prevent brittle breakage and patch widening.\n` +
-      `4. In-Studio Beard Sculpt: Let Master Barber Vikram Sharma carve crisp neckline contours so existing density looks 30% thicker immediately.\n\n` +
+      `4. In-Studio Beard Sculpt: Let Master Barber our salon team carve crisp neckline contours so existing density looks 30% thicker immediately.\n\n` +
       `Here are our certified beard growth formulas in stock:`;
 
     let products: any[] = [];
@@ -1391,23 +1355,23 @@ export async function generateAiReply(
     else if (text.includes('6 pm') || text.includes('18:00')) preselectedSlot = '06:00 PM';
     else if (text.includes('7 pm') || text.includes('19:00')) preselectedSlot = '07:00 PM';
 
-    const stylistName = matchedStylist ? matchedStylist.name : 'Vikram Sharma';
+    const stylistName = ''; 
     const serviceName = matchedService ? matchedService.name : "Men's Precision Haircut";
 
     replyText = `✂️ Urban Blade Studio Chair Reservation Desk:\n\n` +
-      `I have loaded your chair options for ${serviceName} with ${stylistName} for ${dateLabel}.\n\n` +
+      `I have loaded your chair options for ${serviceName} for ${dateLabel}.\n\n` +
       `Pick your preferred time slot below and tap **Confirm Chair Reservation** to lock in your appointment with live studio verification.`;
 
     operation = {
       type: 'salon_booking',
       booking: {
-        stylists,
+        stylists: [],
         services,
         venue: 'Urban Blade Flagship Studio, Plot C-12, Sector 63, Noida (Sector 62 Metro)',
         hours: 'Monday – Sunday: 7:00 AM – 11:00 PM',
         hotline: '+91 90156 18265',
         preselectedServiceId: matchedService ? matchedService.id : (services[0]?.id || undefined),
-        preselectedStylistId: matchedStylist ? matchedStylist.id : (stylists[0]?.id || undefined),
+
         preselectedDate,
         preselectedTimeSlot: preselectedSlot
       }
@@ -1524,7 +1488,7 @@ export async function generateAiReply(
       `• 📦 Real-Time Order Tracking (Live scans from Delhivery, BlueDart, DTDC)\n` +
       `• 🚫 1-Click Order Cancellation & Automatic Refund\n` +
       `• 🧴 Clinical Grooming Protocols (Hair fall, dandruff, styling, patchy beard, shaving)\n` +
-      `• ✂️ Studio Rate Card & Reserve Barber Chair (Vikram Sharma & Rohan Verma)\n` +
+      `• ✂️ Studio Rate Card & Reserve Barber Chair (our salon team & our salon team)\n` +
       `• 🛡️ 7-Day Guarantee & 1-Year Hardware Warranty\n\n` +
       `What would you like to explore today?`;
 

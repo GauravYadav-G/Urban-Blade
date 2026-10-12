@@ -1,3 +1,4 @@
+import { isolatedAuditDatabase } from './isolated-audit-db.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -98,6 +99,7 @@ async function runGuidelinesComplianceAudit() {
   // ═════════════════════════════════════════════════════════════════════════
   console.log('\n🔒 PILLAR 2: OWASP ACCESS CONTROL & INJECTION DEFENSE');
 
+  await isolatedAuditDatabase();
   const app: FastifyInstance = await buildApp();
   await app.ready();
 

@@ -41,9 +41,9 @@
     <div class="kpi-card">
       <div class="kpi-icon commission-icon">⚡</div>
       <div class="kpi-info">
-        <span class="kpi-label">Platform Commission</span>
+        <span class="kpi-label">Commission estimate</span>
         <span class="kpi-val">₹{{ totalCommission() | number:'1.0-0' }}</span>
-        <span class="kpi-meta text-amber">Avg 12.4% net margin</span>
+        <span class="kpi-meta text-amber">Current rates, before discounts; see Finance for payable balances</span>
       </div>
     </div>
 
@@ -270,7 +270,7 @@
             </div>
 
             <div class="form-group">
-              <label>Platform Commission (%) *</label>
+              <label>Commission estimate (%) *</label>
               <input type="number" formControlName="commission_rate" min="1" max="50" />
             </div>
 
@@ -329,7 +329,7 @@
             </div>
 
             <div class="form-group">
-              <label>Platform Commission (%) *</label>
+              <label>Commission estimate (%) *</label>
               <input type="number" formControlName="commission_rate" min="1" max="50" />
             </div>
 

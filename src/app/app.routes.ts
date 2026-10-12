@@ -38,6 +38,16 @@ export const routes: Routes = [
           import('./features/admin/pages/admin-orders/admin-orders').then((m) => m.AdminOrders),
       },
       {
+        path: 'refunds',
+        loadComponent: () =>
+          import('./features/admin/pages/admin-refunds/admin-refunds').then((m) => m.AdminRefunds),
+      },
+      {
+        path: 'finance',
+        loadComponent: () =>
+          import('./features/admin/pages/admin-finance/admin-finance').then((m) => m.AdminFinance),
+      },
+      {
         path: 'bookings',
         loadComponent: () =>
           import('./features/admin/pages/admin-bookings/admin-bookings').then((m) => m.AdminBookings),

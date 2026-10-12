@@ -19,6 +19,8 @@ export const adminGuard: CanActivateFn = (route, state) => {
       const url = state.url.toLowerCase();
       const forbiddenForVendors = [
         '/admin/vendors',
+        '/admin/refunds',
+        '/admin/finance',
         '/admin/bookings',
         '/admin/customers',
         '/admin/coupons',

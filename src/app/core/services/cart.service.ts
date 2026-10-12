@@ -1,6 +1,6 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { lineFromProduct, type CartLine } from '@core/models/cart.model';
-import type { Product } from '@core/models/product.model';
+import { isServiceProduct, type Product } from '@core/models/product.model';
 
 export interface CartAddToast {
   productId: string;
@@ -32,7 +32,7 @@ export class CartService {
   mergeServerCart(items: CartLine[]): void {
     const valid = Array.isArray(items)
       ? items
-          .filter(i => i && typeof i.productId === 'string' && Number.isInteger(i.qty) && i.qty > 0 && Number.isFinite(i.unitPrice))
+          .filter(i => i && i.kind !== 'service' && typeof i.productId === 'string' && Number.isInteger(i.qty) && i.qty > 0 && Number.isFinite(i.unitPrice))
           .map(i => ({ ...i, qty: Math.min(i.qty, MAX_CART_QTY) }))
       : [];
     const merged = new Map(valid.map(i => [i.productId, i]));
@@ -42,6 +42,8 @@ export class CartService {
   }
 
   addProduct(product: Product, qty = 1): void {
+    // Appointments belong to the booking flow and must never become cart lines.
+    if (isServiceProduct(product)) return;
     const isOut = !product.inStock || (product.stock_quantity !== undefined && product.stock_quantity <= 0);
     if (isOut || !Number.isInteger(qty) || qty < 1) return;
     qty = Math.min(qty, MAX_CART_QTY);
@@ -141,7 +143,9 @@ export class CartService {
       if (!raw) return [];
       const parsed = JSON.parse(raw) as CartLine[];
       return Array.isArray(parsed)
-        ? parsed.map(l => ({ ...l, qty: Math.min(Math.max(1, Number(l.qty) || 1), MAX_CART_QTY) }))
+        ? parsed
+            .filter(l => l?.kind !== 'service')
+            .map(l => ({ ...l, qty: Math.min(Math.max(1, Number(l.qty) || 1), MAX_CART_QTY) }))
         : [];
     } catch {
       return [];

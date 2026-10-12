@@ -1,3 +1,5 @@
+import { recordGatewayPayment } from './payment-snapshot.service.js';
+import { invalidateCatalog } from '../../redis/cache.service.js';
 import Razorpay from 'razorpay';
 import { config } from '../../config.js';
 import { query, withTransaction } from '../../db/pool.js';
@@ -11,11 +13,13 @@ export function paymentGateway() {
 /** Both browser verification and signed webhooks use provider-confirmed payment data. */
 export async function settleCapturedPayment(paymentId: string, expectedOrderId?: string, gateway = paymentGateway()) {
   let payment = await gateway.payments.fetch(paymentId);
+  await recordGatewayPayment(payment);
   const result = await query("SELECT * FROM orders WHERE idempotency_key = $1 AND payment_method = 'Razorpay'", [payment.order_id]);
   const order = result.rows[0];
   if (!order || (expectedOrderId && order.id !== expectedOrderId)) throw new Error('ORDER_MISMATCH');
   if (payment.status === 'authorized' && Number(payment.amount) === Math.round(Number(order.total_amount) * 100) && payment.currency === order.currency && order.status === 'accepted') {
     payment = await gateway.payments.capture(paymentId, Number(payment.amount), payment.currency);
+    await recordGatewayPayment(payment);
   }
   if (payment.status !== 'captured' || Number(payment.amount) !== Math.round(Number(order.total_amount) * 100) || payment.currency !== order.currency) {
     throw new Error('PAYMENT_NOT_CAPTURED');
@@ -23,10 +27,12 @@ export async function settleCapturedPayment(paymentId: string, expectedOrderId?:
   await withTransaction(async client => {
     const locked = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [order.id]);
     const current = locked.rows[0];
-    if (current.payment_status === 'captured') {
+    if (current.payment_status === 'captured' || current.payment_status === 'refunded') {
       if (current.razorpay_payment_id !== paymentId) throw new Error('PAYMENT_MISMATCH');
       return;
     }
+    await client.query('SAVEPOINT stock_settlement');
+    try {
     // A gateway order can receive a late capture after a local hold expired.
     // Reacquire every item atomically; if unavailable, retain the captured payment
     // for explicit reconciliation instead of reporting it as a failed payment.
@@ -40,6 +46,7 @@ export async function settleCapturedPayment(paymentId: string, expectedOrderId?:
       await client.query("UPDATE stock_reservations SET status = 'active', resolved_at = NULL WHERE order_id = $1 AND status = 'released'", [order.id]);
       await client.query("UPDATE orders SET status = 'accepted', payment_status = 'pending' WHERE id = $1", [order.id]);
     }
+    if (current.status === 'accepted' && current.payment_status === 'failed') await client.query("UPDATE orders SET payment_status = 'pending' WHERE id = $1", [order.id]);
     const claimed = await claimPendingOrder(client, order.id, {
       status: 'confirmed', payment_status: 'captured',
       extraSet: 'transaction_id = $4, razorpay_payment_id = $4', params: [paymentId],
@@ -47,6 +54,18 @@ export async function settleCapturedPayment(paymentId: string, expectedOrderId?:
     if (!claimed) throw new Error('ORDER_REQUIRES_RECONCILIATION');
     const stock = await commitStockReservation(client, order.id);
     if (!stock.activeReservations || stock.unapplied.length) throw new Error('STOCK_COMMIT_FAILED');
+    await client.query('UPDATE orders SET payment_reconciliation_error = NULL, payment_checked_at = NOW() WHERE id = $1', [order.id]);
+    } catch (error) {
+      if (!(error instanceof Error) || !['ORDER_REQUIRES_RECONCILIATION', 'STOCK_COMMIT_FAILED', 'STOCK_LEDGER_INCONSISTENT'].includes(error.message)) throw error;
+      await client.query('ROLLBACK TO SAVEPOINT stock_settlement');
+      // The money is captured even when inventory cannot be fulfilled. Persist
+      // that fact and keep fulfilment blocked so finance never hides the charge.
+      await client.query(`UPDATE orders SET payment_status = 'captured', razorpay_payment_id = $2,
+        transaction_id = $2, payment_reconciliation_error = $3, payment_checked_at = NOW(), updated_at = NOW()
+        WHERE id = $1`, [order.id, paymentId, error.message]);
+    }
+
   });
+  await invalidateCatalog().catch(() => {});
   return order.id;
 }

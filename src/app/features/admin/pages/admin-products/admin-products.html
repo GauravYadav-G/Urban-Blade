@@ -2,13 +2,13 @@
   <!-- Page Header -->
   <div class="page-header">
     <div>
-      <span class="eyebrow">CATALOG & FULFILLMENT ✦ INVENTORY</span>
-      <h1>Manage Products & Services</h1>
+      <span class="eyebrow">CATALOG &amp; INVENTORY</span>
+      <h1>Products &amp; services</h1>
     </div>
     <div class="header-actions">
-      <button type="button" class="btn-ghost-action" (click)="refreshFromDb()" title="Sync live products & inventory from PostgreSQL">
+      <button type="button" class="btn-ghost-action" (click)="refreshFromDb()" title="Refresh products and inventory">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-        <span>Sync DB</span>
+        <span>Refresh</span>
       </button>
 
       <button type="button" class="btn-ghost-action" (click)="exportCSV()">
@@ -85,7 +85,7 @@
       </thead>
       <tbody>
         @for (product of filteredProducts(); track product.id) {
-          <tr [class.is-out]="!product.inStock">
+          <tr [class.is-out]="!isAvailable(product)">
             <!-- Product Item -->
             <td>
               <div class="item-cell">
@@ -124,7 +124,7 @@
                 <button type="button" class="step-btn" (click)="admin.updateStock(product.id, -1)" [disabled]="(product.stock_quantity ?? 0) <= 0">-</button>
                 <span class="stock-display" [class.low]="(product.stock_quantity ?? 0) <= 10" [class.out]="(product.stock_quantity ?? 0) <= 0">
                   {{ product.stock_quantity ?? 0 }} on hand
-                  <small>{{ product.stock_reserved ?? 0 }} reserved · {{ product.availableQuantity ?? product.stock_quantity ?? 0 }} available</small>
+                  <small>{{ product.stock_reserved ?? 0 }} reserved · {{ availableStock(product) }} available</small>
                 </span>
                 <button type="button" class="step-btn" (click)="admin.updateStock(product.id, 10)">+10</button>
               </div>
@@ -149,11 +149,11 @@
               <button
                 type="button"
                 class="toggle-pill"
-                [class.toggle-pill--active]="product.inStock"
+                [class.toggle-pill--active]="product.enabled ?? product.inStock"
                 (click)="admin.toggleInStock(product.id)"
               >
                 <span class="dot"></span>
-                <span>{{ product.inStock ? 'In Stock' : 'Archived' }}</span>
+                <span>{{ (product.enabled ?? product.inStock) ? 'Enabled' : 'Paused' }}</span>
               </button>
             </td>
 

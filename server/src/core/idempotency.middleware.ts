@@ -96,13 +96,14 @@ export async function saveIdempotentResponse(request: FastifyRequest, reply: Fas
       if (reply.statusCode >= 200 && reply.statusCode < 300) {
         await client.query('INSERT INTO checkout_requests(key,fingerprint,status,body) VALUES($1,$2,$3,$4)', [state.key,state.fingerprint,reply.statusCode,payload]);
         await client.query('COMMIT');
+        if (client.catalogChanged) { const { invalidateCatalog } = await import('../redis/cache.service.js'); await invalidateCatalog().catch(() => {}); }
       } else await client.query('ROLLBACK');
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       request.log.error({ err }, 'Checkout transaction failed');
       reply.code(503);
       return JSON.stringify({ error: 'CHECKOUT_RETRY', message: 'Checkout confirmation unavailable. Retry the same checkout request.' });
-    } finally { client.release(); (request as any).checkoutClient = null; }
+    } finally { delete client.catalogChanged; client.release(); (request as any).checkoutClient = null; }
     return payload;
   }
   const isSuccess = reply.statusCode >= 200 && reply.statusCode < 300;

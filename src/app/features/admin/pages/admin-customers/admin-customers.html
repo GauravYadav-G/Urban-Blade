@@ -419,7 +419,7 @@
                   <div class="history-item">
                     <div class="hi-left">
                       <span class="hi-id">{{ bk.time_slot }} · {{ bk.booking_date }}</span>
-                      <span class="hi-date">Stylist: {{ bk.stylist_name || 'Master Barber' }}</span>
+                      <span class="hi-date">{{ bk.visit_type === 'home' ? 'Home visit' : 'Salon visit' }}</span>
                     </div>
                     <div class="hi-right">
                       <span class="hi-amount">₹{{ bk.total_price | number:'1.0-0' }}</span>

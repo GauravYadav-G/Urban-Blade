@@ -59,3 +59,7 @@ export function isProductInStock(product: Product | null | undefined): boolean {
   if (qty !== undefined && qty <= 0) return false;
   return true;
 }
+
+export function isServiceProduct(product: Product | null | undefined): boolean {
+  return product?.kind === 'service' || product?.category === 'services';
+}

@@ -1,24 +1,19 @@
-import { Injectable, inject, signal, computed } from '@angular/core';
+import { Injectable, inject, signal, computed, effect, untracked } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { of, Observable, tap, firstValueFrom } from 'rxjs';
+import { Observable, tap, firstValueFrom, Subject, takeUntil } from 'rxjs';
+import { AccountService } from './account.service';
 import { CatalogService } from './catalog.service';
 import { ToastService } from './toast.service';
 import type { Product } from '@core/models/product.model';
 import type { VendorAccount } from '@core/models/vendor.model';
 import type { SupportInquiry, AdminTask, AiChatResponse } from '@core/models/support.model';
-import {
-  SEED_ADMIN_ORDERS,
-  SEED_ADMIN_BOOKINGS,
-  SEED_ADMIN_CUSTOMERS,
-  SEED_DAILY_METRICS,
-} from '@core/data/admin-seed.data';
 
 export interface AdminMetrics {
   revenue: {
     today: number;
     week: number;
     month: number;
-    trendPercent: number;
+    trendPercent: number | null;
   };
   orders: {
     total: number;
@@ -28,13 +23,13 @@ export interface AdminMetrics {
     delivered: number;
     cancelled: number;
     incompletePayment: number;
-    trendPercent: number;
+    trendPercent: number | null;
   };
   bookings: {
     total: number;
     today: number;
-    occupancyRate: number;
-    trendPercent: number;
+    occupancyRate: number | null;
+    trendPercent: number | null;
   };
   inventory: {
     totalProducts: number;
@@ -51,6 +46,8 @@ export interface DailyMetric {
 }
 
 export interface AdminProduct extends Product {
+  version?: number;
+  enabled?: boolean;
   stock_quantity?: number;
   stock_reserved?: number;
   availableQuantity?: number;
@@ -64,6 +61,17 @@ export interface AdminOrder {
   currency: string;
   payment_method: string;
   payment_status: string;
+  return_status?: 'requested' | 'approved' | 'rejected' | 'received' | null;
+  return_reason?: string;
+  return_review_note?: string;
+  payment_reconciliation_error?: string | null;
+  refund_status?: 'pending' | 'processed' | 'failed' | null;
+  refund_id?: string;
+  refund_amount?: number;
+  refund_reason?: string;
+  refund_requested_at?: string;
+  refunded_at?: string;
+  refund_failure_reason?: string;
   transaction_id?: string;
   gateway_order_id?: string;
   shipping_address: {
@@ -75,6 +83,7 @@ export interface AdminOrder {
   };
   created_at: string;
   items: Array<{
+    product_id?: string;
     product_name: string;
     unit_price: number;
     quantity: number;
@@ -85,6 +94,10 @@ export interface AdminOrder {
   carrier?: string;
   coupon_code?: string;
   discount_amount?: number;
+  shipping_fee?: number;
+  tax_amount?: number;
+  tax_rate_percent?: number;
+  tax_inclusive?: boolean;
   updated_at?: string;
   notes?: string;
 }
@@ -95,6 +108,9 @@ export interface AdminBooking {
   customer_email: string;
   customer_phone: string;
   stylist_name?: string;
+  stylist_id?: string;
+  visit_type?: 'salon' | 'home';
+  service_address?: string | null;
   booking_date: string;
   time_slot: string;
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
@@ -111,6 +127,56 @@ export interface AdminCustomer {
   total_orders: number;
   total_spent: number;
   is_vip?: boolean;
+}
+
+export interface FinancialSummary {
+  macro: {
+    totalGrossRevenue: number;
+    totalProductRetailRevenue: number;
+    totalSalonServicesRevenue: number;
+    totalDiscountsGiven: number;
+    totalOrdersCount: number;
+    totalBookingsCount: number;
+    netPlatformEstimatedMargin: number;
+    payoutLiabilityPayable: number;
+  };
+  productFinancials: Array<{
+    id: string;
+    name: string;
+    category: string;
+    vendor: string;
+    unit_price: number;
+    stock_quantity: number;
+    units_sold: number;
+    gross_revenue: number;
+    platform_margin: number;
+    vendor_payout: number;
+  }>;
+  bookingFinancials: Array<{
+    visit_type: 'salon' | 'home';
+    total_bookings: number;
+    completed_bookings: number;
+    cancelled_bookings: number;
+    gross_revenue: number;
+    avg_ticket_size: number;
+    travel_surcharge_collected: number;
+  }>;
+  paymentBreakdown: Array<{
+    payment_method: string;
+    payment_status: string;
+    count: number;
+    total_amount: number;
+  }>;
+  vendorSettlements: Array<{
+    id: string;
+    name: string;
+    commission_rate: number;
+    payout_account: any;
+    gross_sales: number;
+    payable_amount: number;
+    platform_cut: number;
+    paid_amount: number;
+  }>;
 }
 
 export interface SystemTelemetry {
@@ -162,47 +228,63 @@ const SUPPORT_API_BASE =
 
 @Injectable({ providedIn: 'root' })
 export class AdminService {
+  private readonly sessionEnded = new Subject<void>();
   private readonly http = inject(HttpClient);
   private readonly catalog = inject(CatalogService);
   private readonly toast = inject(ToastService);
+  private readonly stockSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   readonly isSyncing = signal<boolean>(false);
 
   // Core Persistent Reactive Signals
-  readonly orders = signal<AdminOrder[]>(this.loadStoredOrders());
-  readonly bookings = signal<AdminBooking[]>(this.loadStoredBookings());
-  readonly customers = signal<AdminCustomer[]>(this.loadStoredCustomers());
-  readonly products = signal<AdminProduct[]>(this.loadStoredProducts());
-  readonly vendors = signal<VendorAccount[]>(this.loadStoredVendors());
-  readonly adminTasks = signal<AdminTask[]>(this.loadStoredTasks());
-  readonly supportInquiries = signal<SupportInquiry[]>(this.loadStoredInquiries());
+  readonly orders = signal<AdminOrder[]>([]);
+  readonly bookings = signal<AdminBooking[]>([]);
+  readonly customers = signal<AdminCustomer[]>([]);
+  readonly products = signal<AdminProduct[]>([]);
+  readonly vendors = signal<VendorAccount[]>([]);
+  readonly adminTasks = signal<AdminTask[]>([]);
+  readonly supportInquiries = signal<SupportInquiry[]>([]);
   readonly activeSupportInquiryId = signal<string | null>(null);
   readonly isAiAutoPilot = signal<boolean>(true);
   readonly isChatDrawerOpen = signal<boolean>(false);
-  readonly dailyMetrics = signal<DailyMetric[]>(SEED_DAILY_METRICS);
+  readonly dailyMetrics = signal<DailyMetric[]>([]);
 
   // Dynamic Calculated KPI Metrics
   readonly metrics = signal<AdminMetrics>(this.computeMetrics());
 
   readonly system = signal<SystemTelemetry>({
     system: {
-      eventLoopLagMs: 1,
-      memory: { rssMb: 88, heapUsedMb: 24, heapTotalMb: 32 },
-      uptimeSeconds: 840,
+      eventLoopLagMs: 0,
+      memory: { rssMb: 0, heapUsedMb: 0, heapTotalMb: 0 },
+      uptimeSeconds: 0,
     },
-    postgres: { ok: true, latencyMs: 18 },
-    redis: { ok: true, latencyMs: 2, mode: 'redis L2 cluster' },
-    target: 'Amazon-Grade 100k Concurrency Cluster',
+    postgres: { ok: false, latencyMs: 0 },
+    redis: { ok: false, latencyMs: 0, mode: 'unknown' },
+    target: 'Awaiting live telemetry',
   });
 
   readonly lowStockItems = computed(() =>
-    this.products().filter((p) => (p.stock_quantity ?? 100) <= 15)
+    this.products().filter((p) => (p.stock_quantity ?? 0) <= 15)
   );
 
+  private readonly account = inject(AccountService);
+
   constructor() {
-    this.recomputeAndPersistMetrics();
-    // Attempt background sync if Fastify backend happens to be live
-    this.syncWithBackend();
+    for (const key of [STORAGE_KEY_ORDERS, STORAGE_KEY_BOOKINGS, STORAGE_KEY_CUSTOMERS, STORAGE_KEY_PRODUCTS, STORAGE_KEY_VENDORS, STORAGE_KEY_TASKS, STORAGE_KEY_INQUIRIES]) {
+      try { localStorage.removeItem(key); } catch {}
+    }
+    effect(() => {
+      const user = this.account.user();
+      untracked(() => {
+        this.sessionEnded.next();
+        this.adjustingStock.set(new Set());
+        this.orders.set([]); this.bookings.set([]); this.customers.set([]);
+        this.products.set([]); this.vendors.set([]); this.adminTasks.set([]); this.supportInquiries.set([]);
+        this.dailyMetrics.set([]);
+        this.recomputeAndPersistMetrics();
+        if (user?.role === 'admin' || user?.role === 'vendor') this.syncWithBackend();
+      });
+    });
   }
 
   // ─── REAL-TIME STOREFRONT TO ADMIN INTEGRATION ────────────────────────────
@@ -211,50 +293,30 @@ export class AdminService {
    * Called by CheckoutPage or Admin POS when an order is registered.
    */
   addOrder(order: AdminOrder, syncToBackend = false): void {
-    this.orders.update((list) => {
-      const exists = list.some((o) => o.id === order.id);
-      return exists ? list.map((o) => (o.id === order.id ? order : o)) : [order, ...list];
-    });
-    this.saveOrders(this.orders());
-
-    // Update or create customer record
-    this.recordCustomerOrder(order);
-
-    // Decrement catalog stock for purchased items
-    order.items.forEach((item) => {
-      const prod = this.products().find((p) => p.name === item.product_name);
-      if (prod) {
-        this.updateStock(prod.id, -item.quantity);
-      }
-    });
-
-    this.recomputeAndPersistMetrics();
-
-    this.toast.success(
-      `🛍️ Order #${order.id.slice(0, 8).toUpperCase()} from ${order.shipping_address.fullName} (₹${order.total_amount}) recorded!`
-    );
-
-    // Only post to backend if this is a manual counter POS order (storefront orders are already persisted in Neon DB)
     if (syncToBackend) {
-      this.http.post(`${API_BASE}/orders`, order).subscribe({ error: () => {} });
+      this.http.post(`${API_BASE}/orders`, order).pipe(takeUntil(this.sessionEnded)).subscribe({
+        next: () => { this.refreshOrders(); this.refreshProducts(); this.toast.success('Counter order saved.'); },
+        error: error => this.toast.error(error.error?.message || 'Counter order could not be saved.'),
+      });
+      return;
     }
+    // Checkout already committed inventory on the server. Never decrement it again.
+    this.orders.update(list => [order, ...list.filter(item => item.id !== order.id)]);
+    this.recomputeAndPersistMetrics();
   }
 
   /**
    * Called by BookPage when client reserves a salon visit.
    * Immediately registers in chair dispatch roster and recalculates occupancy.
    */
-  addBooking(booking: AdminBooking): void {
-    this.bookings.update((list) => [booking, ...list]);
-    this.saveBookings(this.bookings());
-    this.recomputeAndPersistMetrics();
-
-    this.toast.success(
-      `💈 New Appointment booked for ${booking.customer_name} with ${booking.stylist_name || 'Master Barber'} at ${booking.time_slot}!`
-    );
-
-    // Sync to backend if available
-    this.http.post(`${API_BASE}/bookings`, booking).subscribe({ error: () => {} });
+  addBooking(booking: AdminBooking, source: 'admin' | 'customer' = 'admin'): Observable<AdminBooking> {
+    const endpoint = source === 'admin' ? `${API_BASE}/bookings` : `${PUBLIC_API_BASE}/bookings`;
+    return this.http.post<AdminBooking>(endpoint, booking).pipe(tap((saved) => {
+      const persisted = { ...booking, ...saved };
+      this.bookings.update((list) => [persisted, ...list.filter((item) => item.id !== persisted.id)]);
+      this.saveBookings(this.bookings());
+      this.recomputeAndPersistMetrics();
+    }));
   }
 
   // ─── ORDER MANAGEMENT MUTATIONS & PAYMENT STATUS HELPERS ───────────────────
@@ -271,8 +333,7 @@ export class AdminService {
     if (!order) return false;
     const ps = (order.payment_status || '').toLowerCase().trim();
     if (ps === 'captured' || ps === 'paid') return true;
-    const isCod = order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery';
-    return isCod && order.status === 'delivered';
+    return false;
   }
 
   isPaymentFailed(order: { payment_method?: string; payment_status?: string; status?: string } | null | undefined): boolean {
@@ -302,7 +363,7 @@ export class AdminService {
 
     this.http.put<{ ok: boolean; order: AdminOrder }>(
       `${API_BASE}/orders/${orderId}/status`, { status, trackingNumber }
-    ).subscribe({
+    ).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
         if (!res.ok || !res.order) { this.toast.error('The server did not confirm this update.'); return; }
         this.orders.update(list => list.map(order => order.id === orderId ? { ...order, ...res.order } : order));
@@ -315,30 +376,20 @@ export class AdminService {
   }
 
   updateOrderDetails(orderId: string, updates: Partial<AdminOrder>): void {
-    this.orders.update((list) =>
-      list.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              ...updates,
-              updated_at: new Date().toISOString(),
-            }
-          : o
-      )
-    );
-    this.saveOrders(this.orders());
-    this.recomputeAndPersistMetrics();
-
-    const order = this.orders().find((o) => o.id === orderId);
-    if (order && (updates.status || updates.tracking_number || updates.notes)) {
-      this.http
-        .put(`${API_BASE}/orders/${orderId}/status`, {
-          status: order.status,
-          trackingNumber: order.tracking_number,
-          notes: order.notes,
-        })
-        .subscribe({ error: () => {} });
-    }
+    const order = this.orders().find(item => item.id === orderId);
+    if (!order) return;
+    this.http.put<{ order: AdminOrder }>(`${API_BASE}/orders/${orderId}/status`, {
+      status: updates.status || order.status,
+      trackingNumber: updates.tracking_number,
+      notes: updates.notes,
+      carrier: updates.carrier,
+    }).pipe(takeUntil(this.sessionEnded)).subscribe({
+      next: response => {
+        this.orders.update(list => list.map(item => item.id === orderId ? { ...item, ...response.order } : item));
+        this.recomputeAndPersistMetrics();
+      },
+      error: error => this.toast.error(error.error?.message || 'Order details could not be saved.'),
+    });
   }
 
   reconcilePayment(orderId: string): Observable<{ ok: boolean; updated: boolean; paymentStatus: string; order?: AdminOrder; message: string }> {
@@ -370,6 +421,22 @@ export class AdminService {
           }
         })
       );
+  }
+
+  refundOrder(orderId: string, reason: string): Observable<{ ok: boolean; order: AdminOrder; refundStatus: string; message: string }> {
+    return this.http.post<{ ok: boolean; order: AdminOrder; refundStatus: string; message: string }>(
+      `${API_BASE}/orders/${orderId}/refund`,
+      { reason }
+    ).pipe(
+      tap((response) => {
+        if (!response.ok || !response.order) return;
+        this.orders.update((orders) => orders.map((order) =>
+          order.id === orderId ? { ...order, ...response.order } : order
+        ));
+        this.saveOrders(this.orders());
+        this.recomputeAndPersistMetrics();
+      })
+    );
   }
 
   fetchCarrierWebsiteStatus(orderIdOrNumber: string, carrier?: string): Observable<{ ok: boolean; order?: AdminOrder; websiteData: any }> {
@@ -413,168 +480,109 @@ export class AdminService {
       );
   }
 
-  cancelOrder(orderId: string): void {
+  cancelOrder(orderId: string): Observable<{ ok: boolean; order: AdminOrder }> {
     const target = this.orders().find((o) => o.id === orderId);
-    if (!target) return;
+    if (!target) throw new Error('ORDER_NOT_FOUND');
     if ((target.status || '').toLowerCase().trim() === 'delivered') {
-      this.toast.error(`Order #${orderId.slice(0, 8)} has already been delivered and cannot be cancelled.`);
-      return;
+      throw new Error('DELIVERED_ORDER_NOT_CANCELLABLE');
     }
-
-    this.orders.update((list) =>
-      list.map((o) => (o.id === orderId ? { ...o, status: 'cancelled' } : o))
-    );
-
-    // Restock items
-    target.items.forEach((item) => {
-      const prod = this.products().find((p) => p.name === item.product_name);
-      if (prod) {
-        this.updateStock(prod.id, item.quantity);
-      }
-    });
-
-    this.saveOrders(this.orders());
-    this.recomputeAndPersistMetrics();
-    this.toast.error(`Order #${orderId.slice(0, 8)} cancelled and inventory restocked.`);
-
-    this.http.put(`${API_BASE}/orders/${orderId}/status`, { status: 'cancelled' }).subscribe({ error: () => {} });
+    return this.http.put<{ ok: boolean; order: AdminOrder }>(
+      `${API_BASE}/orders/${orderId}/status`,
+      { status: 'cancelled' }
+    ).pipe(tap((response) => {
+      if (!response.ok || !response.order) return;
+      this.orders.update((orders) => orders.map((order) =>
+        order.id === orderId ? { ...order, ...response.order } : order
+      ));
+      this.saveOrders(this.orders());
+      this.recomputeAndPersistMetrics();
+    }));
   }
 
   // ─── BOOKING MANAGEMENT MUTATIONS ─────────────────────────────────────────
 
-  updateBookingStatus(bookingId: string, status: AdminBooking['status']): void {
-    this.bookings.update((list) =>
-      list.map((b) => (b.id === bookingId ? { ...b, status } : b))
-    );
-    this.saveBookings(this.bookings());
-    this.recomputeAndPersistMetrics();
-
-    this.toast.info(`Appointment #${bookingId.slice(0, 8)} marked as ${status.toUpperCase()}.`);
-
-    this.http.put(`${API_BASE}/bookings/${bookingId}/status`, { status }).subscribe({ error: () => {} });
+  updateBookingStatus(bookingId: string, status: AdminBooking['status']): Observable<AdminBooking> {
+    return this.http.put<AdminBooking>(`${API_BASE}/bookings/${bookingId}/status`, {status}).pipe(tap(saved=>{
+      this.bookings.update(list=>list.map(booking=>booking.id===bookingId?{...booking,...saved}:booking));
+      this.recomputeAndPersistMetrics();
+    }));
   }
 
   rescheduleBooking(
     bookingId: string,
     newDate: string,
     newSlot: string,
-    newStylist?: string
-  ): void {
-    this.bookings.update((list) =>
-      list.map((b) =>
-        b.id === bookingId
-          ? {
-              ...b,
-              booking_date: newDate,
-              time_slot: newSlot,
-              stylist_name: newStylist || b.stylist_name,
-            }
-          : b
-      )
-    );
-    this.saveBookings(this.bookings());
-    this.recomputeAndPersistMetrics();
-    this.toast.success(`Appointment #${bookingId.slice(0, 8)} rescheduled to ${newDate} at ${newSlot}.`);
+    visitType: 'salon' | 'home' = 'salon',
+    serviceAddress?: string | null,
+    stylistName?: string
+  ): Observable<AdminBooking> {
+    const cleanDate = (newDate || '').slice(0, 10);
+    return this.http.put<AdminBooking>(`${API_BASE}/bookings/${bookingId}/schedule`, {
+      bookingDate: cleanDate,
+      timeSlot: newSlot,
+      visitType,
+      serviceAddress: visitType === 'home' ? (serviceAddress || null) : null,
+      stylistId: stylistName || null,
+    }).pipe(tap((saved) => {
+      const normalized: AdminBooking = {
+        ...saved,
+        booking_date: (saved.booking_date || cleanDate).slice(0, 10),
+        visit_type: (saved.visit_type || visitType) as 'salon' | 'home',
+        stylist_name: saved.stylist_name || undefined,
+      };
+      this.bookings.update((list) => list.map((booking) => booking.id === bookingId ? { ...booking, ...normalized } : booking));
+      this.saveBookings(this.bookings());
+      this.recomputeAndPersistMetrics();
+    }));
+  }
+
+  readonly bookingsCheckedAt=signal<string|null>(null);
+  readonly bookingsError=signal(false);
+
+  refreshBookings(): void {
+    this.http.get<{ data: AdminBooking[] }>(`${API_BASE}/bookings`).pipe(takeUntil(this.sessionEnded)).subscribe({
+      next: (response) => {
+        if (!Array.isArray(response?.data)) return;
+        const normalized = response.data.map((b) => ({
+          ...b,
+          booking_date: (b.booking_date || '').slice(0, 10),
+          visit_type: (b.visit_type || 'salon') as 'salon' | 'home',
+          stylist_name: b.stylist_name || undefined,
+        }));
+        this.bookings.set(normalized);
+        this.bookingsCheckedAt.set(new Date().toISOString());
+        this.bookingsError.set(false);
+        this.saveBookings(normalized);
+        this.recomputeAndPersistMetrics();
+      },
+      error: () => {this.bookingsError.set(true);this.toast.error('Appointments could not be refreshed.');},
+    });
   }
 
   // ─── PRODUCT & INVENTORY MANAGEMENT ───────────────────────────────────────
 
+  readonly adjustingStock = signal<ReadonlySet<string>>(new Set());
+
   updateStock(productId: string, delta: number): void {
-    const current = this.products().find((p) => p.id === productId || p.slug === productId);
-    if (!current) return;
-
-    const currentQty = Number(current.stock_quantity ?? (current.inStock ? 100 : 0));
-    const nextQty = Math.max(0, currentQty + Number(delta));
-    const inStock = nextQty > 0;
-
-    this.products.update((list) =>
-      list.map((p) =>
-        p.id === productId || p.slug === productId
-          ? { ...p, stock_quantity: nextQty, stockQuantity: nextQty, inStock }
-          : p
-      )
-    );
-
-    const catalogProd = this.catalog.byId(productId);
-    if (catalogProd) {
-      this.catalog.upsertProduct({
-        ...catalogProd,
-        inStock,
-        stock_quantity: nextQty,
-        stockQuantity: nextQty,
-      });
-    }
-
-    this.saveProducts(this.products());
-    this.recomputeAndPersistMetrics();
-
-    const payload = {
-      stockQuantity: nextQty,
-      stock_quantity: nextQty,
-      inStock,
-      in_stock: inStock,
-    };
-
-    const targetId = current.id || productId;
-    this.http.put(`${ADMIN_API_BASE}/products/${targetId}`, payload).subscribe({
-      next: () => {
-        void this.catalog.refreshCatalog();
-        this.toast.success(`Inventory updated: ${current.name} is now ${nextQty} in stock.`);
-      },
-      error: () => {
-        this.http.put(`${PUBLIC_API_BASE}/products/${targetId}`, payload).subscribe({
-          next: () => {
-            void this.catalog.refreshCatalog();
-            this.toast.success(`Inventory updated: ${current.name} is now ${nextQty} in stock.`);
-          },
-          error: (err) => {
-            console.error('Failed to sync stock to backend:', err);
-            this.toast.error(`Could not persist stock update to database for ${current.name}.`);
-          },
-        });
-      },
+    if (this.adjustingStock().has(productId) || !Number.isInteger(delta) || delta === 0) return;
+    this.adjustingStock.update(ids => new Set([...ids, productId]));
+    this.http.post(`/api/admin/inventory/${productId}/adjust`, { delta, reason: 'Admin inventory adjustment', requestId: crypto.randomUUID() }).pipe(takeUntil(this.sessionEnded)).subscribe({
+      next: () => { this.finishStockAdjustment(productId); this.refreshProducts(); void this.catalog.refreshCatalog(); this.toast.success('Inventory adjustment saved.'); },
+      error: error => { this.finishStockAdjustment(productId); this.toast.error(error.error?.message || 'Stock could not be changed.'); this.refreshProducts(); },
     });
   }
 
+  private finishStockAdjustment(productId: string): void {
+    this.adjustingStock.update(ids => { const next = new Set(ids); next.delete(productId); return next; });
+  }
+
   toggleInStock(productId: string): void {
-    const current = this.products().find((p) => p.id === productId || p.slug === productId);
-    if (!current) return;
-
-    const next = !current.inStock;
-    const currentQty = Number(current.stock_quantity ?? 0);
-    const nextQty = next ? Math.max(10, currentQty > 0 ? currentQty : 10) : 0;
-    this.products.update((list) =>
-      list.map((p) =>
-        p.id === productId || p.slug === productId
-          ? { ...p, inStock: next, stock_quantity: nextQty, stockQuantity: nextQty }
-          : p
-      )
-    );
-
-    const catalogProd = this.catalog.byId(productId);
-    if (catalogProd) {
-      this.catalog.upsertProduct({
-        ...catalogProd,
-        inStock: next,
-        stock_quantity: nextQty,
-        stockQuantity: nextQty,
-      });
-    }
-
-    this.saveProducts(this.products());
-    this.recomputeAndPersistMetrics();
-    this.toast.info(`Availability toggled: ${current.name} is now ${next ? 'In Stock' : 'Out of Stock'}.`);
-
-    const payload = { inStock: next, in_stock: next, stockQuantity: nextQty, stock_quantity: nextQty };
-    const targetId = current.id || productId;
-    this.http.put(`${ADMIN_API_BASE}/products/${targetId}`, payload).subscribe({
-      next: () => void this.catalog.refreshCatalog(),
-      error: () => {
-        this.http.put(`${PUBLIC_API_BASE}/products/${targetId}`, payload).subscribe({
-          next: () => void this.catalog.refreshCatalog(),
-          error: () => {},
-        });
-      },
+    const current = this.products().find(product => product.id === productId);
+    if (!current || this.adjustingStock().has(productId)) return;
+    this.adjustingStock.update(ids => new Set([...ids, productId]));
+    this.http.put(`${ADMIN_API_BASE}/products/${productId}`, { inStock: !(current.enabled ?? current.inStock) }).pipe(takeUntil(this.sessionEnded)).subscribe({
+      next: () => { this.finishStockAdjustment(productId); this.refreshProducts(); void this.catalog.refreshCatalog(); this.toast.success('Product availability updated; quantities are unchanged.'); },
+      error: error => { this.finishStockAdjustment(productId); this.toast.error(error.error?.message || 'Availability could not be changed.'); },
     });
   }
 
@@ -585,7 +593,7 @@ export class AdminService {
       `prod-${Date.now()}`;
     const id = item.id || `prod-${Date.now()}`;
 
-    const stockQty = item.stock_quantity ?? 100;
+    const stockQty = item.stock_quantity ?? 0;
     const inStock = stockQty > 0 && (item.inStock ?? true);
 
     const completeProduct: AdminProduct = {
@@ -612,23 +620,9 @@ export class AdminService {
       stockQuantity: stockQty,
     };
 
-    this.products.update((list) => {
-      const idx = list.findIndex((p) => p.id === id || p.slug === slug);
-      if (idx > -1) {
-        const next = [...list];
-        next[idx] = completeProduct;
-        return next;
-      }
-      return [completeProduct, ...list];
-    });
-
-    this.catalog.upsertProduct(completeProduct);
-    this.saveProducts(this.products());
-    this.recomputeAndPersistMetrics();
-    this.toast.success(`Product "${completeProduct.name}" saved and synced to storefront.`);
-
     const payload = {
       ...completeProduct,
+      expectedVersion: this.products().find(p => p.id === item.id)?.version,
       stockQuantity: completeProduct.stock_quantity,
       stock_quantity: completeProduct.stock_quantity,
       compareAtPrice: completeProduct.compareAtPrice,
@@ -637,27 +631,11 @@ export class AdminService {
       image_url: completeProduct.imageUrl,
     };
 
-    if (item.id) {
-      this.http.put(`${ADMIN_API_BASE}/products/${item.id}`, payload).subscribe({
-        next: () => void this.catalog.refreshCatalog(),
-        error: () => {
-          this.http.put(`${PUBLIC_API_BASE}/products/${item.id}`, payload).subscribe({
-            next: () => void this.catalog.refreshCatalog(),
-            error: () => {},
-          });
-        },
-      });
-    } else {
-      this.http.post(`${ADMIN_API_BASE}/products`, payload).subscribe({
-        next: () => void this.catalog.refreshCatalog(),
-        error: () => {
-          this.http.post(`${PUBLIC_API_BASE}/products`, payload).subscribe({
-            next: () => void this.catalog.refreshCatalog(),
-            error: () => {},
-          });
-        },
-      });
-    }
+    const request = item.id ? this.http.put(`${ADMIN_API_BASE}/products/${item.id}`, payload) : this.http.post(`${ADMIN_API_BASE}/products`, payload);
+    request.pipe(takeUntil(this.sessionEnded)).subscribe({
+      next: () => { this.refreshProducts(); void this.catalog.refreshCatalog(); this.toast.success('Product saved.'); },
+      error: error => { this.toast.error(error.error?.message || 'Product could not be saved. Refresh and retry.'); this.refreshProducts(); },
+    });
   }
 
   deleteProduct(id: string): void {
@@ -666,10 +644,10 @@ export class AdminService {
     this.saveProducts(this.products());
     this.recomputeAndPersistMetrics();
     this.toast.info('Product removed from catalog and database.');
-    this.http.delete(`${ADMIN_API_BASE}/products/${id}`).subscribe({
+    this.http.delete(`${ADMIN_API_BASE}/products/${id}`).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: () => void this.catalog.refreshCatalog(),
       error: () => {
-        this.http.delete(`${PUBLIC_API_BASE}/products/${id}`).subscribe({
+        this.http.delete(`${PUBLIC_API_BASE}/products/${id}`).pipe(takeUntil(this.sessionEnded)).subscribe({
           next: () => void this.catalog.refreshCatalog(),
           error: () => {},
         });
@@ -680,12 +658,24 @@ export class AdminService {
   // ─── CUSTOMER CRM MUTATIONS ───────────────────────────────────────────────
 
   updateCustomerRole(customerId: string, role: 'admin' | 'customer' | 'stylist'): void {
+    const previous = this.customers().find((customer) => customer.id === customerId);
+    if (!previous) return;
     this.customers.update((list) =>
       list.map((c) => (c.id === customerId ? { ...c, role } : c))
     );
     this.saveCustomers(this.customers());
-    this.toast.success(`Customer role updated to ${role.toUpperCase()}.`);
-    this.http.put(`${API_BASE}/customers/${customerId}/role`, { role }).subscribe({ error: () => {} });
+    this.http.put<AdminCustomer>(`${API_BASE}/customers/${customerId}/role`, { role }).pipe(takeUntil(this.sessionEnded)).subscribe({
+      next: (saved) => {
+        this.customers.update((list) => list.map((customer) => customer.id === customerId ? { ...customer, ...saved } : customer));
+        this.saveCustomers(this.customers());
+        this.toast.success(`Customer role updated to ${role.toUpperCase()}.`);
+      },
+      error: () => {
+        this.customers.update((list) => list.map((customer) => customer.id === customerId ? previous : customer));
+        this.saveCustomers(this.customers());
+        this.toast.error('Customer role could not be updated.');
+      },
+    });
   }
 
   setBadge(productId: string, badge: any): void {
@@ -702,10 +692,10 @@ export class AdminService {
 
     this.saveProducts(this.products());
     this.toast.info(`Product badge updated.`);
-    this.http.put(`${ADMIN_API_BASE}/products/${productId}`, { badge }).subscribe({
+    this.http.put(`${ADMIN_API_BASE}/products/${productId}`, { badge }).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: () => void this.catalog.refreshCatalog(),
       error: () => {
-        this.http.put(`${PUBLIC_API_BASE}/products/${productId}`, { badge }).subscribe({
+        this.http.put(`${PUBLIC_API_BASE}/products/${productId}`, { badge }).pipe(takeUntil(this.sessionEnded)).subscribe({
           next: () => void this.catalog.refreshCatalog(),
           error: () => {},
         });
@@ -714,52 +704,41 @@ export class AdminService {
   }
 
   fetchCustomerDetails(id: string): Observable<{ user: any; orders: any[]; bookings: any[] }> {
-    const customer = this.customers().find((c) => c.id === id);
-    const orders = this.orders().filter(
-      (o) =>
-        (o.shipping_address?.fullName || '').toLowerCase() === (customer?.name || '').toLowerCase() ||
-        o.shipping_address?.phone === customer?.email
+    return this.http.get<{ user: any; orders: any[]; bookings: any[] }>(
+      `${API_BASE}/customers/${encodeURIComponent(id)}/details`
     );
-    const bookings = this.bookings().filter(
-      (b) =>
-        b.customer_email === customer?.email ||
-        (b.customer_name || '').toLowerCase() === (customer?.name || '').toLowerCase()
-    );
-
-    return of({
-      user: customer || { name: 'Customer', email: 'guest@urbanblade.in', role: 'customer' },
-      orders: orders.map((o) => ({
-        ...o,
-        item_names: (o.items || []).map((i) => i.product_name),
-      })),
-      bookings,
-    });
   }
 
   // ─── SYSTEM & CACHE ───────────────────────────────────────────────────────
 
+  readonly telemetryCheckedAt=signal<string|null>(null);
+  readonly telemetryError=signal(false);
+
   fetchTelemetry(): void {
-    this.http.get<SystemTelemetry>(`${API_BASE}/system`).subscribe({
-      next: (data) => this.system.set(data),
+    this.isSyncing.set(true);
+    this.http.get<SystemTelemetry>(`${API_BASE}/system`).pipe(takeUntil(this.sessionEnded)).subscribe({
+      next: (data) => {
+        this.system.set(data);
+        this.telemetryCheckedAt.set(new Date().toISOString());
+        this.telemetryError.set(false);
+        this.isSyncing.set(false);
+      },
       error: () => {
-        // Increment uptime in offline mode to show live responsiveness
-        this.system.update((s) => ({
-          ...s,
-          system: {
-            ...s.system,
-            uptimeSeconds: s.system.uptimeSeconds + 12,
-            eventLoopLagMs: Math.floor(Math.random() * 3) + 1,
-          },
-        }));
+        this.isSyncing.set(false);
+        this.telemetryError.set(true);
+        this.toast.error('Live system telemetry is unavailable. Previously loaded values are shown.');
       },
     });
   }
 
   flushCache(): void {
     this.isSyncing.set(true);
-    this.http.post(`${API_BASE}/cache/flush`, {}).subscribe({
+    this.http.post(`${API_BASE}/cache/flush`, {}).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: () => this.finishFlush(),
-      error: () => this.finishFlush(),
+      error: () => {
+        this.isSyncing.set(false);
+        this.toast.error('Cache flush failed. No cache state was changed.');
+      },
     });
   }
 
@@ -771,39 +750,29 @@ export class AdminService {
     }, 500);
   }
 
-  resetFactoryData(): void {
-    localStorage.removeItem(STORAGE_KEY_ORDERS);
-    localStorage.removeItem(STORAGE_KEY_BOOKINGS);
-    localStorage.removeItem(STORAGE_KEY_CUSTOMERS);
-    localStorage.removeItem(STORAGE_KEY_PRODUCTS);
-
-    this.orders.set(SEED_ADMIN_ORDERS);
-    this.bookings.set(SEED_ADMIN_BOOKINGS);
-    this.customers.set(SEED_ADMIN_CUSTOMERS);
-    this.products.set(
-      this.catalog.all().map((p) => ({
-        ...p,
-        stock_quantity: 100,
-      }))
-    );
-
-    this.recomputeAndPersistMetrics();
-    this.toast.info('Admin operations data restored to clean baseline seed.');
+  reloadLiveData(): void {
+    this.refreshOrders(true);
+    this.refreshProducts(true);
+    if (!this.account.isAdmin()) return;
+    this.refreshVendors(true);
+    this.refreshTasks();
+    this.refreshInquiries();
+    this.fetchTelemetry();
   }
 
   // ─── INTERNAL PERSISTENCE & KPI CALCULATION ───────────────────────────────
 
   private computeMetrics(): AdminMetrics {
-    const ordersList = this.orders ? this.orders() : SEED_ADMIN_ORDERS;
-    const bookingsList = this.bookings ? this.bookings() : SEED_ADMIN_BOOKINGS;
+    const ordersList = this.orders ? this.orders() : [];
+    const bookingsList = this.bookings ? this.bookings() : [];
     const productsList = this.products ? this.products() : [];
 
-    const nonCancelledOrders = ordersList.filter((o) => o.status !== 'cancelled');
+    const nonCancelledOrders = ordersList.filter((o) => o.status !== 'cancelled' && o.payment_status === 'captured' && !o.refund_status);
     const totalRev = nonCancelledOrders.reduce((sum, o) => sum + o.total_amount, 0);
 
     const todayStr = new Date().toISOString().split('T')[0];
     const todayOrders = nonCancelledOrders.filter((o) => o.created_at.startsWith(todayStr));
-    const todayRev = todayOrders.reduce((sum, o) => sum + o.total_amount, 0) || Math.round(totalRev * 0.35);
+    const todayRev = todayOrders.reduce((sum, o) => sum + o.total_amount, 0);
 
     const incompletePayment = ordersList.filter((o) => this.isPaymentIncomplete(o)).length;
     const accepted = ordersList.filter(
@@ -817,17 +786,17 @@ export class AdminService {
     const todayBookings = bookingsList.filter(
       (b) => b.booking_date === todayStr && b.status !== 'cancelled'
     ).length;
-    const occupancyRate = Math.min(100, Math.round((todayBookings / 16) * 100)) || 65;
+    const occupancyRate = null;
 
-    const lowStock = productsList.filter((p) => (p.stock_quantity ?? 100) <= 15).length;
-    const outOfStock = productsList.filter((p) => (p.stock_quantity ?? 100) === 0).length;
+    const lowStock = productsList.filter((p) => (p.stock_quantity ?? 0) <= 15).length;
+    const outOfStock = productsList.filter((p) => (p.stock_quantity ?? 0) === 0).length;
 
     return {
       revenue: {
         today: todayRev,
-        week: totalRev,
-        month: Math.round(totalRev * 1.8),
-        trendPercent: 18.4,
+        week: nonCancelledOrders.filter(o => new Date(o.created_at).getTime() >= Date.now()-7*86400000).reduce((sum,o)=>sum+Number(o.total_amount),0),
+        month: nonCancelledOrders.filter(o => new Date(o.created_at).getTime() >= Date.now()-30*86400000).reduce((sum,o)=>sum+Number(o.total_amount),0),
+        trendPercent: null,
       },
       orders: {
         total: ordersList.length,
@@ -837,16 +806,16 @@ export class AdminService {
         delivered,
         cancelled,
         incompletePayment,
-        trendPercent: 11.2,
+        trendPercent: null,
       },
       bookings: {
         total: bookingsList.length,
-        today: todayBookings || 6,
+        today: todayBookings,
         occupancyRate,
-        trendPercent: 12.0,
+        trendPercent: null,
       },
       inventory: {
-        totalProducts: productsList.length || 40,
+        totalProducts: productsList.length,
         lowStock,
         outOfStock,
       },
@@ -894,9 +863,12 @@ export class AdminService {
   }
 
   refreshOrders(notify = false): void {
+    if (!this.account.isAdmin() && !this.account.isVendor()) return;
+    const identity = this.account.user();
     this.isSyncing.set(true);
-    this.http.get<{ data: any[] }>(`${API_BASE}/orders`).subscribe({
+    this.http.get<{ data: any[] }>(`${API_BASE}/orders`).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
+        if (identity !== this.account.user()) return;
         this.isSyncing.set(false);
         if (Array.isArray(res?.data)) {
           const mapped: AdminOrder[] = res.data.map((o) => ({
@@ -907,11 +879,36 @@ export class AdminService {
             currency: o.currency || 'INR',
             payment_method: o.payment_method || 'Razorpay',
             payment_status: o.payment_status || 'pending',
+            return_status: o.return_status,
+            return_reason: o.return_reason,
+            return_review_note: o.return_review_note,
+            payment_reconciliation_error: o.payment_reconciliation_error,
+            refund_status: o.refund_status || null,
+            refund_id: o.refund_id || undefined,
+            refund_amount: o.refund_amount ? Number(o.refund_amount) : undefined,
+            refund_reason: o.refund_reason || undefined,
+            refund_requested_at: o.refund_requested_at || undefined,
+            refunded_at: o.refunded_at || undefined,
+            refund_failure_reason: o.refund_failure_reason || undefined,
             transaction_id: o.transaction_id || o.payment_id || '',
-            shipping_address:
-              typeof o.shipping_address === 'string'
-                ? JSON.parse(o.shipping_address)
-                : o.shipping_address || { fullName: 'Walk-in Customer', city: 'Ghaziabad', phone: '' },
+            gateway_order_id: o.gateway_order_id || o.idempotency_key || undefined,
+            shipping_address: (() => {
+              try {
+                const parsed = typeof o.shipping_address === 'string'
+                  ? JSON.parse(o.shipping_address)
+                  : o.shipping_address;
+                if (parsed && typeof parsed === 'object') {
+                  return {
+                    fullName: parsed.fullName || parsed.name || 'Walk-in Customer',
+                    city: parsed.city || 'Ghaziabad',
+                    phone: parsed.phone || '',
+                    street: parsed.street || '',
+                    email: parsed.email || '',
+                  };
+                }
+              } catch {}
+              return { fullName: 'Walk-in Customer', city: 'Ghaziabad', phone: '', street: '', email: '' };
+            })(),
             created_at: o.created_at || new Date().toISOString(),
             updated_at: o.updated_at,
             items: (o.items || []).map((i: any) => ({
@@ -928,6 +925,10 @@ export class AdminService {
                 : undefined),
             coupon_code: o.coupon_code || undefined,
             discount_amount: Number(o.discount_amount) || 0,
+            shipping_fee: Number(o.shipping_fee) || 0,
+            tax_amount: Number(o.tax_amount) || 0,
+            tax_rate_percent: Number(o.tax_rate_percent) || 0,
+            tax_inclusive: Boolean(o.tax_inclusive),
           }));
           this.orders.set(mapped);
           this.saveOrders(mapped);
@@ -948,12 +949,17 @@ export class AdminService {
   }
 
   refreshProducts(notify = false): void {
+    if (!this.account.isAdmin() && !this.account.isVendor()) return;
+    const identity = this.account.user();
     const fetchFresh = () => {
-      this.http.get<{ data: any[] }>(`${ADMIN_API_BASE}/products?limit=200&t=${Date.now()}`).subscribe({
+      this.http.get<{ data: any[] }>(`${ADMIN_API_BASE}/products?limit=200&t=${Date.now()}`).pipe(takeUntil(this.sessionEnded)).subscribe({
         next: (res) => {
-          if (res?.data && res.data.length > 0) {
+          if (identity !== this.account.user()) return;
+          if (Array.isArray(res?.data)) {
             const mapped: AdminProduct[] = res.data.map((p) => ({
               id: p.id,
+              version: Number(p.version),
+              enabled: p.enabled ?? p.in_stock,
               name: p.name,
               slug: p.slug,
               description: p.description,
@@ -985,51 +991,12 @@ export class AdminService {
             }
           }
         },
-        error: () => {
-          this.http.get<{ data: any[] }>(`${PUBLIC_API_BASE}/products?limit=100&t=${Date.now()}`).subscribe({
-            next: (res) => {
-              if (res?.data && res.data.length > 0) {
-                const mapped: AdminProduct[] = res.data.map((p) => ({
-                  id: p.id,
-                  name: p.name,
-                  slug: p.slug,
-                  description: p.description,
-                  longDescription: p.longDescription || p.long_description || p.description,
-                  highlights: p.highlights || [],
-                  price: Number(p.price),
-                  compareAtPrice: p.compareAtPrice != null ? Number(p.compareAtPrice) : (p.compare_at_price != null ? Number(p.compare_at_price) : undefined),
-                  currency: p.currency || 'INR',
-                  imageUrl: p.imageUrl || p.image_url || '/images/products/hc-shampoo.jpg',
-                  category: p.category,
-                  kind: p.kind,
-                  vendor: p.vendor,
-                  audience: p.audience,
-                  freeDelivery: p.freeDelivery ?? p.free_delivery ?? true,
-                  rating: Number(p.rating || 5),
-                  reviewCount: Number(p.reviewCount ?? p.review_count ?? 1),
-                  badge: p.badge,
-                  inStock: Boolean(p.inStock ?? p.in_stock ?? true),
-                  stock_quantity: Number(p.stock_quantity ?? p.stockQuantity ?? 0),
-                  stock_reserved: Number(p.stock_reserved || 0),
-                  availableQuantity: Number(p.availableQuantity ?? p.stock_quantity ?? 0),
-                }));
-                this.products.set(mapped);
-                this.saveProducts(mapped);
-                mapped.forEach((prod) => this.catalog.upsertProduct(prod));
-                this.recomputeAndPersistMetrics();
-                if (notify) {
-                  this.toast.success(`⚡ Synced ${mapped.length} catalog products from database.`);
-                }
-              }
-            },
-            error: () => {},
-          });
-        },
+        error: () => this.toast.error('Inventory could not be loaded. Please retry.'),
       });
     };
 
     if (notify) {
-      this.http.post(`${ADMIN_API_BASE}/cache/flush`, {}).subscribe({
+      this.http.post(`${ADMIN_API_BASE}/cache/flush`, {}).pipe(takeUntil(this.sessionEnded)).subscribe({
         next: () => fetchFresh(),
         error: () => fetchFresh(),
       });
@@ -1041,22 +1008,24 @@ export class AdminService {
   private syncWithBackend(): void {
     this.refreshOrders();
     this.refreshProducts();
+    if (!this.account.isAdmin()) return;
+    this.refreshVendors();
 
-    this.http.get<AdminMetrics>(`${API_BASE}/metrics`).subscribe({
+    this.http.get<AdminMetrics>(`${API_BASE}/metrics`).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (m) => this.metrics.set(m),
       error: () => {},
     });
 
-    this.http.get<{ data: DailyMetric[] }>(`${API_BASE}/metrics/daily`).subscribe({
+    this.http.get<{ data: DailyMetric[] }>(`${API_BASE}/metrics/daily`).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
-        if (res.data && res.data.length > 0) this.dailyMetrics.set(res.data);
+        if (Array.isArray(res.data)) this.dailyMetrics.set(res.data);
       },
       error: () => {},
     });
 
-    this.http.get<{ data: any[] }>(`${API_BASE}/bookings`).subscribe({
+    this.http.get<{ data: any[] }>(`${API_BASE}/bookings`).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
-        if (res.data && res.data.length > 0) {
+        if (Array.isArray(res.data)) {
           this.bookings.set(res.data);
           this.saveBookings(res.data);
           this.recomputeAndPersistMetrics();
@@ -1065,9 +1034,9 @@ export class AdminService {
       error: () => {},
     });
 
-    this.http.get<{ data: any[] }>(`${API_BASE}/customers`).subscribe({
+    this.http.get<{ data: any[] }>(`${API_BASE}/customers`).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
-        if (res.data && res.data.length > 0) {
+        if (Array.isArray(res.data)) {
           this.customers.set(res.data);
           this.saveCustomers(res.data);
         }
@@ -1080,81 +1049,43 @@ export class AdminService {
     this.startInquiriesLivePolling();
   }
 
-  private loadStoredOrders(): AdminOrder[] {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_ORDERS);
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    this.saveOrders(SEED_ADMIN_ORDERS);
-    return SEED_ADMIN_ORDERS;
+
+
+
+
+
+
+
+
+  private saveOrders(_items: AdminOrder[]): void {
+    // Staff data is kept in memory only.
   }
 
-  private loadStoredBookings(): AdminBooking[] {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_BOOKINGS);
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    this.saveBookings(SEED_ADMIN_BOOKINGS);
-    return SEED_ADMIN_BOOKINGS;
+  private saveBookings(_items: AdminBooking[]): void {
+    // Staff data is kept in memory only.
   }
 
-  private loadStoredCustomers(): AdminCustomer[] {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_CUSTOMERS);
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    this.saveCustomers(SEED_ADMIN_CUSTOMERS);
-    return SEED_ADMIN_CUSTOMERS;
+  private saveCustomers(_items: AdminCustomer[]): void {
+    // Staff data is kept in memory only.
   }
 
-  private loadStoredProducts(): AdminProduct[] {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_PRODUCTS);
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    const init = this.catalog.all().map((p) => ({
-      ...p,
-      stock_quantity: (p as any).stock_quantity ?? (p.inStock ? 100 : 0),
-    }));
-    this.saveProducts(init);
-    return init;
-  }
-
-  private saveOrders(orders: AdminOrder[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(orders));
-    } catch {}
-  }
-
-  private saveBookings(bookings: AdminBooking[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEY_BOOKINGS, JSON.stringify(bookings));
-    } catch {}
-  }
-
-  private saveCustomers(customers: AdminCustomer[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(customers));
-    } catch {}
-  }
-
-  private saveProducts(products: AdminProduct[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(products));
-    } catch {}
+  private saveProducts(_items: AdminProduct[]): void {
+    // Staff data is kept in memory only.
   }
 
   // ─── MULTI-VENDOR METHODS ─────────────────────────────────────────────────
   refreshVendors(notify = false): void {
-    this.http.get<{ data: VendorAccount[] }>(`${API_BASE}/vendors`).subscribe({
+    this.http.get<{ data: VendorAccount[] }>(`${API_BASE}/vendors`).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
-        if (res?.data && res.data.length > 0) {
+        if (Array.isArray(res?.data)) {
           this.vendors.set(res.data);
           this.saveVendors(res.data);
           if (notify) this.toast.success(`⚡ Synced ${res.data.length} vendor business accounts.`);
         }
       },
-      error: () => {},
+      error: () => {
+        if (notify) this.toast.error('Vendor data could not be loaded.');
+      },
     });
   }
 
@@ -1165,17 +1096,12 @@ export class AdminService {
       name: vendorData.name || 'Partner Vendor',
       slug,
       email: vendorData.email || `${slug}@urbanblade.in`,
-      password: vendorData.password || 'Vendor@2026',
-      contact_person: vendorData.contact_person || 'Operations Lead',
-      phone: vendorData.phone || '9015618265',
+
+      contact_person: vendorData.contact_person || '',
+      phone: vendorData.phone || '',
       commission_rate: vendorData.commission_rate ?? 12,
       status: 'active',
-      payout_account: vendorData.payout_account || {
-        bank: 'HDFC Bank',
-        accountNo: 'XXXXXX1234',
-        ifsc: 'HDFC0001234',
-        upi: `${slug}@upi`,
-      },
+      payout_account: vendorData.payout_account,
       product_count: 0,
       total_sales: 0,
       order_count: 0,
@@ -1186,7 +1112,14 @@ export class AdminService {
     this.vendors.update((list) => [newVendor, ...list.filter((v) => v.id !== newVendor.id)]);
     this.saveVendors(this.vendors());
 
-    this.http.post<{ ok: boolean; vendor?: VendorAccount }>(`${API_BASE}/vendors`, newVendor).subscribe({
+    const payload = {
+      ...newVendor,
+      password: vendorData.password,
+      contactPerson: newVendor.contact_person,
+      commissionRate: newVendor.commission_rate,
+      payoutAccount: newVendor.payout_account,
+    };
+    this.http.post<{ ok: boolean; vendor?: VendorAccount }>(`${API_BASE}/vendors`, payload).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
         if (res?.vendor) {
           this.vendors.update((list) => list.map((v) => (v.id === newVendor.id ? res.vendor! : v)));
@@ -1212,7 +1145,13 @@ export class AdminService {
     );
     this.saveVendors(this.vendors());
 
-    this.http.put<{ ok: boolean; vendor?: VendorAccount }>(`${API_BASE}/vendors/${id}`, updates).subscribe({
+    const payload = {
+      ...updates,
+      contactPerson: updates.contact_person,
+      commissionRate: updates.commission_rate,
+      payoutAccount: updates.payout_account,
+    };
+    this.http.put<{ ok: boolean; vendor?: VendorAccount }>(`${API_BASE}/vendors/${id}`, payload).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
         if (res?.vendor) {
           this.vendors.update((list) => list.map((v) => (v.id === id ? res.vendor! : v)));
@@ -1239,14 +1178,14 @@ export class AdminService {
 
   // ─── TASK OPERATIONS METHODS ──────────────────────────────────────────────
   refreshTasks(): void {
-    this.http.get<{ data: AdminTask[] }>(`${API_BASE}/tasks`).subscribe({
+    this.http.get<{ data: AdminTask[] }>(`${API_BASE}/tasks`).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
-        if (res?.data && res.data.length > 0) {
+        if (Array.isArray(res?.data)) {
           this.adminTasks.set(res.data);
           this.saveTasks(res.data);
         }
       },
-      error: () => {},
+      error: () => this.toast.error('Operational tasks could not be loaded.'),
     });
   }
 
@@ -1265,35 +1204,51 @@ export class AdminService {
 
     this.adminTasks.update((list) => [newTask, ...list]);
     this.saveTasks(this.adminTasks());
-    this.toast.success(`📋 Operational task "${newTask.title}" assigned!`);
-
-    this.http.post<{ ok: boolean; task?: AdminTask }>(`${API_BASE}/tasks`, newTask).subscribe({
+    this.http.post<{ ok: boolean; task?: AdminTask }>(`${API_BASE}/tasks`, newTask).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
         if (res?.task) {
           this.adminTasks.update((list) => list.map((t) => (t.id === newTask.id ? res.task! : t)));
           this.saveTasks(this.adminTasks());
         }
+        this.toast.success(`Operational task "${newTask.title}" assigned.`);
       },
-      error: () => {},
+      error: () => {
+        this.adminTasks.update((list) => list.filter((task) => task.id !== newTask.id));
+        this.saveTasks(this.adminTasks());
+        this.toast.error('Task could not be created.');
+      },
     });
   }
 
   updateTaskStatus(id: string, status: AdminTask['status']): void {
+    const previous = this.adminTasks().find((task) => task.id === id);
+    if (!previous) return;
     this.adminTasks.update((list) =>
       list.map((t) => (t.id === id ? { ...t, status, updated_at: new Date().toISOString() } : t))
     );
     this.saveTasks(this.adminTasks());
-    this.toast.success(`Task moved to ${status.toUpperCase().replace('_', ' ')}`);
-
-    this.http.put(`${API_BASE}/tasks/${id}`, { status }).subscribe({ error: () => {} });
+    this.http.put(`${API_BASE}/tasks/${id}`, { status }).pipe(takeUntil(this.sessionEnded)).subscribe({
+      next: () => this.toast.success(`Task moved to ${status.toUpperCase().replace('_', ' ')}`),
+      error: () => {
+        this.adminTasks.update((list) => list.map((task) => task.id === id ? previous : task));
+        this.saveTasks(this.adminTasks());
+        this.toast.error('Task status could not be updated.');
+      },
+    });
   }
 
   deleteTask(id: string): void {
+    const previous = this.adminTasks();
     this.adminTasks.update((list) => list.filter((t) => t.id !== id));
     this.saveTasks(this.adminTasks());
-    this.toast.info('Task removed.');
-
-    this.http.delete(`${API_BASE}/tasks/${id}`).subscribe({ error: () => {} });
+    this.http.delete(`${API_BASE}/tasks/${id}`).pipe(takeUntil(this.sessionEnded)).subscribe({
+      next: () => this.toast.info('Task removed.'),
+      error: () => {
+        this.adminTasks.set(previous);
+        this.saveTasks(previous);
+        this.toast.error('Task could not be removed.');
+      },
+    });
   }
 
   private broadcastChannel: BroadcastChannel | null = null;
@@ -1317,14 +1272,11 @@ export class AdminService {
           }
         };
       }
-      setInterval(() => {
-        this.refreshInquiries(false);
-      }, 2500);
     }
   }
 
   refreshInquiries(showToast = false): void {
-    this.http.get<{ data: SupportInquiry[] }>(`${SUPPORT_API_BASE}/inquiries`).subscribe({
+    this.http.get<{ data: SupportInquiry[] }>(`${SUPPORT_API_BASE}/inquiries`).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
         if (res?.data && Array.isArray(res.data)) {
           // Filter out any IDs currently in the delete pipeline — prevents reappearance
@@ -1358,7 +1310,7 @@ export class AdminService {
     priority?: 'low' | 'medium' | 'high';
     initialMessage?: string;
   }): void {
-    this.http.post<{ ok: boolean; inquiry: SupportInquiry }>(`${SUPPORT_API_BASE}/inquiries`, payload).subscribe({
+    this.http.post<{ ok: boolean; inquiry: SupportInquiry }>(`${SUPPORT_API_BASE}/inquiries`, payload).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
         if (res?.inquiry) {
           this.supportInquiries.update((list) => [res.inquiry, ...list]);
@@ -1448,7 +1400,7 @@ export class AdminService {
         text,
         sender,
       })
-      .subscribe({
+      .pipe(takeUntil(this.sessionEnded)).subscribe({
         next: (res) => {
           if (res?.inquiry) {
             this.supportInquiries.update((list) => list.map((i) => (i.id === inquiryId ? res.inquiry! : i)));
@@ -1469,7 +1421,7 @@ export class AdminService {
     this.saveInquiries(this.supportInquiries());
     this.toast.success(`Inquiry ticket updated: ${status.replace('_', ' ').toUpperCase()}`);
 
-    this.http.put<{ ok: boolean; inquiry?: SupportInquiry }>(`${SUPPORT_API_BASE}/inquiries/${inquiryId}/status`, { status }).subscribe({
+    this.http.put<{ ok: boolean; inquiry?: SupportInquiry }>(`${SUPPORT_API_BASE}/inquiries/${inquiryId}/status`, { status }).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
         if (res?.inquiry) {
           this.supportInquiries.update((list) => list.map((i) => (i.id === inquiryId ? res.inquiry! : i)));
@@ -1507,180 +1459,38 @@ export class AdminService {
   }
 
   // ─── STORAGE LOADERS & PERSISTENCE ────────────────────────────────────────
-  private loadStoredVendors(): VendorAccount[] {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_VENDORS);
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    const defaultVendors: VendorAccount[] = [
-      {
-        id: 'vnd-lab',
-        name: 'Urban Blade Lab',
-        slug: 'urban-blade-lab',
-        email: 'lab@urbanblade.in',
-        password: 'Vendor@2026',
-        contact_person: 'Dr. Vikram Verma (R&D Lead)',
-        phone: '9876543210',
-        commission_rate: 12,
-        status: 'active',
-        product_count: 14,
-        total_sales: 48920,
-        order_count: 36,
-        payout_account: { bank: 'HDFC Bank', accountNo: 'XXXXXX4812', ifsc: 'HDFC0001234', upi: 'ub.lab@hdfc' },
-      },
-      {
-        id: 'vnd-grooming',
-        name: 'Urban Blade Grooming',
-        slug: 'urban-blade-grooming',
-        email: 'grooming@urbanblade.in',
-        password: 'Vendor@2026',
-        contact_person: 'Kavita Singh (Ops Director)',
-        phone: '9876543211',
-        commission_rate: 15,
-        status: 'active',
-        product_count: 12,
-        total_sales: 36840,
-        order_count: 28,
-        payout_account: { bank: 'ICICI Bank', accountNo: 'XXXXXX9821', ifsc: 'ICIC0005678', upi: 'ub.grooming@icici' },
-      },
-      {
-        id: 'vnd-tools',
-        name: 'Urban Blade Tools',
-        slug: 'urban-blade-tools',
-        email: 'tools@urbanblade.in',
-        password: 'Vendor@2026',
-        contact_person: 'Rajesh Mehra (Hardware Lead)',
-        phone: '9876543212',
-        commission_rate: 10,
-        status: 'active',
-        product_count: 8,
-        total_sales: 24500,
-        order_count: 18,
-        payout_account: { bank: 'Axis Bank', accountNo: 'XXXXXX3456', ifsc: 'UTIB0009876', upi: 'ub.tools@axis' },
-      },
-      {
-        id: 'vnd-skin',
-        name: 'Urban Blade Skin',
-        slug: 'urban-blade-skin',
-        email: 'skin@urbanblade.in',
-        password: 'Vendor@2026',
-        contact_person: 'Pooja Sharma (Dermatologist)',
-        phone: '9876543213',
-        commission_rate: 14,
-        status: 'active',
-        product_count: 6,
-        total_sales: 19800,
-        order_count: 14,
-        payout_account: { bank: 'State Bank of India', accountNo: 'XXXXXX7890', ifsc: 'SBIN0004321', upi: 'ub.skin@sbi' },
-      },
-      {
-        id: 'vnd-salon',
-        name: 'Urban Blade Salon',
-        slug: 'urban-blade-salon',
-        email: 'salon@urbanblade.in',
-        password: 'Vendor@2026',
-        contact_person: 'Master Barber Gaurav',
-        phone: '9015618265',
-        commission_rate: 8,
-        status: 'active',
-        product_count: 4,
-        total_sales: 14500,
-        order_count: 12,
-        payout_account: { bank: 'Kotak Mahindra', accountNo: 'XXXXXX1234', ifsc: 'KKBK0001122', upi: 'ub.salon@kotak' },
-      },
-    ];
-    this.saveVendors(defaultVendors);
-    return defaultVendors;
+
+
+
+
+
+
+  private saveVendors(_items: VendorAccount[]): void {
+    // Staff data is kept in memory only.
   }
 
-  private loadStoredTasks(): AdminTask[] {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_TASKS);
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    const defaultTasks: AdminTask[] = [
-      {
-        id: 'tsk-1',
-        title: 'Audit Urban Blade Lab Q3 Batch Fulfillment',
-        description: 'Cross-reference dispatch scans with courier receipts for serum batches.',
-        assignee: 'Master Admin',
-        priority: 'high',
-        status: 'in_progress',
-        due_date: 'Tomorrow, 5 PM',
-        related_user: 'Dr. Vikram Verma (Urban Blade Lab)',
-        created_at: new Date().toISOString(),
-      },
-      {
-        id: 'tsk-2',
-        title: 'Verify Payout Details for Urban Blade Tools',
-        description: 'Confirm new Axis Bank IFSC code with Rajesh Mehra before Friday release.',
-        assignee: 'Finance Desk',
-        priority: 'medium',
-        status: 'pending',
-        due_date: 'Sep 15, 2026',
-        related_user: 'Rajesh Mehra (Urban Blade Tools)',
-        created_at: new Date().toISOString(),
-      },
-      {
-        id: 'tsk-3',
-        title: 'VIP Client Anniversary Loyalty Call',
-        description: 'Offer 20% privilege code to top spending customer Rohit Sen.',
-        assignee: 'Master Barber Gaurav',
-        priority: 'low',
-        status: 'completed',
-        due_date: 'Today',
-        related_user: 'Rohit Sen',
-        created_at: new Date().toISOString(),
-      },
-      {
-        id: 'tsk-4',
-        title: 'Restock Precision Trimmers & Ceramic Blades',
-        description: 'Notify Urban Blade Tools when stock drops below 15 units.',
-        assignee: 'Inventory Lead',
-        priority: 'high',
-        status: 'pending',
-        due_date: 'Sep 18, 2026',
-        related_user: 'Urban Blade Tools',
-        created_at: new Date().toISOString(),
-      },
-    ];
-    this.saveTasks(defaultTasks);
-    return defaultTasks;
+  private saveTasks(_items: AdminTask[]): void {
+    // Staff data is kept in memory only.
   }
 
-  private loadStoredInquiries(): SupportInquiry[] {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_INQUIRIES);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          // Permanently purge legacy fake mock inquiries
-          const cleaned = parsed.filter(
-            (i: any) => !['inq-101', 'inq-102', 'inq-103'].includes(i.id) && i.subject !== 'Tracking update for Hair Serum parcel'
-          );
-          localStorage.setItem(STORAGE_KEY_INQUIRIES, JSON.stringify(cleaned));
-          return cleaned;
-        }
-      }
-    } catch {}
-    return [];
+  private saveInquiries(_items: SupportInquiry[]): void {
+    // Staff data is kept in memory only.
   }
 
-  private saveVendors(vendors: VendorAccount[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEY_VENDORS, JSON.stringify(vendors));
-    } catch {}
+  // ─── FINANCIAL OPERATIONS & AUDIT SETTLEMENTS ──────────────────────────────
+  getFinancialSummary(): Observable<{ ok: boolean } & FinancialSummary> {
+    return this.http.get<{ ok: boolean } & FinancialSummary>(`${API_BASE}/finance/summary`);
   }
 
-  private saveTasks(tasks: AdminTask[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEY_TASKS, JSON.stringify(tasks));
-    } catch {}
+  getDailyMetrics(): Observable<{ data: Array<{ date: string; dayLabel: string; revenue: number; orders: number }> }> {
+    return this.http.get<{ data: Array<{ date: string; dayLabel: string; revenue: number; orders: number }> }>(`${API_BASE}/metrics/daily`);
   }
 
-  private saveInquiries(inquiries: SupportInquiry[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEY_INQUIRIES, JSON.stringify(inquiries));
-    } catch {}
+  processVendorPayout(vendorId: string, amount: number, reference: string, notes?: string): Observable<any> {
+    return this.http.post(`${API_BASE}/finance/process-payout`, { vendorId, amount, reference, notes }).pipe(
+      tap(() => {
+        this.toast.success(`External payment of ₹${amount.toLocaleString()} recorded.`);
+      })
+    );
   }
 }

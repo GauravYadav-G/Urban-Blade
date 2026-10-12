@@ -3,11 +3,11 @@
   <header class="page-header">
     <div class="header-left">
       <span class="status-indicator live">
-        <span class="pulse-dot"></span> Cluster Telemetry Active
+        <span class="pulse-dot"></span> System diagnostics
       </span>
       <h1 class="page-title">System Health & Cache Control</h1>
       <p class="page-subtitle">
-        Amazon-grade distributed observability. Real-time PostgreSQL connection pool status, Redis caching latency, and event-loop health.
+        Database connectivity, cache availability and process health from the last server check.
       </p>
     </div>
 
@@ -28,53 +28,30 @@
         <span>{{ admin.isSyncing() ? 'Flushing Redis...' : 'Flush All Caches' }}</span>
       </button>
 
-      <button type="button" class="btn-restore" (click)="resetFactorySeed()">
+      <button type="button" class="btn-restore" (click)="reloadLiveData()" [disabled]="admin.isSyncing()">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
           <path d="M21 3v5h-5"></path>
           <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
           <path d="M3 21v-5h5"></path>
         </svg>
-        <span>Reset Baseline Data</span>
+        <span>Reload Live Data</span>
       </button>
     </div>
   </header>
 
-  <!-- Performance Verification Banner -->
-  <div class="benchmark-card">
-    <div class="benchmark-info">
-      <div class="badge-tag">Verified Load Benchmark</div>
-      <h3 class="benchmark-title">Amazon-Grade 100k Concurrency Architecture</h3>
-      <p class="benchmark-desc">
-        Powered by Fastify, PgBouncer connection pooling, Redis L2 distributed caching, Redlock distributed booking mutexes, and GIN inverted index search.
-      </p>
-    </div>
-    <div class="benchmark-stats">
-      <div class="bm-stat">
-        <span class="bm-val green">11,127</span>
-        <span class="bm-lbl">Req / Second</span>
-      </div>
-      <div class="bm-divider"></div>
-      <div class="bm-stat">
-        <span class="bm-val amber">6ms</span>
-        <span class="bm-lbl">P50 Latency</span>
-      </div>
-      <div class="bm-divider"></div>
-      <div class="bm-stat">
-        <span class="bm-val purple">0.00%</span>
-        <span class="bm-lbl">Error Rate</span>
-      </div>
-    </div>
-  </div>
-
+  @if(admin.telemetryError()){<p role="alert">Diagnostics could not be refreshed. Previously loaded values may be out of date.</p>}
+  @if(!admin.telemetryCheckedAt()){<p role="status">No diagnostics snapshot loaded. Refresh to check the server.</p>}
   <!-- Telemetry Grid -->
+  @if (admin.telemetryCheckedAt()) {
+  <p>Last checked: {{ admin.telemetryCheckedAt() | date:'medium' }}</p>
   @if (admin.system(); as s) {
     <div class="telemetry-grid">
       <!-- PostgreSQL Card -->
       <div class="telem-card" [class.healthy]="s.postgres.ok">
         <div class="card-head">
           <div class="service-meta">
-            <span class="service-badge pg">PostgreSQL 16 + PgBouncer</span>
+            <span class="service-badge pg">PostgreSQL</span>
             <h3 class="service-title">Database Storage & Connection Pool</h3>
           </div>
           <span class="health-chip" [class.ok]="s.postgres.ok">
@@ -86,25 +63,16 @@
           <span class="m-label">Roundtrip Ping Latency</span>
           <span class="m-val">{{ s.postgres.latencyMs }} ms</span>
         </div>
-        <div class="metric-row">
-          <span class="m-label">Pool Target</span>
-          <span class="m-val mono">urbanblade-pgbouncer:6432</span>
-        </div>
-        <div class="metric-row">
-          <span class="m-label">GIN Trigram Search</span>
-          <span class="m-val green">Active (products_search_idx)</span>
-        </div>
-        <div class="metric-row">
-          <span class="m-label">Isolation Level</span>
-          <span class="m-val">Read Committed + Advisory Locks</span>
-        </div>
+        
+        
+        
       </div>
 
       <!-- Redis 7.2 Card -->
       <div class="telem-card" [class.healthy]="s.redis.ok">
         <div class="card-head">
           <div class="service-meta">
-            <span class="service-badge redis">Redis 7.2 Alpine</span>
+            <span class="service-badge redis">Redis</span>
             <h3 class="service-title">In-Memory Cache & Mutex Lock Engine</h3>
           </div>
           <span class="health-chip" [class.ok]="s.redis.ok">
@@ -120,14 +88,8 @@
           <span class="m-label">Operation Mode</span>
           <span class="m-val mono">{{ s.redis.mode | uppercase }}</span>
         </div>
-        <div class="metric-row">
-          <span class="m-label">Redlock Booking Mutex</span>
-          <span class="m-val green">Active (PX 5000ms TTL)</span>
-        </div>
-        <div class="metric-row">
-          <span class="m-label">Idempotency Keys</span>
-          <span class="m-val">SET NX EX 86400s (24h)</span>
-        </div>
+        
+        
       </div>
 
       <!-- Process & Event Loop Card -->
@@ -137,7 +99,7 @@
             <span class="service-badge fastify">Node.js / Fastify Runtime</span>
             <h3 class="service-title">Event Loop & Memory Consumption</h3>
           </div>
-          <span class="health-chip ok">Operational</span>
+          <span class="health-chip">Measured process</span>
         </div>
 
         <div class="metric-row">
@@ -158,5 +120,6 @@
         </div>
       </div>
     </div>
+  }
   }
 </div>

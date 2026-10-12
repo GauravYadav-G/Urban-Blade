@@ -21,9 +21,7 @@ export class AdminSystem {
     this.admin.flushCache();
   }
 
-  resetFactorySeed(): void {
-    if (confirm('Reset orders, salon appointments, and catalog to factory baseline data?')) {
-      this.admin.resetFactoryData();
-    }
+  reloadLiveData(): void {
+    this.admin.reloadLiveData();
   }
 }

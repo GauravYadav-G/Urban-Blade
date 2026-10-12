@@ -1,0 +1,83 @@
+<div class="evolurex-finance-page">
+  <header class="ev-page-header">
+    <div><span class="brand-sub-badge">URBAN BLADE · FINANCIAL AUDIT</span><h1 class="ev-page-title">Payments &amp; reconciliation</h1>
+      <p class="ev-page-subtitle">Order collections, actual Razorpay payment attempts, refunds and inventory exceptions.</p></div>
+    <div class="audit-controls">
+      <select aria-label="Date range" [ngModel]="days()" (ngModelChange)="days.set(+$event); filter()"><option [value]="7">Last 7 days</option><option [value]="30">Last 30 days</option><option [value]="90">Last 90 days</option><option [value]="366">Last year</option></select>
+      <button class="ev-btn-export" [disabled]="loading()" (click)="refresh()">Refresh records</button>
+      <button class="ev-btn-export" [disabled]="syncing()" (click)="syncGateway()">{{ syncing() ? 'Syncing Razorpay…' : 'Sync Razorpay' }}</button>
+    </div>
+  </header>
+  @if(error()){<p class="audit-alert" role="alert">{{ error() }}</p>}
+  @if(syncMessage()){<p class="audit-note" role="status">{{ syncMessage() }}</p>}
+  @if(data();as audit){
+    <p class="audit-note">Database snapshot: {{ audit.asOf | date:'medium' }}. Gateway last checked: {{ audit.gateway.lastChecked ? (audit.gateway.lastChecked | date:'medium') : 'Not synced' }}. Figures cover the selected period; searching only filters the tables.</p>
+    <section class="ev-kpi-grid">
+      <div class="ev-kpi-card"><span class="ev-kpi-label">Order payments collected</span><strong class="ev-kpi-number">{{ audit.local.captured | currency:'INR':'symbol':'1.2-2' }}</strong><p>Includes recorded offline collections. {{ audit.local.orders }} orders.</p></div>
+      <div class="ev-kpi-card"><span class="ev-kpi-label">Order refunds completed</span><strong class="ev-kpi-number">{{ audit.local.refunded | currency:'INR':'symbol':'1.2-2' }}</strong><p>Pending refunds are not treated as paid back.</p></div>
+      <div class="ev-kpi-card"><span class="ev-kpi-label">Net order collections</span><strong class="ev-kpi-number">{{ audit.local.net | currency:'INR':'symbol':'1.2-2' }}</strong><p>Collected minus completed refunds; before gateway fees.</p></div>
+      <div class="ev-kpi-card"><span class="ev-kpi-label">Awaiting collection</span><strong class="ev-kpi-number">{{ audit.local.awaiting | currency:'INR':'symbol':'1.2-2' }}</strong><p>{{ audit.local.inventoryReview }} paid orders need inventory review.</p></div>
+    </section>
+    <section class="audit-panel">
+      <h2>Razorpay payment records</h2>
+      <p>Gateway totals use payment creation dates; order totals use order creation dates. Multiple attempts and payments without a matching store order appear below. Sync the full range before comparing with Razorpay.</p>
+      <div class="audit-summary">
+        <div><span>Captured</span><strong>{{ audit.gateway.captured | currency:'INR':'symbol':'1.2-2' }}</strong></div>
+        <div><span>Refunded</span><strong>{{ audit.gateway.refunded | currency:'INR':'symbol':'1.2-2' }}</strong></div>
+        <div><span>Fees including GST</span><strong>{{ audit.gateway.fees | currency:'INR':'symbol':'1.2-2' }}</strong></div>
+        <div><span>GST already included in fees</span><strong>{{ audit.gateway.feeTax | currency:'INR':'symbol':'1.2-2' }}</strong></div>
+        <div><span>Net after refunds and known fees</span><strong>{{ audit.gateway.netAfterFees | currency:'INR':'symbol':'1.2-2' }}</strong></div>
+      </div>
+      <p>{{ audit.gateway.attempts }} imported attempts · {{ audit.gateway.unmatched }} without matching orders · {{ audit.gateway.feesUnknown }} paid attempts with unknown fees.</p>
+      <p>These are payment collections, not confirmed bank settlements. Appointment bookings are excluded because they do not have a verified payment ledger.</p>
+    </section>
+    <section class="audit-panel">
+      <div class="audit-controls">
+        <button [class.active]="tab()==='orders'" (click)="tab.set('orders');offset.set(0);refresh()">Orders</button>
+        <button [class.active]="tab()==='gateway'" (click)="tab.set('gateway');offset.set(0);refresh()">Gateway attempts</button>
+        <button [class.active]="tab()==='inventory'" (click)="tab.set('inventory')">Stock exceptions ({{ audit.inventory.length }})</button>
+        <button [class.active]="tab()==='vendors'" (click)="tab.set('vendors')">Vendor balances</button>
+        <input aria-label="Search order or payment reference" placeholder="Order UUID or Razorpay reference" [ngModel]="search()" (ngModelChange)="search.set($event)" (keyup.enter)="filter()" />
+        <button (click)="filter()">Search</button><button (click)="exportPage()">Export order page</button>
+      </div>
+      <div class="audit-table-wrap">
+        @if(tab()==='orders'){
+          <table><thead><tr><th>Order / gateway reference</th><th>Local / gateway payment</th><th>Order amount</th><th>Gateway amount / refund</th><th>Fee (GST included)</th><th>Audit result</th><th>Action</th></tr></thead><tbody>
+          @for(order of audit.orders;track order.id){<tr>
+            <td><a routerLink="/admin/orders">{{ order.id }}</a><small>{{ order.gateway_order_id || order.transaction_id || 'No external reference' }}</small><small>{{ order.razorpay_payment_id }}</small><small>{{ order.created_at | date:'medium' }}</small></td>
+            <td>{{ order.payment_status }} / {{ order.gateway_status || 'Not checked' }}<small>Fulfilment: {{ order.status }}</small></td>
+            <td>{{ order.total_amount | currency:'INR':'symbol':'1.2-2' }}</td>
+            <td>{{ order.gateway_amount === null ? '—' : (order.gateway_amount | currency:'INR':'symbol':'1.2-2') }}<small>Refund: {{ order.gateway_refunded === null ? '—' : (order.gateway_refunded | currency:'INR':'symbol':'1.2-2') }}</small></td>
+            <td>{{ order.gateway_fee === null ? 'Unknown' : (order.gateway_fee | currency:'INR':'symbol':'1.2-2') }}</td>
+            <td>{{ discrepancy(order) }}<small>{{ order.gateway_checked_at | date:'medium' }}</small></td>
+            <td>@if(order.payment_method==='Razorpay'){<button [disabled]="checking()!==null" (click)="reconcile(order)">{{ checking()===order.id ? 'Checking…' : 'Check Razorpay' }}</button>@if(order.payment_reconciliation_error){<button [disabled]="checking()!==null" (click)="repair(order)">Repair paid inventory</button>}}</td>
+          </tr>}@empty{<tr><td colspan="7">No orders match this period and search.</td></tr>}
+          </tbody></table>
+        }
+        @if(tab()==='gateway'){
+          <table><thead><tr><th>Payment / gateway order</th><th>Created</th><th>Status</th><th>Amount</th><th>Refunded</th><th>Fees</th><th>Order link</th></tr></thead><tbody>
+          @for(payment of audit.attempts;track payment.id){<tr><td>{{ payment.id }}<small>{{ payment.gateway_order_id }}</small></td><td>{{ payment.provider_created_at | date:'medium' }}</td><td>{{ payment.status }}</td><td>{{ payment.amount_paise/100 | currency:'INR':'symbol':'1.2-2' }}</td><td>{{ payment.refunded_paise/100 | currency:'INR':'symbol':'1.2-2' }}</td><td>{{ payment.fee_paise===null ? 'Unknown' : (payment.fee_paise/100 | currency:'INR':'symbol':'1.2-2') }}</td><td>{{ payment.matched?'Linked':'Unmatched—review' }}</td></tr>}@empty{<tr><td colspan="7">No imported attempts. Use Sync Razorpay to load the selected period.</td></tr>}
+          </tbody></table>
+        }
+        @if(tab()==='inventory'){
+          <p>Current inventory exceptions, independent of the financial date filter. Correct the reservation ledger before adjusting these products.</p>
+          <table><thead><tr><th>Product</th><th>On hand</th><th>Stored reserved</th><th>Active ledger holds</th><th>Action</th></tr></thead><tbody>
+          @for(product of audit.inventory;track product.id){<tr><td>{{ product.name }}<small>{{ product.id }}</small></td><td>{{ product.stock_quantity }}</td><td>{{ product.stock_reserved }}</td><td>{{ product.ledger_reserved }}</td><td><a routerLink="/admin/products">Review inventory</a></td></tr>}@empty{<tr><td colspan="5">Reservation totals agree with the stock ledger.</td></tr>}
+          </tbody></table>
+        }
+        @if(tab()==='vendors'){
+          <p>Current cumulative balances for delivered, collected merchandise; independent of the date filter.</p>
+          <table><thead><tr><th>Vendor</th><th>Eligible sales</th><th>Commission</th><th>Recorded payouts</th><th>Available balance</th><th>Action</th></tr></thead><tbody>
+          @for(vendor of audit.vendorSettlements;track vendor.id){<tr><td>{{ vendor.name }}</td><td>{{ vendor.gross_sales | currency:'INR':'symbol':'1.2-2' }}</td><td>{{ vendor.platform_cut | currency:'INR':'symbol':'1.2-2' }}</td><td>{{ vendor.paid_amount | currency:'INR':'symbol':'1.2-2' }}</td><td>{{ vendor.payable_amount | currency:'INR':'symbol':'1.2-2' }}</td><td><button [disabled]="+vendor.payable_amount<=0" (click)="openPayout(vendor)">Record external payout</button></td></tr>}
+          </tbody></table>
+        }
+      </div>
+      @if(tab()==='orders'||tab()==='gateway'){
+        <div class="audit-controls"><button [disabled]="offset()===0||loading()" (click)="page(-50)">Previous</button><span>Page {{ offset()/50+1 }} · {{ tab()==='orders'?audit.total:audit.gateway.attempts }} records in period</span><button [disabled]="loading()||(tab()==='orders'?audit.orders.length:audit.attempts.length)<50" (click)="page(50)">Next</button></div>
+      }
+    </section>
+  }@else{<p role="status">{{ loading()?'Loading financial records…':'No financial snapshot available.' }}</p>}
+  @if(payout();as vendor){
+    <div class="ev-modal-backdrop"><section class="audit-panel payout-record"><h2>Record payment to {{ vendor.name }}</h2><p>Enter a completed bank transfer. This action does not transfer funds.</p><label>Amount<input type="number" min="0.01" step="0.01" [ngModel]="payoutAmount()" (ngModelChange)="payoutAmount.set(+$event)" /></label><label>Bank reference<input [ngModel]="payoutReference()" (ngModelChange)="payoutReference.set($event)" /></label><button [disabled]="saving()" (click)="savePayout()">Save payment record</button><button [disabled]="saving()" (click)="payout.set(null)">Cancel</button></section></div>
+  }
+</div>

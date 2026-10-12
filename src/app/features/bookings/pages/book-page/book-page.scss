@@ -277,7 +277,9 @@
       }
 
       input,
-      select {
+      select,
+      textarea {
+        font-family: inherit;
         width: 100%;
         background: #f8fafc;
         border: 1px solid #cbd5e1;
@@ -475,3 +477,6 @@
     }
   }
 }
+
+.assignment-note {padding:1rem;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:12px;color:#475569;font-size:.875rem;line-height:1.6;}
+.booking-form button:disabled {opacity:.55;cursor:not-allowed;}

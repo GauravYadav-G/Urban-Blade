@@ -1,0 +1,694 @@
+app-admin-login,
+app-admin-layout,
+.admin-shell {
+  /* Shared Obsidian, Amber and Slate tokens. */
+  --admin-bg: #f5f7fa;
+  --admin-bg-alt: #f1f5f9;
+  --admin-surface: #ffffff;
+  --admin-surface-warm: #ffffff;
+  --admin-surface-inset: #f1f5f9;
+  --admin-surface-deep: #e2e8f0;
+  --admin-surface-quote: #f1f5f9;
+  --admin-surface-disabled: #e2e8f0;
+
+  /* Primary actions use Obsidian; Amber highlights navigation and focus. */
+  --admin-primary: #0b0f19;
+  --admin-primary-hover: #1e293b;
+  --admin-primary-pressed: #334155;
+  --admin-primary-light: rgba(15, 23, 42, 0.08);
+  --admin-primary-glow: rgba(15, 23, 42, 0.22);
+  --admin-primary-contrast: #ffffff;
+
+  /* Warm Sandstone Borders */
+  --admin-border: #e2e8f0;
+  --admin-border-subtle: #f1f5f9;
+  --admin-border-inset: #cbd5e1;
+  --admin-border-focus: #b45309;
+  --admin-accent: #f59e0b;
+
+  /* Ink & Typography */
+  --admin-text: #0b0f19;
+  --admin-text-title: #0b0f19;
+  --admin-text-muted: #64748b;
+  --admin-text-sub: #64748b;
+  --admin-text-disabled: #94a3b8;
+
+  /* Status Tokens (from Modern UI 07 Badges & 12 Alerts) */
+  --admin-amber: #b45309;
+  --admin-amber-bg: #fdf6e7;
+  --admin-amber-border: #f4dfb5;
+  --admin-amber-text: #784408;
+
+  --admin-success: #2d6a4f;
+  --admin-success-bg: #edf5ee;
+  --admin-success-border: #d2e5d5;
+  --admin-success-text: #1e4620;
+
+  --admin-error: #c24b38;
+  --admin-error-bg: #fdf0ee;
+  --admin-error-border: #f8cfc9;
+  --admin-error-text: #991b1b;
+
+  /* Elevations */
+  --admin-shadow-base: 0 1px 3px rgba(45, 35, 25, 0.04);
+  --admin-shadow-raised: 0 4px 20px -2px rgba(60, 45, 30, 0.06), 0 2px 6px -1px rgba(60, 45, 30, 0.03);
+  --admin-shadow-inset: inset 0 2px 4px rgba(45, 35, 25, 0.05), inset 0 -1px 2px rgba(255, 255, 255, 0.85);
+  --admin-shadow-deep: inset 0 3px 6px rgba(45, 35, 25, 0.09), inset 0 1px 2px rgba(0, 0, 0, 0.04);
+
+  /* Radius Scale */
+  --admin-radius-sm: 8px;
+  --admin-radius-md: 10px;
+  --admin-radius-lg: 16px;
+  --admin-radius-xl: 22px;
+  --admin-radius-pill: 9999px;
+
+  /* Fonts */
+  --admin-font-serif: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  --admin-font-sans: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --admin-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   GLOBAL STYLES SCOPED STRICTLY UNDER ADMIN SHELL
+   ───────────────────────────────────────────────────────────────────────── */
+app-admin-layout,
+.admin-shell {
+  background-color: var(--admin-bg) !important;
+  color: var(--admin-text);
+  font-family: var(--admin-font-sans);
+
+  /* Warm Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--admin-surface-inset);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 9999px;
+    border: 2px solid var(--admin-surface-inset);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #bfb29f;
+  }
+
+  /* Display Headings in Editorial Serif (Modern UI Components Title Aesthetic) */
+  h1, h2,
+  .dash-title,
+  .page-title,
+  .admin-page-title,
+  .welcome-greeting,
+  .section-headline,
+  .metric-headline,
+  .panel-heading,
+  .card-title {
+    font-family: var(--admin-font-serif);
+    letter-spacing: -0.025em;
+    color: var(--admin-text-title) !important;
+    font-weight: 600;
+  }
+
+  h3, h4, h5, h6 {
+    font-family: var(--admin-font-sans);
+    font-weight: 600;
+    color: var(--admin-text-title);
+  }
+
+  /* Tracked Uppercase Kickers / Eyebrows */
+  .kicker,
+  .eyebrow,
+  .admin-kicker,
+  .section-kicker,
+  .ui-kicker {
+    display: block;
+    font-family: var(--admin-font-sans);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--admin-primary);
+    margin-bottom: 0.35rem;
+  }
+
+  .dash-subtitle,
+  .page-subtitle,
+  .section-subtitle,
+  .panel-subtext {
+    color: var(--admin-text-muted) !important;
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     ELEVATION 1: SURÉLEVÉ (16PX CRISP IVORY CARDS + SANDSTONE BORDER)
+     ───────────────────────────────────────────────────────────────────────── */
+  .admin-card,
+  .card,
+  .dash-card,
+  .panel-card,
+  .stats-card,
+  .overview-card,
+  .finance-card,
+  .order-card,
+  .kpi-card,
+  .visual-panel,
+  .chart-panel,
+  .rings-panel,
+  .score-panel,
+  .balance-card,
+  .tx-table-container,
+  .table-container,
+  .table-wrapper,
+  .orders-table-wrapper,
+  .products-table-wrapper,
+  .modal-container,
+  .inspector-card,
+  .customer-card,
+  .booking-card,
+  .vendor-card,
+  .refund-card {
+    background: var(--admin-surface) !important;
+    border: 1px solid var(--admin-border) !important;
+    border-radius: var(--admin-radius-lg);
+    box-shadow: var(--admin-shadow-raised) !important;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+
+    &:hover {
+      border-color: rgba(15, 23, 42, 0.35) !important;
+    }
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     ELEVATION 2: ENCASTRÉ (DEBOSSED SUNKEN INSET SURFACES)
+     ───────────────────────────────────────────────────────────────────────── */
+  .inset-box,
+  .rs-inset-box,
+  .search-funnel-box,
+  .timeframe-select-wrap,
+  .radar-selector-wrap,
+  .filter-bar,
+  .tab-strip,
+  .tab-pill-container,
+  .segmented-tabs,
+  .tx-segment-control,
+  .filter-pill-container,
+  .quick-perf-chip,
+  .stats-inset,
+  .metric-inset,
+  .search-input-wrap,
+  .chip-group {
+    background: var(--admin-surface-inset) !important;
+    border: 1px solid var(--admin-border-inset) !important;
+    box-shadow: var(--admin-shadow-inset) !important;
+    border-radius: var(--admin-radius-md);
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     ELEVATION 3: COGNAC SADDLE LEATHER HERO ACCENT SURFACES
+     ───────────────────────────────────────────────────────────────────────── */
+  .dark-savings-card,
+  .balance-card-dark,
+  .bankio-card-dark,
+  .primary-hero-card {
+    background: linear-gradient(135deg, #0b0f19 0%, #1e293b 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    box-shadow: 0 10px 28px -4px rgba(15, 23, 42, 0.32) !important;
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     01 BUTTONS — COGNAC SADDLE LEATHER & WARM OUTLINE CONTROLS
+     ───────────────────────────────────────────────────────────────────────── */
+  .btn-primary,
+  .btn-action-primary,
+  .btn-primary-glow,
+  .btn-create,
+  .btn-publish,
+  .btn-disburse,
+  .btn-save,
+  .btn-confirm,
+  .btn-submit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: var(--admin-primary) !important;
+    color: var(--admin-primary-contrast) !important;
+    border: 1px solid var(--admin-primary) !important;
+    border-radius: var(--admin-radius-md) !important;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.22) !important;
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+
+    &:hover:not(:disabled) {
+      background: var(--admin-primary-hover) !important;
+      border-color: var(--admin-primary-hover) !important;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.32) !important;
+    }
+
+    &:active:not(:disabled) {
+      background: var(--admin-primary-pressed) !important;
+      transform: translateY(0);
+    }
+
+    &:disabled {
+      background: var(--admin-surface-disabled) !important;
+      border-color: var(--admin-surface-disabled) !important;
+      color: #ffffff !important;
+      cursor: not-allowed;
+      box-shadow: none !important;
+    }
+  }
+
+  /* Secondary Button / Ghost Action */
+  .btn-secondary,
+  .btn-outline,
+  .btn-ghost-action,
+  .btn-export,
+  .btn-export-csv,
+  .btn-refresh,
+  .btn-cancel,
+  .action-pill,
+  .month-pill,
+  .btn-ghost-sand {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: #ffffff !important;
+    color: var(--admin-text) !important;
+    border: 1px solid var(--admin-border) !important;
+    border-radius: var(--admin-radius-md) !important;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(45, 35, 25, 0.03);
+    transition: all 0.18s ease;
+
+    &:hover {
+      background: var(--admin-surface-inset) !important;
+      border-color: var(--admin-primary) !important;
+      color: var(--admin-primary) !important;
+      transform: translateY(-1px);
+    }
+  }
+
+  /* Tertiary Action Button (Link with arrow) */
+  .btn-tertiary,
+  .btn-link-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: transparent !important;
+    border: none !important;
+    color: var(--admin-text) !important;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: color 0.15s ease;
+
+    &:hover {
+      color: var(--admin-primary) !important;
+    }
+  }
+
+  /* Icon Buttons (Circular Outline) */
+  .btn-icon,
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 50% !important;
+    border: 1px solid var(--admin-border) !important;
+    background: #ffffff !important;
+    color: var(--admin-text) !important;
+    cursor: pointer;
+    transition: all 0.18s ease;
+
+    &:hover {
+      border-color: var(--admin-primary) !important;
+      color: var(--admin-primary) !important;
+    }
+
+    &--dark {
+      background: var(--admin-text) !important;
+      color: #ffffff !important;
+      border-color: var(--admin-text) !important;
+
+      &:hover {
+        background: var(--admin-primary) !important;
+        border-color: var(--admin-primary) !important;
+      }
+    }
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     03 & 04 FORM INPUTS & SELECTS (CHAMP DE TEXTE ET SÉLECTION)
+     ───────────────────────────────────────────────────────────────────────── */
+  input[type='text'],
+  input[type='email'],
+  input[type='number'],
+  input[type='tel'],
+  input[type='search'],
+  input[type='password'],
+  select,
+  textarea {
+    background: #ffffff !important;
+    border: 1px solid var(--admin-border) !important;
+    border-radius: var(--admin-radius-md) !important;
+    color: var(--admin-text) !important;
+    font-size: 0.88rem;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+
+    &::placeholder {
+      color: var(--admin-text-sub) !important;
+    }
+
+    &:focus {
+      background: #ffffff !important;
+      border-color: var(--admin-primary) !important;
+      outline: none !important;
+      box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.14) !important;
+    }
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     10 TABS & SEGMENTED CONTROLS
+     ───────────────────────────────────────────────────────────────────────── */
+  .tab-btn,
+  .tab-pill,
+  .seg-btn,
+  .filter-tab {
+    color: var(--admin-text-muted) !important;
+    border-radius: var(--admin-radius-pill) !important;
+    transition: all 0.18s ease;
+
+    &.active {
+      background: #ffffff !important;
+      color: var(--admin-primary) !important;
+      font-weight: 700 !important;
+      box-shadow: 0 2px 6px rgba(45, 35, 25, 0.08) !important;
+    }
+
+    &.active-cognac,
+    &.active-teal {
+      background: var(--admin-primary) !important;
+      color: #ffffff !important;
+    }
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     07 ÉTIQUETTES / BADGES (PILL CHIPS)
+     ───────────────────────────────────────────────────────────────────────── */
+  .badge-new,
+  .badge-pill--new {
+    background: #f4eee5 !important;
+    color: #524536 !important;
+    border: 1px solid #e7ddcd !important;
+    border-radius: var(--admin-radius-pill) !important;
+    padding: 0.22rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+
+  .badge-popular,
+  .badge-pill--popular {
+    background: #0b0f19 !important;
+    color: #ffffff !important;
+    border-radius: var(--admin-radius-pill) !important;
+    padding: 0.22rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+
+  .badge-sale,
+  .badge-pill--sale,
+  .status-badge--cancelled,
+  .status-badge--refunded {
+    background: var(--admin-error-bg) !important;
+    border: 1px solid var(--admin-error-border) !important;
+    color: var(--admin-error-text) !important;
+    border-radius: var(--admin-radius-pill) !important;
+    padding: 0.22rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+
+  .badge-update,
+  .badge-nouveau,
+  .badge-primary-pill,
+  .status-indicator.live,
+  .radar-active-tag,
+  .status-badge--completed,
+  .status-badge--delivered,
+  .status-badge--active,
+  .badge-pill--green {
+    background: var(--admin-success-bg) !important;
+    border: 1px solid var(--admin-success-border) !important;
+    color: var(--admin-success-text) !important;
+    border-radius: var(--admin-radius-pill) !important;
+    padding: 0.22rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  /* En cours / Processing / Pending / Warnings */
+  .badge-encours,
+  .status-badge--processing,
+  .status-badge--pending,
+  .status-badge--in_progress,
+  .session-pill.warning {
+    background: var(--admin-amber-bg) !important;
+    border: 1px solid var(--admin-amber-border) !important;
+    color: var(--admin-amber-text) !important;
+    border-radius: var(--admin-radius-pill) !important;
+    padding: 0.22rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  /* En attente / Muted / Neutral / Draft */
+  .badge-enattente,
+  .status-badge--neutral,
+  .status-badge--draft {
+    background: var(--admin-surface-inset) !important;
+    border: 1px solid var(--admin-border-inset) !important;
+    color: var(--admin-text-muted) !important;
+    border-radius: var(--admin-radius-pill) !important;
+    padding: 0.22rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     12 ALERTS & NOTIFICATIONS
+     ───────────────────────────────────────────────────────────────────────── */
+  .alert-success,
+  .banner-success {
+    background: #edf5ee !important;
+    border: 1px solid #d2e5d5 !important;
+    color: #1e4620 !important;
+    border-radius: var(--admin-radius-md) !important;
+    padding: 0.85rem 1.15rem;
+  }
+
+  .alert-warning,
+  .banner-warning {
+    background: #fdf6e7 !important;
+    border: 1px solid #f4dfb5 !important;
+    color: #784408 !important;
+    border-radius: var(--admin-radius-md) !important;
+    padding: 0.85rem 1.15rem;
+  }
+
+  .alert-error,
+  .banner-error {
+    background: #fdf0ee !important;
+    border: 1px solid #f8cfc9 !important;
+    color: #991b1b !important;
+    border-radius: var(--admin-radius-md) !important;
+    padding: 0.85rem 1.15rem;
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     09 PROGRESS BARS & 11 PAGINATION
+     ───────────────────────────────────────────────────────────────────────── */
+  .progress-bar-track {
+    background: var(--admin-surface-inset) !important;
+    border-radius: var(--admin-radius-pill);
+    overflow: hidden;
+
+    .progress-bar-fill {
+      background: var(--admin-primary) !important;
+      border-radius: var(--admin-radius-pill);
+    }
+  }
+
+  .pagination-page {
+    border-radius: var(--admin-radius-sm);
+    color: var(--admin-text);
+    transition: all 0.15s ease;
+
+    &.active {
+      background: var(--admin-primary) !important;
+      color: #ffffff !important;
+      font-weight: 700;
+    }
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     QUOTE CARD (JARED SPOOL EDITORIAL CALLOUT IN ADMIN)
+     ───────────────────────────────────────────────────────────────────────── */
+  .quote-card,
+  .admin-quote-card {
+    background: var(--admin-surface-quote, #f1f5f9) !important;
+    border: 1px solid var(--admin-border) !important;
+    border-radius: var(--admin-radius-lg);
+    padding: 1.5rem 1.75rem;
+    position: relative;
+    margin: 1.5rem 0;
+
+    .quote-text {
+      font-family: var(--admin-font-serif);
+      font-size: 1.15rem;
+      font-style: italic;
+      color: var(--admin-text);
+      line-height: 1.45;
+      margin: 0 0 0.5rem;
+    }
+
+    .quote-author {
+      font-family: var(--admin-font-sans);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--admin-text-muted);
+      margin: 0;
+    }
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     TABLE HEADERS & ROWS (ENTÊTE DE TABLEAU COMPACT)
+     ───────────────────────────────────────────────────────────────────────── */
+  table thead tr,
+  .tx-table thead tr,
+  .bankio-table thead tr {
+    background: var(--admin-surface-inset) !important;
+    color: var(--admin-text-muted) !important;
+
+    th {
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--admin-text-muted) !important;
+      border-bottom: none !important;
+      padding: 0.95rem 1.25rem;
+    }
+  }
+
+  table tbody tr,
+  .tx-table tbody tr,
+  .bankio-table tbody tr {
+    transition: background 0.15s ease;
+    border-bottom: 1px solid #e2e8f0 !important;
+
+    &:hover {
+      background: rgba(245, 238, 229, 0.65) !important;
+    }
+
+    td {
+      color: var(--admin-text) !important;
+      padding: 0.95rem 1.25rem;
+    }
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     MODALS & CONFIRMATION DIALOGS (DIALOGUE DE CONFIRMATION)
+     ───────────────────────────────────────────────────────────────────────── */
+  .modal-backdrop,
+  .dialog-backdrop,
+  .payout-modal-backdrop,
+  .inspector-modal-backdrop {
+    background: rgba(28, 24, 21, 0.5) !important;
+    backdrop-filter: blur(6px) !important;
+  }
+
+  .modal-box,
+  .dialog-box,
+  .payout-modal,
+  .inspector-modal,
+  .confirm-dialog {
+    background: var(--admin-surface-warm) !important;
+    border: 1px solid var(--admin-border) !important;
+    box-shadow: 0 20px 45px -8px rgba(45, 35, 25, 0.22) !important;
+    border-radius: var(--admin-radius-xl) !important;
+  }
+}
+
+
+/* Shared page template. Component styles retain workflow-specific layouts. */
+app-admin-layout .admin-shell {
+  :is(.page-header, .dash-header, .ev-page-header) {
+    align-items: flex-start;
+    gap: 1.25rem;
+    margin-bottom: 0;
+    > div { min-width: 0; }
+    h1 { margin: .25rem 0 .5rem; font-size: clamp(1.5rem, 2.4vw, 2rem); line-height: 1.25; }
+    p { max-width: 70ch; margin: 0; line-height: 1.6; color: var(--admin-text-muted); }
+  }
+  :is(.header-actions, .dash-header__right, .audit-controls, .filters-group) {
+    display: flex; align-items: center; flex-wrap: wrap; gap: .65rem;
+  }
+  :is(.products-page, .orders-view, .bookings-view, .customers-view, .coupons-page, .bankio-dashboard, .evolurex-finance-page) {
+    width: 100%; max-width: none; min-width: 0; gap: 1.5rem;
+  }
+  :is(.table-card, .table-container, .table-wrapper, .orders-table-wrapper, .products-table-wrapper, .audit-table-wrap) {
+    max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; white-space: nowrap; }
+  td { vertical-align: middle; font-variant-numeric: tabular-nums; }
+  :is(.header-actions, .audit-controls) > :is(button, select, input),
+  :is(.btn-primary, .btn-secondary, .btn-export, .btn-ghost-action, .btn-primary-glow, .btn-create-order) {
+    min-height: 42px; padding: .65rem 1rem; font-size: .8125rem; line-height: 1.35;
+  }
+  .btn-create-order { background: var(--admin-primary); color: white; border: 1px solid var(--admin-primary); border-radius: 10px; }
+  button { cursor: pointer; }
+  button:disabled { cursor: not-allowed; opacity: .55; transform: none; }
+  :is(button, a, input, select, textarea):focus-visible {
+    outline: 3px solid var(--admin-accent) !important; outline-offset: 3px;
+  }
+  :is(input, select, textarea) { max-width: 100%; }
+  :is(.search-wrap, .search-input-wrap) { min-width: 0; }
+  :is(.modal-backdrop, .dialog-backdrop, .ev-modal-backdrop) { overflow-y: auto; padding: 1rem; }
+  :is(.modal-box, .dialog-box, .modal-container, .payout-modal, .confirm-dialog) {
+    max-width: calc(100vw - 2rem); max-height: calc(100dvh - 2rem); overflow-y: auto;
+  }
+  @media (max-width: 900px) {
+    :is(.page-header, .dash-header, .ev-page-header) { flex-direction: column; align-items: stretch; }
+    .header-actions { justify-content: flex-start; }
+  }
+  @media (max-width: 600px) {
+    :is(.header-actions, .audit-controls) { width: 100%; }
+    :is(.header-actions, .audit-controls) > :is(button, select, input) { flex: 1 1 auto; }
+    :is(.telemetry-strip, .stats-grid, .kpi-grid) { grid-template-columns: minmax(0, 1fr); }
+    :is(.filter-pills, .stock-pills) { max-width: 100%; flex-wrap: wrap; }
+  }
+}
+
+app-admin-layout .admin-shell {
+  .pay-status-pill--refunded { color: var(--admin-text-muted); background: var(--admin-surface-inset); border: 1px solid var(--admin-border); }
+  .order-inspector-modal { width: min(1200px, calc(100vw - 2rem)); }
+  .order-inspector-modal .modal-footer { display: flex; flex-wrap: wrap; gap: .65rem; }
+  .pos-modal-card { max-width: calc(100vw - 2rem); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+}

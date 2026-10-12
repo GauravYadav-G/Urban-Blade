@@ -5,11 +5,11 @@
   <header class="book-hero">
     <div class="kicker-pill">
       <span class="sparkle">✦</span>
-      <span>MASTER BARBER SERVICES & RESERVATIONS</span>
+      <span>APPOINTMENT BOOKING</span>
     </div>
-    <h1>Book a Studio Visit</h1>
+    <h1>Book an Appointment</h1>
     <p class="lede">
-      Experience precision skin-fades, beard sculpting, and executive scalp therapies at our flagship studio.
+      Choose your service, then book a salon appointment or a visit at your home.
     </p>
   </header>
 
@@ -27,7 +27,7 @@
           </svg>
         </div>
         <div>
-          <span class="venue-kicker">FLAGSHIP SALON STUDIO</span>
+          <span class="venue-kicker">SALON DETAILS</span>
           <h3>Urban Blade Grooming Studio</h3>
         </div>
       </div>
@@ -73,12 +73,12 @@
       </div>
 
       <div class="venue-perks">
-        <h4>Studio Privileges:</h4>
+        <h4>Booking information</h4>
         <ul>
-          <li>✓ Certified Master Barbers with 10+ years craft experience</li>
-          <li>✓ Japanese steel clippers sterilized in medical autoclaves</li>
-          <li>✓ Complimentary espresso & scalp diagnostic session</li>
-          <li>✓ Guaranteed chair timing with zero waiting buffer</li>
+          <li>Select either a salon visit or home service.</li>
+          <li>Choose your preferred date and time.</li>
+          <li>For home visits, provide the complete service address.</li>
+          <li>No advance payment is required to submit a booking.</li>
         </ul>
       </div>
 
@@ -100,9 +100,9 @@
             </svg>
           </div>
 
-          <h2>Booking Request Dispatched!</h2>
+          <h2>Appointment saved</h2>
           <p class="success-sub">
-            Thank you, <strong>{{ lastBooking?.customer_name }}</strong>. Your reservation request for 
+            Thank you, <strong>{{ lastBooking?.customer_name }}</strong>. Your reservation request for
             <strong>{{ lastBooking?.notes }}</strong> has been registered in our studio queue.
           </p>
 
@@ -116,13 +116,13 @@
               <strong>{{ lastBooking?.time_slot }}</strong>
             </div>
             <div class="bsp-item">
-              <span class="bsp-label">Stylist</span>
-              <strong>{{ lastBooking?.stylist_name }}</strong>
+              <span class="bsp-label">Visit</span>
+              <strong>{{ lastBooking?.visit_type === 'home' ? 'Home visit' : 'Salon visit' }}</strong>
             </div>
           </div>
 
           <p class="confirmation-hint">
-            The studio concierge will call <strong>{{ lastBooking?.customer_phone }}</strong> within 15 minutes to lock in your slot.
+            Your booking reference is <strong>{{ lastBooking?.id }}</strong>. Contact the studio if you need to change your visit.
           </p>
 
           <div class="success-actions">
@@ -137,18 +137,20 @@
       } @else {
         <section class="card form-card">
           <div class="form-header">
-            <h2>Reserve Your Chair</h2>
-            <p>Select your styling service and preferred date. We will hold your spot.</p>
+            <h2>Appointment details</h2>
+            <p>Select the service, location, date, and time that work for you.</p>
           </div>
 
+          @if(error()){<p class="field-error" role="alert">{{ error() }}</p>}
+          <p class="assignment-note">Choose a salon visit or home service. Our team handles staff assignment. For home service, your assigned stylist will appear in your booking details.</p>
           <form [formGroup]="form" (ngSubmit)="submit()" class="booking-form">
             <div class="form-group">
               <label for="client-name">Full Name *</label>
-              <input 
-                id="client-name" 
-                type="text" 
-                formControlName="name" 
-                placeholder="e.g. Rahul Sharma" 
+              <input
+                id="client-name"
+                type="text"
+                formControlName="name"
+                placeholder="e.g. Rahul Sharma"
               />
               @if (form.controls.name.invalid && form.controls.name.touched) {
                 <span class="field-error">Please enter your full name.</span>
@@ -157,48 +159,71 @@
 
             <div class="form-group">
               <label for="client-phone">Mobile Phone (10 digits) *</label>
-              <input 
-                id="client-phone" 
-                type="tel" 
-                formControlName="phone" 
-                placeholder="e.g. 9876543210" 
-                maxlength="10" 
+              <input
+                id="client-phone"
+                type="tel"
+                formControlName="phone"
+                placeholder="e.g. 9876543210"
+                maxlength="10"
               />
               @if (form.controls.phone.invalid && form.controls.phone.touched) {
-                <span class="field-error">Valid 10-digit mobile number required for SMS verification.</span>
+                <span class="field-error">Enter a valid 10-digit mobile number.</span>
               }
             </div>
 
             <div class="form-group">
               <label for="service-select">Select Salon Service *</label>
-              <select id="service-select" formControlName="service">
+              <select id="service-select" formControlName="service"><option value="" disabled>Select a service</option>
                 @for (svc of services(); track svc.id) {
-                  <option [value]="svc.name">{{ svc.name }} — ₹{{ svc.price }} (In Salon)</option>
+                  <option [value]="svc.name">{{ svc.name }} — ₹{{ svc.price }}</option>
                 }
               </select>
             </div>
 
             <div class="form-group">
               <label for="service-date">Preferred Date *</label>
-              <input 
-                id="service-date" 
-                type="date" 
-                formControlName="date" 
+              <input
+                id="service-date"
+                type="date"
+                formControlName="date" [min]="minDate"
               />
               @if (form.controls.date.invalid && form.controls.date.touched) {
                 <span class="field-error">Please select your preferred visit date.</span>
               }
             </div>
 
+            <div class="form-group">
+              <label for="service-time">Preferred Time *</label>
+              <input id="service-time" type="time" formControlName="time" />
+            </div>
+
+            <div class="form-group">
+              <label for="visit-type">Service Location *</label>
+              <select id="visit-type" formControlName="visitType">
+                <option value="salon">Visit the salon</option>
+                <option value="home">Service at my home</option>
+              </select>
+            </div>
+
+            @if (form.controls.visitType.value === 'home') {
+              <div class="form-group">
+                <label for="service-address">Complete Home Address *</label>
+                <textarea id="service-address" rows="3" formControlName="address" placeholder="House, street, locality, city and postal code"></textarea>
+                @if (form.controls.address.invalid && form.controls.address.touched) {
+                  <span class="field-error">Please enter the complete service address.</span>
+                }
+              </div>
+            }
+
             <div class="form-footer">
-              <button type="submit" class="btn-submit" [disabled]="form.invalid">
+              <button [disabled]="saving() || services().length === 0" type="submit" class="btn-submit" [disabled]="form.invalid">
                 <span>Confirm Booking Request</span>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                   <polyline points="12 5 19 12 12 19"></polyline>
                 </svg>
               </button>
-              <span class="form-privacy-note">🔒 Zero payment required upfront. Settle in studio after service.</span>
+              <span class="form-privacy-note">No payment is required to submit this appointment request.</span>
             </div>
           </form>
         </section>

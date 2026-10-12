@@ -657,6 +657,11 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
   addToCart(product: any): void {
     if (!product?.id) return;
 
+    if (product.kind === 'service' || product.category === 'services') {
+      void this.router.navigate(['/book'], { queryParams: { service: product.id } });
+      return;
+    }
+
     const p: Product = {
       id: product.id,
       name: product.name,
@@ -669,7 +674,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
       currency: 'INR',
       imageUrl: product.image_url || '/images/products/svc-mens-spa.jpg',
       category: (product.category as any) || 'hair',
-      kind: 'retail',
+      kind: product.kind === 'gift' ? 'gift' : 'retail',
       vendor: 'Urban Blade Flagship',
       audience: 'men',
       rating: Number(product.rating || 4.8),

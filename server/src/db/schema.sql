@@ -103,10 +103,12 @@ CREATE TABLE IF NOT EXISTS bookings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   customer_name VARCHAR(255) NOT NULL,
-  customer_email VARCHAR(255) NOT NULL,
+  customer_email VARCHAR(255),
   customer_phone VARCHAR(50),
   stylist_id UUID REFERENCES stylists(id) ON DELETE SET NULL,
   service_id UUID REFERENCES products(id) ON DELETE SET NULL,
+  visit_type VARCHAR(20) NOT NULL DEFAULT 'salon' CHECK (visit_type IN ('salon', 'home')),
+  service_address TEXT,
   booking_date DATE NOT NULL,
   time_slot VARCHAR(20) NOT NULL,
   status VARCHAR(20) DEFAULT 'confirmed' CHECK (status IN ('pending', 'confirmed', 'cancelled', 'completed')),
@@ -115,6 +117,10 @@ CREATE TABLE IF NOT EXISTS bookings (
   version INTEGER DEFAULT 0 NOT NULL,
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_type VARCHAR(20) NOT NULL DEFAULT 'salon';
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS service_address TEXT;
+ALTER TABLE bookings ALTER COLUMN customer_email DROP NOT NULL;
 
 -- ─── ORDERS (ACID ASYNC SAGA) ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS orders (
@@ -132,6 +138,15 @@ CREATE TABLE IF NOT EXISTS orders (
   transaction_id VARCHAR(255),
   razorpay_payment_id VARCHAR(255),
   razorpay_signature VARCHAR(255),
+  payment_verification_started_at TIMESTAMPTZ,
+  refund_status VARCHAR(30),
+  refund_id VARCHAR(255),
+  refund_receipt VARCHAR(100),
+  refund_amount NUMERIC(10, 2),
+  refund_reason TEXT,
+  refund_requested_at TIMESTAMPTZ,
+  refunded_at TIMESTAMPTZ,
+  refund_failure_reason TEXT,
   coupon_code VARCHAR(100),
   discount_amount NUMERIC(10, 2) NOT NULL DEFAULT 0 CHECK (discount_amount >= 0),
   tracking_number VARCHAR(255),
@@ -185,6 +200,15 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS carrier VARCHAR(120);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS razorpay_payment_id VARCHAR(255);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS razorpay_signature VARCHAR(255);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_verification_started_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_status VARCHAR(30);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_id VARCHAR(255);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_receipt VARCHAR(100);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(10, 2);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_reason TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_requested_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_failure_reason TEXT;
 CREATE INDEX IF NOT EXISTS idx_orders_razorpay_payment_id ON orders(razorpay_payment_id);
 
 -- Contact number a customer saves on their profile (used for carrier OTP and
@@ -321,3 +345,62 @@ CREATE TABLE IF NOT EXISTS admin_tasks (
   due_date TEXT, related_user TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Full-order returns are reviewed and physically received before reimbursement.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_status VARCHAR(20)
+  CHECK (return_status IN ('requested', 'approved', 'rejected', 'received'));
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_reason TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_review_note TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_requested_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_received_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_external_reference VARCHAR(150);
+CREATE TABLE IF NOT EXISTS vendor_payouts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  vendor_id VARCHAR(120) NOT NULL REFERENCES vendors(id),
+  amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+  reference VARCHAR(150) NOT NULL UNIQUE,
+  notes TEXT NOT NULL DEFAULT '',
+  recorded_by UUID NOT NULL REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_reconciliation_error TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_checked_at TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS gateway_payments (
+  id VARCHAR(100) PRIMARY KEY,
+  gateway_order_id VARCHAR(100),
+  status VARCHAR(30) NOT NULL,
+  amount_paise BIGINT NOT NULL CHECK (amount_paise >= 0),
+  refunded_paise BIGINT NOT NULL DEFAULT 0 CHECK (refunded_paise >= 0),
+  currency VARCHAR(5) NOT NULL,
+  fee_paise BIGINT,
+  tax_paise BIGINT,
+  method VARCHAR(50),
+  provider_created_at TIMESTAMPTZ NOT NULL,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS gateway_payments_order_idx ON gateway_payments(gateway_order_id);
+CREATE INDEX IF NOT EXISTS gateway_payments_created_idx ON gateway_payments(provider_created_at);
+CREATE TABLE IF NOT EXISTS stock_adjustments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID NOT NULL REFERENCES products(id),
+  actor_id UUID NOT NULL REFERENCES users(id),
+  delta INTEGER NOT NULL,
+  quantity_before INTEGER NOT NULL,
+  quantity_after INTEGER NOT NULL,
+  reason TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Durable fulfilment observations and operator changes; never a payment ledger.
+CREATE TABLE IF NOT EXISTS order_fulfilment_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  source TEXT NOT NULL CHECK (source IN ('admin','carrier_api')),
+  previous_status TEXT NOT NULL,
+  resulting_status TEXT NOT NULL,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_fulfilment_events_order ON order_fulfilment_events(order_id,created_at DESC);

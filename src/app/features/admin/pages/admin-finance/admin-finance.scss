@@ -1,0 +1,38 @@
+:host { display: block; min-width: 0; }
+.evolurex-finance-page { display: flex; flex-direction: column; gap: 1.5rem; }
+.ev-page-header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1.25rem; }
+.brand-sub-badge { color: var(--admin-text-muted); font-size: .7rem; font-weight: 700; letter-spacing: .1em; }
+.ev-page-subtitle, .audit-note, .audit-panel p, .ev-kpi-card p { color: var(--admin-text-muted); font-size: .8125rem; line-height: 1.65; }
+.audit-note { margin: 0; }
+.ev-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+.ev-kpi-card, .audit-panel { background: var(--admin-surface); border: 1px solid var(--admin-border); border-radius: var(--admin-radius-lg); padding: 1.5rem; min-width: 0; box-shadow: var(--admin-shadow-base); }
+.ev-kpi-label { color: var(--admin-text-muted); font-size: .75rem; font-weight: 600; }
+.ev-kpi-number { display: block; margin-top: 1rem; font-size: clamp(1.25rem, 2vw, 1.8rem); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ev-kpi-card p { margin-bottom: 0; }
+.audit-panel h2 { margin: 0 0 .75rem; font-size: 1.125rem; }
+.audit-controls { display: flex; gap: .625rem; flex-wrap: wrap; align-items: center; margin: 1rem 0; }
+.ev-page-header .audit-controls { margin: 0; }
+.audit-controls button, .audit-panel button, .audit-controls select, .audit-controls input, .payout-record input { min-height: 42px; padding: .6rem .85rem; border: 1px solid var(--admin-border); border-radius: var(--admin-radius-md); background: var(--admin-surface); color: var(--admin-text); font: inherit; font-size: .8125rem; }
+.audit-controls input { flex: 1 1 260px; min-width: 0; }
+.audit-controls button.active { background: var(--admin-primary); color: var(--admin-primary-contrast); border-color: var(--admin-primary); }
+.audit-controls button:hover:not(:disabled), .audit-panel button:hover:not(:disabled) { border-color: var(--admin-border-focus); }
+.audit-controls button:disabled, .audit-panel button:disabled { opacity: .5; cursor: not-allowed; }
+.audit-alert { border: 1px solid var(--admin-amber-border); border-left: 4px solid var(--admin-accent); background: var(--admin-amber-bg); color: var(--admin-amber-text); padding: 1rem; border-radius: 8px; margin: 0; }
+.audit-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1.5rem; margin: 1.5rem 0; }
+.audit-summary span, .audit-summary strong { display: block; }
+.audit-summary span { color: var(--admin-text-muted); font-size: .75rem; }
+.audit-summary strong { font-size: 1.25rem; margin-top: .5rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.audit-table-wrap { overflow-x: auto; border: 1px solid var(--admin-border); border-radius: 10px; }
+.audit-table-wrap table { border-collapse: collapse; width: 100%; font-size: .8125rem; }
+.audit-table-wrap th, .audit-table-wrap td { padding: .9rem 1rem; border-bottom: 1px solid var(--admin-border); text-align: left; }
+.audit-table-wrap td { min-width: 130px; }
+.audit-table-wrap th { white-space: nowrap; }
+.audit-table-wrap small { display: block; color: var(--admin-text-muted); margin-top: .35rem; overflow-wrap: anywhere; }
+.audit-table-wrap td:first-child { min-width: 230px; overflow-wrap: anywhere; }
+.audit-table-wrap td button { margin: .2rem 0; }
+.ev-modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: rgb(11 15 25 / 55%); padding: 1rem; }
+.payout-record { width: min(480px, 100%); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+.payout-record label { display: grid; gap: .5rem; margin: 1rem 0; font-size: .8125rem; }
+.payout-record button { margin-right: .5rem; }
+@media (max-width: 1200px) { .ev-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .ev-kpi-grid { grid-template-columns: minmax(0, 1fr); } .audit-panel, .ev-kpi-card { padding: 1rem; } }

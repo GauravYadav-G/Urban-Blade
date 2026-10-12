@@ -11,6 +11,7 @@ import { ProductSlider } from '@shared/components/product-slider/product-slider'
 import { RatingStars } from '@shared/components/rating-stars/rating-stars';
 import { ImgFallback } from '@shared/directives/img-fallback';
 import { InrPipe } from '@shared/pipes/inr-pipe';
+import { isServiceProduct } from '@core/models/product.model';
 
 @Component({
   selector: 'app-product-detail-page',
@@ -74,17 +75,35 @@ export class ProductDetailPage {
   isOutOfStock(): boolean {
     const p = this.product();
     if (!p) return true;
+    if (isServiceProduct(p)) return false;
     return !p.inStock || (p.stock_quantity !== undefined && p.stock_quantity <= 0);
+  }
+
+  isService(): boolean {
+    return isServiceProduct(this.product());
+  }
+
+  bookService(): void {
+    const p = this.product();
+    if (p) void this.router.navigate(['/book'], { queryParams: { service: p.id } });
   }
 
   addToCart(): void {
     const p = this.product();
+    if (isServiceProduct(p)) {
+      this.bookService();
+      return;
+    }
     if (p && !this.isOutOfStock()) {
       this.cart.addProduct(p, this.qty);
     }
   }
 
   buyNow(): void {
+    if (this.isService()) {
+      this.bookService();
+      return;
+    }
     if (this.isOutOfStock()) return;
     this.addToCart();
     void this.router.navigate(['/checkout']);

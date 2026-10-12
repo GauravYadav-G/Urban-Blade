@@ -3,7 +3,7 @@
   @if (account.isImpersonatingVendor()) {
     <div class="vendor-impersonation-banner">
       <div class="banner-content">
-        <span class="banner-badge">👁️ VENDOR PORTAL PREVIEW</span>
+        <span class="banner-badge">VENDOR PORTAL PREVIEW</span>
         <span class="banner-text">Viewing restricted merchant environment as: <strong>{{ account.activeVendorName() }}</strong></span>
       </div>
       <button type="button" class="btn-exit-preview" (click)="onSignOut()">
@@ -12,128 +12,25 @@
     </div>
   }
 
-  <!-- Top Command Bar -->
-  <header class="admin-topbar">
-    <div class="topbar-left">
-      <a routerLink="/admin/dashboard" class="brand-crest">
-        <div class="crest-emblem">UB</div>
-        <div class="crest-details">
-          <span class="crest-text">URBAN BLADE</span>
-          <span class="crest-tag">{{ account.isVendor() ? (account.activeVendorName() || 'VENDOR OS') : 'STUDIO OS' }}</span>
-        </div>
-      </a>
-
-      <div class="topbar-breadcrumbs">
-        <span class="bc-sep">/</span>
-        <span class="bc-root">Console</span>
-        <span class="bc-sep">/</span>
-        <span class="bc-active">{{ account.isVendor() ? 'Vendor Portal' : 'Master Operations' }}</span>
-      </div>
-    </div>
-
-    <!-- Quick Search Pill -->
-    <div class="topbar-search">
-      <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-        <circle cx="11" cy="11" r="8"/>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-      </svg>
-      <input
-        #searchInput
-        type="text"
-        placeholder="Search orders, catalog, tasks, inquiries..."
-        aria-label="Global admin search"
-        [ngModel]="globalSearchQuery()"
-        (ngModelChange)="globalSearchQuery.set($event)"
-        (keyup.enter)="onGlobalSearch()"
-      />
-      <kbd class="shortcut-key" (click)="searchInput.focus()">⌘K</kbd>
-    </div>
-
-    <!-- Right Controls -->
-    <div class="topbar-right">
-      <!-- AI Support Desk Trigger Button -->
-      <button 
-        type="button" 
-        class="btn-support-desk" 
-        (click)="isSupportChatOpen.set(true)" 
-        title="Open Support Desk & AI Concierge"
-      >
-        <span class="sparkle-icon">✨</span>
-        <span class="desk-label">AI Support Desk</span>
-        @if (supportInquiryCount() > 0) {
-          <span class="support-unread-pill">{{ supportInquiryCount() }}</span>
-        }
-      </button>
-
-      <div class="session-status-pill" [class.warning]="session.isWarning()" title="Session auto-locks after 15m of inactivity">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <polyline points="12 6 12 12 16 14"></polyline>
-        </svg>
-        <span class="session-text">{{ session.formattedRemaining() }}</span>
-        @if (session.isWarning()) {
-          <button type="button" class="btn-extend-mini" (click)="session.extendSession()" title="Extend session">
-            Extend
-          </button>
-        }
-      </div>
-
-      <div class="cluster-status-pill" title="Live PostgreSQL 16 & Redis cluster synchronized">
-        <span class="radar-pulse"></span>
-        <span class="cluster-text">Cluster Synced</span>
-      </div>
-
-      @if (!account.isVendor()) {
-        <button type="button" class="btn-flush" (click)="admin.flushCache()" [disabled]="admin.isSyncing()" title="Purge Redis L2 cache">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" [class.spin]="admin.isSyncing()">
-            <path d="M23 4v6h-6M1 20v-6h6"/>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+  <div class="admin-frame">
+    <!-- Left Sidebar (Bankio full-height style) -->
+    <aside id="admin-navigation" aria-label="Admin navigation" class="admin-sidebar" [class.open]="isMobileSidebarOpen()">
+      <div class="sidebar-brand-header">
+        <a routerLink="/admin/dashboard" class="brand-crest">
+          <div class="crest-emblem">UB</div>
+          <div class="crest-details">
+            <span class="crest-text">Urban Blade</span>
+            <span class="crest-tag">{{ account.isVendor() ? (account.activeVendorName() || 'VENDOR OS') : 'STUDIO OS' }}</span>
+          </div>
+        </a>
+        <button type="button" class="brand-caret" aria-label="Close navigation" (click)="isMobileSidebarOpen.set(false)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="6 9 12 15 18 9" />
           </svg>
-          <span>{{ admin.isSyncing() ? 'Flushing...' : 'Purge Cache' }}</span>
         </button>
-      }
-
-      <a routerLink="/shop" class="btn-storefront" target="_blank" title="View live storefront">
-        <span>Storefront</span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
-        </svg>
-      </a>
-
-      <div class="admin-profile-pill">
-        <div class="avatar-wrap">
-          <div class="profile-avatar">{{ (account.user()?.name?.charAt(0) || 'A') | uppercase }}</div>
-          <span class="online-dot"></span>
-        </div>
-        <div class="profile-copy">
-          <span class="profile-name">{{ account.user()?.name || (account.isVendor() ? account.activeVendorName() : 'Administrator') }}</span>
-          <span class="profile-role">{{ account.isVendor() ? 'Vendor Merchant' : 'Master Admin' }}</span>
-        </div>
       </div>
 
-      <button type="button" class="btn-lock" (click)="onSignOut()" [title]="account.isImpersonatingVendor() ? 'Exit preview' : 'Lock console and sign out'">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-        </svg>
-        <span>{{ account.isImpersonatingVendor() ? 'Exit' : 'Lock' }}</span>
-      </button>
-    </div>
-  </header>
-
-  <!-- Shell Body -->
-  <div class="admin-body">
-    <!-- Left Sidebar -->
-    <aside class="admin-sidebar">
-      <div class="studio-selector">
-        <div class="studio-icon">{{ account.isVendor() ? '🏢' : '💈' }}</div>
-        <div class="studio-info">
-          <span class="studio-title">{{ account.isVendor() ? (account.activeVendorName() || 'Vendor Merchant') : 'Urban Blade Studio' }}</span>
-          <span class="studio-branch">{{ account.isVendor() ? 'Authorized Vendor Account' : 'Ghaziabad · Main Studio' }}</span>
-        </div>
-        <span class="studio-badge">{{ account.isVendor() ? 'VENDOR' : 'PRO' }}</span>
-      </div>
-
+      <!-- Navigation Sections: MAIN MENU & OTHERS -->
       <nav class="sidebar-nav-groups">
         @for (sec of visibleNavSections(); track sec.title) {
           <div class="sidebar-group">
@@ -142,14 +39,15 @@
               @for (item of sec.items; track item.route) {
                 <a
                   [routerLink]="item.route"
-                  routerLinkActive="active"
+                  routerLinkActive="active" ariaCurrentWhenActive="page"
                   [routerLinkActiveOptions]="{ exact: false }"
                   class="nav-link"
+                  (click)="isMobileSidebarOpen.set(false)"
                 >
                   <span class="nav-icon" [innerHTML]="item.icon"></span>
                   <span class="nav-label">{{ item.label }}</span>
                   @if (item.badge) {
-                    <span class="nav-badge" [class.nav-badge--amber]="item.badgeTone === 'amber'">{{ item.badge }}</span>
+                    <span class="nav-badge" [class.nav-badge--amber]="item.badgeTone === 'amber'" [class.nav-badge--red]="item.badgeTone === 'red'">{{ item.badge }}</span>
                   }
                 </a>
               }
@@ -158,23 +56,115 @@
         }
       </nav>
 
+      <!-- Sidebar Footer Status -->
       <div class="sidebar-footer">
         <div class="quick-perf-chip">
           <div class="perf-status-light"></div>
           <div class="perf-copy">
-            <strong>PgBouncer & Redis L2</strong>
-            <span>P95 &lt; 15ms · 100k Concurrent</span>
+            <strong>Urban Blade workspace</strong>
+            <span>Orders, inventory &amp; payments</span>
           </div>
         </div>
       </div>
     </aside>
 
-    <!-- Main Content Canvas -->
-    <main class="admin-content">
-      <div class="canvas-wrapper">
-        <router-outlet />
-      </div>
-    </main>
+    <!-- Mobile Overlay Backdrop -->
+    @if (isMobileSidebarOpen()) {
+      <div class="mobile-backdrop" (click)="isMobileSidebarOpen.set(false)"></div>
+    }
+
+    <!-- Main Content Stage -->
+    <div class="admin-main">
+      <!-- Top Command Bar (Bankio style header) -->
+      <header class="admin-topbar">
+        <div class="topbar-left">
+          <button type="button" class="btn-mobile-toggle" (click)="isMobileSidebarOpen.set(!isMobileSidebarOpen())" aria-label="Toggle navigation" aria-controls="admin-navigation" [attr.aria-expanded]="isMobileSidebarOpen()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+
+          <div class="welcome-box">
+            <h2 class="welcome-greeting">
+              Welcome, {{ account.isVendor() ? (account.activeVendorName() || 'Vendor Merchant') : (account.user()?.name || 'Admin') }}!
+            </h2>
+            <p class="welcome-sub">Manage your store, appointments and payments.</p>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <!-- Quick Search Pill -->
+          <div class="topbar-search">
+            <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input
+              #searchInput
+              type="text"
+              placeholder="Search for orders, catalog, tasks..."
+              aria-label="Global admin search"
+              [ngModel]="globalSearchQuery()"
+              (ngModelChange)="globalSearchQuery.set($event)"
+              (keyup.enter)="onGlobalSearch()"
+            />
+            <button type="button" class="shortcut-key" aria-label="Focus search" (click)="searchInput.focus()">⌘K</button>
+          </div>
+
+          <!-- Circular Action Buttons -->
+          <button
+            type="button"
+            class="circle-action-btn"
+            (click)="isSupportChatOpen.set(true)"
+            title="Open AI Support Desk"
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            @if (supportInquiryCount() > 0) {
+              <span class="unread-dot"></span>
+            }
+          </button>
+
+          <!-- Session Countdown Pill -->
+          <div class="session-pill" [class.warning]="session.isWarning()" title="Session auto-locks after 15m of inactivity">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span>{{ session.formattedRemaining() }}</span>
+            @if (session.isWarning()) {
+              <button type="button" class="btn-extend-mini" (click)="session.extendSession()" title="Extend session">
+                Extend
+              </button>
+            }
+          </div>
+
+          <!-- Storefront Quick Link -->
+          <a routerLink="/shop" class="btn-storefront-pill" target="_blank" title="View live storefront">
+            <span>Storefront</span>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
+            </svg>
+          </a>
+
+          <!-- Profile Circle Avatar -->
+          <button type="button" class="profile-circle" aria-label="Sign out or exit preview" (click)="onSignOut()" [title]="account.isImpersonatingVendor() ? 'Exit preview' : 'Lock console and sign out'">
+            <div class="avatar-letter">{{ (account.user()?.name?.charAt(0) || 'A') | uppercase }}</div>
+            <span class="online-indicator"></span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Content Canvas -->
+      <main class="admin-content">
+        <div class="canvas-wrapper">
+          <router-outlet />
+        </div>
+      </main>
+    </div>
   </div>
 
   <!-- AI Support Chatbox Hub Modal -->

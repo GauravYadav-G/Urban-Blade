@@ -6,23 +6,23 @@
     <div class="header-left">
       <div class="stream-badge-row">
         <span class="status-indicator live">
-          <span class="pulse-dot"></span> Live Fulfillment Stream
+          <span class="pulse-dot"></span> Order management
         </span>
         @if (autoPollSeconds() > 0) {
           <span class="radar-active-tag">Radar: {{ autoPollSeconds() }}s active</span>
         }
       </div>
-      <h1 class="page-title">Order Logistics &amp; Dispatch Monitor</h1>
+      <h1 class="page-title">Orders &amp; fulfilment</h1>
       <p class="page-subtitle">
-        Real-time Amazon-grade dispatch pipelines, automated courier airway bills, bulk batch fulfillment, and instant client WhatsApp notifications.
+        Review payments, manage fulfilment and track customer orders.
       </p>
     </div>
 
     <div class="header-actions">
       <!-- Radar Polling Interval Selector -->
       <div class="radar-selector-wrap">
-        <label class="radar-label">⚡ Live Radar:</label>
-        <select 
+        <label class="radar-label">Auto-refresh:</label>
+        <select
           class="radar-select"
           [ngModel]="autoPollSeconds()"
           (ngModelChange)="setAutoPoll($event)"
@@ -33,9 +33,9 @@
         </select>
       </div>
 
-      <button type="button" class="btn-export" [disabled]="admin.isSyncing()" (click)="refreshFromDb()" title="Sync live orders from PostgreSQL database">
+      <button type="button" class="btn-export" [disabled]="admin.isSyncing()" (click)="refreshFromDb()" title="Refresh orders">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-        <span>{{ admin.isSyncing() ? 'Syncing...' : 'Sync DB' }}</span>
+        <span>{{ admin.isSyncing() ? 'Syncing...' : 'Refresh' }}</span>
       </button>
 
       <button type="button" class="btn-export" (click)="exportCSV()" title="Export filtered orders as CSV">
@@ -174,10 +174,10 @@
     <div class="cwf-controls">
       <div class="cwf-input-wrap">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-        <input 
-          type="text" 
+        <input
+          type="text"
           placeholder="Paste Order ID (#ORD-...) or Courier Tracking AWB (e.g. DLHV... / BD... / TRK-UB...)..."
-          [ngModel]="carrierSyncQuery()" 
+          [ngModel]="carrierSyncQuery()"
           (ngModelChange)="carrierSyncQuery.set($event)"
           (keydown.enter)="fetchFromWebsite()"
         />
@@ -193,10 +193,10 @@
         </select>
       </div>
 
-      <button 
-        type="button" 
-        class="btn-cwf-submit" 
-        [disabled]="isFetchingWebsite()" 
+      <button
+        type="button"
+        class="btn-cwf-submit"
+        [disabled]="isFetchingWebsite()"
         (click)="fetchFromWebsite()"
       >
         @if (isFetchingWebsite()) {
@@ -282,76 +282,80 @@
 
     <!-- Secondary Filters Row -->
     <div class="filter-controls-right">
-      <!-- Payment Method & Status Filter -->
-      <div class="sub-filter-pills">
-        <button type="button" [class.active]="selectedPaymentFilter() === 'all'" (click)="selectedPaymentFilter.set('all')">All Pay</button>
-        <button type="button" [class.active]="selectedPaymentFilter() === 'paid'" (click)="selectedPaymentFilter.set('paid')">✓ Paid</button>
-        <button type="button" [class.active]="selectedPaymentFilter() === 'incomplete'" (click)="selectedPaymentFilter.set('incomplete')" [class.has-incomplete]="incompleteOrdersCount() > 0">⚠️ Incomplete ({{ incompleteOrdersCount() }})</button>
-        <button type="button" [class.active]="selectedPaymentFilter() === 'prepaid'" (click)="selectedPaymentFilter.set('prepaid')">Prepaid</button>
-        <button type="button" [class.active]="selectedPaymentFilter() === 'cod'" (click)="selectedPaymentFilter.set('cod')">COD</button>
-      </div>
+      <div class="filter-pills-cluster">
+        <!-- Payment Method & Status Filter -->
+        <div class="sub-filter-pills">
+          <button type="button" [class.active]="selectedPaymentFilter() === 'all'" (click)="selectedPaymentFilter.set('all')">All Pay</button>
+          <button type="button" [class.active]="selectedPaymentFilter() === 'paid'" (click)="selectedPaymentFilter.set('paid')">✓ Paid</button>
+          <button type="button" [class.active]="selectedPaymentFilter() === 'incomplete'" (click)="selectedPaymentFilter.set('incomplete')" [class.has-incomplete]="incompleteOrdersCount() > 0">⚠️ Incomplete ({{ incompleteOrdersCount() }})</button>
+          <button type="button" [class.active]="selectedPaymentFilter() === 'prepaid'" (click)="selectedPaymentFilter.set('prepaid')">Prepaid</button>
+          <button type="button" [class.active]="selectedPaymentFilter() === 'cod'" (click)="selectedPaymentFilter.set('cod')">COD</button>
+        </div>
 
-      <!-- Urgency Filter Pills -->
-      <div class="sub-filter-pills urgency-pills">
-        <button 
-          type="button" 
-          [class.active]="selectedUrgencyFilter() === 'delayed'" 
-          (click)="selectedUrgencyFilter.set(selectedUrgencyFilter() === 'delayed' ? 'all' : 'delayed')"
-          [class.has-delayed]="executiveTelemetry().delayedSlaCount > 0"
-          title="Filter to orders pending dispatch > 24 hours"
-        >
-          ⚡ Delayed SLA ({{ executiveTelemetry().delayedSlaCount }})
-        </button>
-        <button 
-          type="button" 
-          [class.active]="selectedUrgencyFilter() === 'high_value'" 
-          (click)="selectedUrgencyFilter.set(selectedUrgencyFilter() === 'high_value' ? 'all' : 'high_value')"
-          title="Filter to VIP orders over ₹2,000"
-        >
-          👑 VIP &ge;₹2k ({{ executiveTelemetry().highValueCount }})
-        </button>
-      </div>
-
-      <!-- Timeframe Selector -->
-      <div class="select-wrapper">
-        <select [ngModel]="selectedTimeFilter()" (ngModelChange)="selectedTimeFilter.set($event)" class="time-select">
-          <option value="all">📅 All Time</option>
-          <option value="today">Today (24h)</option>
-          <option value="7days">Last 7 Days</option>
-          <option value="month">This Month</option>
-        </select>
-      </div>
-
-      <!-- Vendor Scoping (For Master Admin) -->
-      @if (!account.isVendor()) {
-        <div class="select-wrapper">
-          <select 
-            [ngModel]="selectedVendorFilter()" 
-            (ngModelChange)="selectedVendorFilter.set($event)"
-            class="vendor-filter-select"
+        <!-- Urgency Filter Pills -->
+        <div class="sub-filter-pills urgency-pills">
+          <button
+            type="button"
+            [class.active]="selectedUrgencyFilter() === 'delayed'"
+            (click)="selectedUrgencyFilter.set(selectedUrgencyFilter() === 'delayed' ? 'all' : 'delayed')"
+            [class.has-delayed]="executiveTelemetry().delayedSlaCount > 0"
+            title="Filter to orders pending dispatch > 24 hours"
           >
-            <option value="all">🏢 All Vendors</option>
-            <option value="Urban Blade Lab">🧪 Urban Blade Lab</option>
-            <option value="Urban Blade Grooming">💈 Urban Blade Grooming</option>
-            <option value="Urban Blade Tools">✂️ Urban Blade Tools</option>
-            <option value="Urban Blade Skin">🧴 Urban Blade Skin</option>
-            <option value="Urban Blade Salon">✂️ Urban Blade Salon</option>
+            ⚡ Delayed SLA ({{ executiveTelemetry().delayedSlaCount }})
+          </button>
+          <button
+            type="button"
+            [class.active]="selectedUrgencyFilter() === 'high_value'"
+            (click)="selectedUrgencyFilter.set(selectedUrgencyFilter() === 'high_value' ? 'all' : 'high_value')"
+            title="Filter to VIP orders over ₹2,000"
+          >
+            👑 VIP &ge;₹2k ({{ executiveTelemetry().highValueCount }})
+          </button>
+        </div>
+      </div>
+
+      <div class="filter-tools-cluster">
+        <!-- Timeframe Selector -->
+        <div class="select-wrapper">
+          <select [ngModel]="selectedTimeFilter()" (ngModelChange)="selectedTimeFilter.set($event)" class="time-select">
+            <option value="all">📅 All Time</option>
+            <option value="today">Today (24h)</option>
+            <option value="7days">Last 7 Days</option>
+            <option value="month">This Month</option>
           </select>
         </div>
-      }
 
-      <!-- Search Input -->
-      <div class="search-input-wrap">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-          <circle cx="11" cy="11" r="8"/>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
-        <input
-          type="text"
-          placeholder="Filter by ID, customer, AWB..."
-          [ngModel]="searchQuery()"
-          (ngModelChange)="searchQuery.set($event)"
-        />
+        <!-- Vendor Scoping (For Master Admin) -->
+        @if (!account.isVendor()) {
+          <div class="select-wrapper">
+            <select
+              [ngModel]="selectedVendorFilter()"
+              (ngModelChange)="selectedVendorFilter.set($event)"
+              class="vendor-filter-select"
+            >
+              <option value="all">🏢 All Vendors</option>
+              <option value="Urban Blade Lab">🧪 Urban Blade Lab</option>
+              <option value="Urban Blade Grooming">💈 Urban Blade Grooming</option>
+              <option value="Urban Blade Tools">✂️ Urban Blade Tools</option>
+              <option value="Urban Blade Skin">🧴 Urban Blade Skin</option>
+              <option value="Urban Blade Salon">✂️ Urban Blade Salon</option>
+            </select>
+          </div>
+        }
+
+        <!-- Search Input -->
+        <div class="search-input-wrap">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            type="text"
+            placeholder="Filter by ID, customer, AWB..."
+            [ngModel]="searchQuery()"
+            (ngModelChange)="searchQuery.set($event)"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -365,26 +369,26 @@
         <thead>
           <tr>
             <th class="th-checkbox">
-              <input 
-                type="checkbox" 
-                [checked]="isAllSelected()" 
-                (change)="toggleSelectAll()" 
+              <input
+                type="checkbox"
+                [checked]="isAllSelected()"
+                (change)="toggleSelectAll()"
                 title="Select all filtered orders"
               />
             </th>
-            <th>Order Ref &amp; Timeline</th>
-            <th>Customer &amp; Dispatch</th>
-            <th>Items Manifest</th>
-            <th>Total Value</th>
-            <th>Payment Details</th>
-            <th>Fulfillment Pipeline</th>
-            <th class="text-right">Actions</th>
+            <th class="th-ref">Order Ref &amp; Timeline</th>
+            <th class="th-customer">Customer &amp; Dispatch</th>
+            <th class="th-items">Items Manifest</th>
+            <th class="th-total">Total Value</th>
+            <th class="th-payment">Payment Details</th>
+            <th class="th-pipeline">Fulfillment Pipeline</th>
+            <th class="th-actions text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
           @for (order of filteredOrders(); track order.id) {
-            <tr 
-              class="order-row" 
+            <tr
+              class="order-row"
               [class.is-selected]="isOrderSelected(order.id)"
               [class.is-delayed]="isDelayed(order)"
               [class.is-incomplete-payment]="admin.isPaymentIncomplete(order)"
@@ -392,19 +396,21 @@
             >
               <!-- Checkbox -->
               <td class="td-checkbox" (click)="$event.stopPropagation()">
-                <input 
-                  type="checkbox" 
-                  [checked]="isOrderSelected(order.id)" 
+                <input
+                  type="checkbox"
+                  [checked]="isOrderSelected(order.id)"
                   (change)="toggleSelectOrder(order.id, $event)"
                 />
               </td>
 
               <!-- Order Ref & Urgency Flags -->
-              <td>
+              <td class="td-ref">
                 <div class="ref-cell">
                   <div class="ref-id-row">
                     <span class="order-id-badge">#{{ order.id.slice(0, 10) }}</span>
-                    @if (admin.isPaymentIncomplete(order)) {
+                    @if (order.payment_status === 'refunded') {
+                      <span class="pay-status-pill pay-status-pill--refunded">Refunded</span>
+                    } @else if (admin.isPaymentIncomplete(order)) {
                       <span class="unpaid-badge" title="Customer checkout initiated but payment has not been captured">
                         ⚠️ Incomplete Pay
                       </span>
@@ -424,7 +430,7 @@
               </td>
 
               <!-- Customer & Contact -->
-              <td>
+              <td class="td-customer">
                 <div class="customer-cell">
                   <div class="avatar-circle">
                     {{ order.shipping_address.fullName ? order.shipping_address.fullName.charAt(0) : 'U' }}
@@ -433,9 +439,9 @@
                     <div class="c-name-row">
                       <strong class="customer-name">{{ order.shipping_address.fullName || 'Customer' }}</strong>
                       <!-- 1-Click WhatsApp Shortcut -->
-                      <button 
-                        type="button" 
-                        class="wa-micro-btn" 
+                      <button
+                        type="button"
+                        class="wa-micro-btn"
                         (click)="openWhatsApp(order, $event)"
                         title="Send WhatsApp notification to customer"
                       >
@@ -451,7 +457,7 @@
               </td>
 
               <!-- Items Manifest -->
-              <td>
+              <td class="td-items">
                 <div class="items-cell">
                   <span class="items-count">{{ order.items.length }} {{ order.items.length === 1 ? 'item' : 'items' }}</span>
                   <div class="items-preview-row">
@@ -468,7 +474,7 @@
               </td>
 
               <!-- Total Amount -->
-              <td>
+              <td class="td-total">
                 <div class="amount-cell-wrap">
                   <strong class="amount-val">₹{{ order.total_amount | number:'1.0-0' }}</strong>
                   @if (order.discount_amount && order.discount_amount > 0) {
@@ -480,7 +486,7 @@
               </td>
 
               <!-- Payment -->
-              <td>
+              <td class="td-payment">
                 <div class="payment-cell">
                   <div class="pay-method-row">
                     <span class="pay-badge" [class.upi]="order.payment_method === 'upi' || order.payment_method === 'Razorpay'" [class.cod]="order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery'">
@@ -495,13 +501,13 @@
                         ✕ Failed
                       </span>
                     } @else if (admin.isPaymentPaid(order)) {
-                      <span class="pay-status-pill pay-status-pill--paid" title="Payment captured and settled">
+                      <span class="pay-status-pill pay-status-pill--paid" title="Payment received">
                         ✓ Paid
                       </span>
+                    } @else if (order.payment_method === 'cash_on_delivery' || order.payment_method === 'Cash on Delivery') {
+                      <span class="pay-status-pill pay-status-pill--cod" title="Payment to be collected on delivery">Due on delivery</span>
                     } @else {
-                      <span class="pay-status-pill pay-status-pill--cod" title="Payment to be collected on delivery">
-                        Due on Delivery
-                      </span>
+                      <span class="pay-status-pill pay-status-pill--incomplete">Awaiting confirmation</span>
                     }
                   </div>
                   @if (order.transaction_id) {
@@ -510,11 +516,11 @@
                     </span>
                   }
                   @if (admin.isPaymentIncomplete(order) && order.payment_method === 'Razorpay') {
-                    <button 
-                      type="button" 
-                      class="micro-reconcile-btn" 
-                      [disabled]="isReconciling()" 
-                      (click)="reconcilePayment(order, $event)" 
+                    <button
+                      type="button"
+                      class="micro-reconcile-btn"
+                      [disabled]="isReconciling()"
+                      (click)="reconcilePayment(order, $event)"
                       title="Check Razorpay for captured payment and auto-update order"
                     >
                       🔄 Check Gateway
@@ -524,7 +530,7 @@
               </td>
 
               <!-- Fulfillment Pipeline -->
-              <td>
+              <td class="td-pipeline">
                 <div class="table-pipeline-wrap">
                   @if (admin.isPaymentIncomplete(order)) {
                     <div class="pipeline-track pipeline-track--incomplete">
@@ -556,8 +562,8 @@
                         {{ order.status | titlecase }}
                       </span>
                       @if (order.tracking_number) {
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           class="trk-copy-pill"
                           (click)="copyTrackingNumber(order.tracking_number, $event)"
                           [title]="'Click to copy tracking code: ' + order.tracking_number"
@@ -575,7 +581,7 @@
               </td>
 
               <!-- Row Action Controls -->
-              <td class="text-right" (click)="$event.stopPropagation()">
+              <td class="td-actions text-right" (click)="$event.stopPropagation()">
                 <div class="actions-cell">
                   @if (admin.isPaymentIncomplete(order)) {
                     <span class="unpaid-action-tag" title="Customer payment is incomplete. Dispatch is locked.">
@@ -583,11 +589,11 @@
                     </span>
                   } @else {
                     @let action = getNextStageAction(order);
-                    @if (action.nextStatus) {
-                      <button 
-                        type="button" 
-                        class="quick-advance-btn {{ action.badgeClass }}" 
-                        (click)="advanceStatus(order, $event)" 
+                    @if (action.nextStatus && account.isAdmin()) {
+                      <button
+                        type="button"
+                        class="quick-advance-btn {{ action.badgeClass }}"
+                        (click)="advanceStatus(order, $event)"
                         [title]="'Advance order: ' + action.label"
                       >
                         <span class="btn-icon">{{ action.icon }}</span>
@@ -606,6 +612,9 @@
                     }
                   }
 
+                  @if (account.isAdmin() && order.status === 'delivered' && order.payment_status === 'pending' && (order.payment_method === 'Cash on Delivery' || order.payment_method === 'cash_on_delivery')) {
+                    <button type="button" class="quick-advance-btn" (click)="recordCollection(order)">Record COD collection</button>
+                  }
                   <!-- 1-Click WhatsApp -->
                   <button class="icon-btn wa-btn" (click)="openWhatsApp(order, $event)" title="Notify customer on WhatsApp">
                     💬
@@ -627,19 +636,19 @@
                   </button>
 
                   <!-- 1-Click Carrier Web Fetch -->
-                  <button 
-                    class="icon-btn web-fetch-btn" 
+                  <button
+                    class="icon-btn web-fetch-btn"
                     [disabled]="isFetchingWebsite()"
-                    (click)="fetchSingleOrderWebsite(order, $event)" 
+                    (click)="fetchSingleOrderWebsite(order, $event)"
                     title="Scrape and fetch live status directly from carrier public portal"
                   >
                     🌐
                   </button>
 
                   <!-- Direct External Carrier Web Page Link -->
-                  <button 
-                    class="icon-btn track-external-btn" 
-                    (click)="openOfficialTrackingPage(order, $event)" 
+                  <button
+                    class="icon-btn track-external-btn"
+                    (click)="openOfficialTrackingPage(order, $event)"
                     title="Open official carrier tracking website in new tab"
                   >
                     ↗
@@ -676,7 +685,7 @@
        ═════════════════════════════════════════════════════════════════════════ -->
   @if (selectedOrder(); as o) {
     <div class="modal-backdrop" (click)="closeModal()">
-      <div class="modal-container" (click)="$event.stopPropagation()">
+      <div class="modal-container order-inspector-modal" (click)="$event.stopPropagation()">
         <!-- Modal Header -->
         <div class="modal-header">
           <div class="modal-title-box">
@@ -711,10 +720,10 @@
                 Inventory hold is active. <strong>Dispatch is locked until payment is settled.</strong>
               </p>
               @if (o.payment_method === 'Razorpay') {
-                <button 
-                  type="button" 
-                  class="btn-reconcile-gateway" 
-                  [disabled]="isReconciling()" 
+                <button
+                  type="button"
+                  class="btn-reconcile-gateway"
+                  [disabled]="isReconciling()"
                   (click)="reconcilePayment(o, $event)"
                 >
                   @if (isReconciling()) {
@@ -744,8 +753,8 @@
                 <span class="adv-label">Awaiting Payment</span>
               </span>
             } @else if (getNextStatus(o.status); as nextSt) {
-              <button 
-                type="button" 
+              <button
+                type="button"
                 class="btn-fast-advance {{ getNextStageAction(o).badgeClass }}"
                 (click)="advanceStatus(o, $event)"
               >
@@ -758,8 +767,8 @@
 
           <div class="interactive-stepper">
             <!-- Stage 1: Confirmed -->
-            <div 
-              class="step-card" 
+            <div
+              class="step-card"
               [class.completed]="isStageCompleted(o.status, 0)"
               [class.current]="isStageCurrent(o.status, 0)"
               (click)="advanceToStage(o, 'confirmed', $event)"
@@ -777,8 +786,8 @@
             <div class="stepper-connector" [class.active]="isStageCompleted(o.status, 0)"></div>
 
             <!-- Stage 2: Processing -->
-            <div 
-              class="step-card" 
+            <div
+              class="step-card"
               [class.completed]="isStageCompleted(o.status, 1)"
               [class.current]="isStageCurrent(o.status, 1)"
               (click)="advanceToStage(o, 'processing', $event)"
@@ -796,8 +805,8 @@
             <div class="stepper-connector" [class.active]="isStageCompleted(o.status, 1)"></div>
 
             <!-- Stage 3: Shipped -->
-            <div 
-              class="step-card" 
+            <div
+              class="step-card"
               [class.completed]="isStageCompleted(o.status, 2)"
               [class.current]="isStageCurrent(o.status, 2)"
               (click)="advanceToStage(o, 'shipped', $event)"
@@ -815,8 +824,8 @@
             <div class="stepper-connector" [class.active]="isStageCompleted(o.status, 2)"></div>
 
             <!-- Stage 4: Delivered -->
-            <div 
-              class="step-card" 
+            <div
+              class="step-card"
               [class.completed]="isStageCompleted(o.status, 3)"
               [class.current]="isStageCurrent(o.status, 3)"
               (click)="advanceToStage(o, 'delivered', $event)"
@@ -841,9 +850,9 @@
                   <span class="tracking-carrier-title">{{ o.carrier || 'Urban Express Logistics' }} • Live Consignment Tracking</span>
                   <div class="tracking-code-capsule">
                     <span class="tracking-code-val">{{ o.tracking_number || ('TRK-UB-' + o.id.slice(0, 8).toUpperCase()) }}</span>
-                    <button 
-                      type="button" 
-                      class="btn-copy-chip" 
+                    <button
+                      type="button"
+                      class="btn-copy-chip"
                       (click)="copyTrackingNumber(o.tracking_number || ('TRK-UB-' + o.id.slice(0, 8).toUpperCase()), $event)"
                       title="Copy tracking code"
                     >
@@ -858,9 +867,9 @@
                 </div>
               </div>
               <div class="tracking-actions-right">
-                <button 
-                  type="button" 
-                  class="btn-edit-tracking" 
+                <button
+                  type="button"
+                  class="btn-edit-tracking"
                   (click)="editTrackingNumber(o, $event)"
                   title="Assign custom AWB or 3rd-party tracking ID"
                 >
@@ -888,9 +897,9 @@
               </div>
               <div class="field-item">
                 <label>Internal Operator / Dispatch Notes</label>
-                <input 
-                  type="text" 
-                  [ngModel]="tempNotes()" 
+                <input
+                  type="text"
+                  [ngModel]="tempNotes()"
                   (ngModelChange)="tempNotes.set($event)"
                   placeholder="e.g. Call before delivery, handle glassware with care..."
                   class="inspector-input"
@@ -1036,9 +1045,18 @@
           }
 
           @if (o.status !== 'cancelled' && o.status !== 'delivered') {
-            <button class="modal-action-btn cancel-btn" (click)="cancelOrder(o)" title="Cancel order and restock items">
-              <span>Cancel Order</span>
+            <button class="modal-action-btn cancel-btn" (click)="cancelOrder(o)" [disabled]="isRefunding() || isCancelling()" title="Cancel order and restore inventory">
+              <span>{{ admin.isPaymentPaid(o) ? (isRefunding() ? 'Processing Refund…' : 'Cancel & Refund Payment') : (isCancelling() ? 'Cancelling…' : 'Cancel Order') }}</span>
             </button>
+          } @else if (o.status === 'cancelled' && (o.refund_status === 'pending' || o.refund_status === 'failed')) {
+            <button class="modal-action-btn cancel-btn" (click)="cancelOrder(o)" [disabled]="isRefunding()">
+              <span>{{ isRefunding() ? 'Checking Refund…' : (o.refund_status === 'failed' ? 'Retry Refund' : 'Check Refund Status') }}</span>
+            </button>
+          } @else if (o.status === 'cancelled' && o.payment_status === 'refunded') {
+            <div class="modal-fulfilled-pill">
+              <span class="chk">✓</span>
+              <span>Refunded {{ o.refund_amount | currency:o.currency }}</span>
+            </div>
           } @else if (o.status === 'delivered') {
             <div class="modal-fulfilled-pill">
               <span class="chk">✓</span>
@@ -1185,144 +1203,9 @@
   <!-- ═════════════════════════════════════════════════════════════════════════
        8. PRINT-READY GST TAX INVOICE MODAL
        ═════════════════════════════════════════════════════════════════════════ -->
-  @if (selectedInvoiceOrder(); as inv) {
-    <div class="modal-backdrop print-backdrop" (click)="closeInvoice()">
-      <div class="invoice-container" (click)="$event.stopPropagation()">
-        <!-- Invoice Action Bar -->
-        <div class="invoice-actions-bar">
-          <div class="inv-title">Official Tax Invoice</div>
-          <div class="inv-btns">
-            <button class="inv-print-btn" (click)="printInvoice()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6 9 6 2 18 2 18 9"></polyline>
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-                <rect x="6" y="14" width="12" height="8"></rect>
-              </svg>
-              <span>Print / Download PDF</span>
-            </button>
-            <button class="inv-close-btn" (click)="closeInvoice()">✕</button>
-          </div>
-        </div>
-
-        <!-- Printable Document Area -->
-        <div class="printable-invoice" id="printable-area">
-          <div class="inv-header">
-            <div class="seller-info">
-              <img
-                src="/images/placeholder.svg"
-                alt="Urban Blade"
-                class="inv-logo"
-                width="44"
-                height="44"
-                style="width: 44px; height: 44px; max-width: 44px; max-height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid #d4af37; margin-bottom: 8px; display: block;"
-              />
-              <h2 class="salon-name">URBAN BLADE LUXURY SALON &amp; SPA</h2>
-              <span class="salon-tagline">Authorized Unisex Salon &amp; Premium Grooming Lounge</span>
-              <p class="salon-addr">
-                Tower B, Sector 62, Noida, Uttar Pradesh 201309<br/>
-                <strong>GSTIN:</strong> 07AAAAU1234F1Z5 • <strong>State Code:</strong> 07 (Uttar Pradesh)<br/>
-                <strong>Corporate Desk:</strong> orders&#64;urbanblade.in • <strong>Support:</strong> +91 90156 18265
-              </p>
-            </div>
-            <div class="inv-meta">
-              <span class="inv-badge">OFFICIAL GST TAX INVOICE</span>
-              <div class="inv-meta-row"><strong>Invoice No:</strong> UB-{{ inv.id.slice(0, 8).toUpperCase() }}</div>
-              <div class="inv-meta-row"><strong>Date of Issue:</strong> {{ inv.created_at | date:'mediumDate' }}</div>
-              <div class="inv-meta-row">
-                <strong>Payment:</strong> {{ inv.payment_method | uppercase }} —
-                @if (admin.isPaymentIncomplete(inv)) {
-                  <span class="inv-unpaid-warn">⚠️ INCOMPLETE / UNPAID</span>
-                } @else {
-                  <span>{{ inv.payment_status | uppercase }}</span>
-                }
-              </div>
-              @if (inv.transaction_id) {
-                <div class="inv-meta-row"><strong>Tx ID:</strong> {{ inv.transaction_id }}</div>
-              }
-            </div>
-          </div>
-
-          <div class="inv-buyer">
-            <h4>Billed &amp; Shipped To:</h4>
-            <div class="buyer-name">{{ inv.shipping_address.fullName || 'Valued Customer' }}</div>
-            <div class="buyer-detail">{{ inv.shipping_address.street || 'Standard Delivery Address' }}</div>
-            <div class="buyer-detail">{{ inv.shipping_address.city || 'Ghaziabad' }} • Phone: {{ inv.shipping_address.phone || 'N/A' }}</div>
-            <div class="buyer-detail">Place of Supply: {{ inv.shipping_address.city || 'Ghaziabad' }}, India</div>
-          </div>
-
-          <table class="inv-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Item Description</th>
-                <th>HSN / SAC</th>
-                <th>Qty</th>
-                <th>Rate (₹)</th>
-                <th>Taxable Val (₹)</th>
-                <th>GST (18%)</th>
-                <th>Total (₹)</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (item of inv.items; track item.product_name; let i = $index) {
-                <tr>
-                  <td>{{ i + 1 }}</td>
-                  <td><strong>{{ item.product_name }}</strong></td>
-                  <td>33059011</td>
-                  <td>{{ item.quantity }}</td>
-                  <td>₹{{ (item.unit_price / 1.18) | number:'1.2-2' }}</td>
-                  <td>₹{{ ((item.unit_price * item.quantity) / 1.18) | number:'1.2-2' }}</td>
-                  <td>₹{{ ((item.unit_price * item.quantity) - ((item.unit_price * item.quantity) / 1.18)) | number:'1.2-2' }}</td>
-                  <td>₹{{ item.unit_price * item.quantity | number:'1.0-0' }}</td>
-                </tr>
-              }
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="7" class="tfoot-label">Subtotal:</td>
-                <td class="tfoot-val">₹{{ inv.subtotal | number:'1.0-0' }}</td>
-              </tr>
-              <tr>
-                <td colspan="7" class="tfoot-label">Shipping &amp; Handling:</td>
-                <td class="tfoot-val">FREE</td>
-              </tr>
-              <tr class="grand-total-row">
-                <td colspan="7" class="tfoot-label">Invoice Total (INR):</td>
-                <td class="tfoot-val grand-val">₹{{ inv.total_amount | number:'1.0-0' }}</td>
-              </tr>
-            </tfoot>
-          </table>
-
-          <div class="inv-footer">
-            <div class="inv-audit-details">
-              <div class="audit-col">
-                <span class="audit-label">Ref</span>
-                <span class="audit-val">{{ inv.transaction_id || ('pay_' + inv.id.slice(0, 14)) }}</span>
-              </div>
-              <div class="audit-col">
-                <span class="audit-label">Payment Channel</span>
-                <span class="audit-val">{{ inv.payment_method === 'cash_on_delivery' ? 'Cash on Delivery (Doorstep)' : 'Razorpay Secure Gateway (UPI / 3DS)' }}</span>
-              </div>
-              <div class="audit-col">
-                <span class="audit-label">Gateway Order Reference</span>
-                <span class="audit-val">{{ inv.gateway_order_id || ('order_' + inv.id.slice(0, 14)) }}</span>
-              </div>
-              <div class="audit-col">
-                <span class="audit-label">System Transaction UUID</span>
-                <span class="audit-val">{{ inv.id }}</span>
-              </div>
-            </div>
-
-            <div class="footer-notes">
-              <p>This is a computer-generated tax invoice and requires no physical signature under IT Act 2000.</p>
-              <p>Thank you for choosing Urban Blade Luxury Salon &amp; Spa.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+  @if (selectedInvoiceOrder(); as invoice) {
+    <app-order-invoice [order]="invoice" (close)="closeInvoice()" />
   }
-
   <!-- ═════════════════════════════════════════════════════════════════════════
        9. MANUAL POS ORDER MODAL
        ═════════════════════════════════════════════════════════════════════════ -->
@@ -1368,9 +1251,9 @@
             <div class="form-field">
               <label>Payment Method</label>
               <select [ngModel]="manualPaymentMethod()" (ngModelChange)="manualPaymentMethod.set($event)">
-                <option value="upi">UPI / QR Code</option>
-                <option value="cash_on_delivery">Cash on Hand</option>
-                <option value="card">POS Card Terminal</option>
+                <option value="UPI">UPI / QR Code</option>
+                <option value="Cash">Cash on Hand</option>
+                <option value="Card">POS Card Terminal</option>
               </select>
             </div>
             <div class="form-field">

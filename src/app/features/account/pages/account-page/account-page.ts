@@ -13,6 +13,7 @@ import { CartService } from '@core/services/cart.service';
 import { CatalogService } from '@core/services/catalog.service';
 import { ToastService } from '@core/services/toast.service';
 import { InrPipe } from '@shared/pipes/inr-pipe';
+import { OrderInvoice } from '@shared/components/order-invoice/order-invoice';
 
 interface NominatimSearchHit {
   lat: string;
@@ -50,6 +51,9 @@ export interface CustomerOrder {
   currency: string;
   payment_method: string;
   payment_status: string;
+  return_status?: string;
+  return_review_note?: string;
+  refund_status?: string;
   created_at: string;
   shipping_address?: {
     city?: string;
@@ -70,6 +74,7 @@ export interface CustomerOrder {
 }
 
 export interface CustomerBooking {
+  stylist_name?: string | null;
   id: string;
   customer_name: string;
   customer_email: string;
@@ -80,14 +85,14 @@ export interface CustomerBooking {
   total_price: number;
   notes?: string;
   created_at: string;
-  stylist_name?: string;
-  stylist_role?: string;
+  visit_type?: 'salon' | 'home';
+  service_address?: string | null;
 }
 
 @Component({
   selector: 'app-account-page',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, RouterLink, InrPipe],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, RouterLink, InrPipe, OrderInvoice],
   templateUrl: './account-page.html',
   styleUrl: './account-page.scss',
 })
@@ -272,34 +277,22 @@ export class AccountPage implements OnInit {
       },
       error: () => {
         this.loadingOrders.set(false);
-        const normalizedEmail = email?.trim().toLowerCase();
-        const local = normalizedEmail
-          ? this.admin.orders().filter(
-              (o) => o.shipping_address?.email?.trim().toLowerCase() === normalizedEmail
-            )
-          : [];
-        const mapped: CustomerOrder[] = local.map((o) => ({
-            id: o.id,
-            status: o.status,
-            subtotal: o.subtotal,
-            total_amount: o.total_amount,
-            discount_amount: o.discount_amount,
-            coupon_code: o.coupon_code,
-            tracking_number: o.tracking_number,
-            currency: o.currency || 'INR',
-            payment_method: o.payment_method,
-            payment_status: o.payment_status,
-            created_at: o.created_at,
-            shipping_address: o.shipping_address,
-            items: o.items.map((it) => ({
-              product_name: it.product_name,
-              unit_price: it.unit_price,
-              quantity: it.quantity,
-              image_url: it.image_url,
-            })),
-          }));
-        this.orders.set(mapped);
+        this.orders.set([]);
+        this.toast.error('Orders could not be loaded. Please retry.');
       },
+    });
+  }
+
+  readonly requestingReturn = signal<string | null>(null);
+
+  requestReturn(order: CustomerOrder): void {
+    if (this.requestingReturn()) return;
+    const reason = window.prompt('Why would you like to return this order?')?.trim();
+    if (!reason || reason.length < 3) return;
+    this.requestingReturn.set(order.id);
+    this.http.post(`/api/orders/${order.id}/return`, { reason }).subscribe({
+      next: () => { this.requestingReturn.set(null); this.fetchUserOrders(); this.toast.success('Return requested. We will review it before arranging a return.'); },
+      error: error => { this.requestingReturn.set(null); this.toast.error(error.error?.message || 'Return could not be requested.'); },
     });
   }
 
@@ -431,18 +424,6 @@ export class AccountPage implements OnInit {
     this.selectedInvoiceOrder.set(null);
   }
 
-  printInvoice(): void {
-    const inv = this.selectedInvoiceOrder();
-    const originalTitle = document.title;
-    if (inv?.id) {
-      document.title = `Tax_Invoice_UB_${inv.id.slice(0, 8).toUpperCase()}`;
-    }
-    window.print();
-    setTimeout(() => {
-      document.title = originalTitle;
-    }, 1000);
-  }
-
   async saveProfile(): Promise<void> {
     const name = this.profileName().trim();
     const phone = this.profilePhone().trim();
@@ -456,8 +437,8 @@ export class AccountPage implements OnInit {
       this.profileSavedMessage.set('Profile information successfully updated.');
       this.toast.success('Your profile details have been saved.');
     } catch {
-      this.profileSavedMessage.set('Profile updated locally.');
-      this.toast.success('Your profile details have been saved.');
+      this.profileSavedMessage.set('Profile could not be saved.');
+      this.toast.error('Profile update failed. Please retry.');
     } finally {
       this.isSavingProfile.set(false);
       setTimeout(() => {

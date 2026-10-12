@@ -65,11 +65,16 @@ export async function withTransaction<T>(fn: (client: pg.PoolClient) => Promise<
     await client.query('BEGIN');
     const result = await fn(client);
     await client.query('COMMIT');
+    if ((client as pg.PoolClient & { catalogChanged?: boolean }).catalogChanged) {
+      const { invalidateCatalog } = await import('../redis/cache.service.js');
+      await invalidateCatalog().catch(() => {});
+    }
     return result;
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
   } finally {
+    delete (client as pg.PoolClient & { catalogChanged?: boolean }).catalogChanged;
     client.release();
   }
 }

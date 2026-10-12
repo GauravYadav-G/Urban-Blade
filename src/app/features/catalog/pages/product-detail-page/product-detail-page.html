@@ -32,7 +32,7 @@
         <p class="pdp__deal">Limited time deal</p>
       }
       <h1>{{ p.name }}</h1>
-      <p class="pdp__vendor">Visit the {{ p.vendor }} store</p>
+      <p class="pdp__vendor">{{ isService() ? 'Service by' : 'Visit the' }} {{ p.vendor }}{{ isService() ? '' : ' store' }}</p>
       <app-rating-stars [rating]="p.rating" [count]="p.reviewCount" />
       <p class="pdp__price">
         {{ p.price | inr }}
@@ -40,7 +40,7 @@
           <span>M.R.P.: <s>{{ p.compareAtPrice | inr }}</s></span>
         }
       </p>
-      @if (p.freeDelivery) {
+      @if (p.freeDelivery && !isService()) {
         <p class="pdp__ship">FREE delivery on this item</p>
       }
       <p>{{ p.longDescription }}</p>
@@ -53,7 +53,11 @@
     <aside class="pdp__buy">
       <p class="pdp__price">{{ p.price | inr }}</p>
       @let isOut = isOutOfStock();
-      @if (isOut) {
+      @if (isService()) {
+        <p class="pdp__stock pdp__stock--in">Appointment service</p>
+        <p class="pdp__stock-msg">Choose a salon or home visit, then select your preferred date and time.</p>
+        <button type="button" class="btn btn--book" (click)="bookService()">Book appointment</button>
+      } @else if (isOut) {
         <p class="pdp__stock pdp__stock--out">Out of Stock</p>
         <p class="pdp__stock-msg">This item is currently out of stock. We are restocking soon!</p>
         <button type="button" class="btn btn--cart btn--disabled" disabled>Out of Stock</button>
@@ -76,7 +80,9 @@
       <button type="button" class="btn btn--list" (click)="toggleList()">
         {{ savedOnList() ? 'Remove from your list' : 'Add to your list' }}
       </button>
-      <p class="pdp__ship-to">Deliver to Ghaziabad 201009</p>
+      @if (!isService()) {
+        <p class="pdp__ship-to">Deliver to Ghaziabad 201009</p>
+      }
     </aside>
     @if (zoomActive()) {
       <div

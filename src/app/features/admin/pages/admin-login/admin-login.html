@@ -88,33 +88,6 @@
         }
       </button>
 
-      <!-- Official Root Operator Credentials Box -->
-      <div class="auth-credential-card">
-        <div class="auth-credential-header">
-          <div class="auth-credential-info">
-            <span class="credential-badge">ENTERPRISE KEY</span>
-            <span class="credential-title">Authorized Root Administrator</span>
-          </div>
-          <button type="button" class="btn-fill-key" (click)="fillMasterAdmin()">
-            Fill Root Key
-          </button>
-        </div>
-        <div class="credential-meta">
-          <span class="mono">{{ masterCreds.email }}</span>
-          <span class="sep">·</span>
-          <span class="mono">{{ masterCreds.password }}</span>
-        </div>
-      </div>
-
-      <!-- Quick Vendor Access Row -->
-      <div class="vendor-quick-access">
-        <span class="vqa-label">Vendor Partner Login:</span>
-        <div class="vqa-buttons">
-          <button type="button" class="btn-vendor-fill" (click)="fillVendor('lab')">🧪 Urban Blade Lab</button>
-          <button type="button" class="btn-vendor-fill" (click)="fillVendor('grooming')">💈 Grooming Co.</button>
-          <button type="button" class="btn-vendor-fill" (click)="fillVendor('tools')">✂️ Pro Tools</button>
-        </div>
-      </div>
     </form>
 
     <!-- Footer Links & Security Stamp -->

@@ -1,7 +1,7 @@
 @let p = product();
 @let isOut = isOutOfStock();
-<article class="card" [class.card--large]="largeMedia()" [class.card--out-of-stock]="isOut">
-  <a class="card__media" [routerLink]="['/shop', p.id]" [attr.aria-label]="p.name">
+<article class="card" [class.card--large]="largeMedia()" [class.card--out-of-stock]="isOut && !isService()">
+  <a class="card__media" [routerLink]="detailsLink()" [queryParams]="isService() ? { service: p.id } : null" [attr.aria-label]="p.name">
     @if (isOut) {
       <span class="card__badge card__badge--out">Out of Stock</span>
     } @else if (p.badge === 'deal') {
@@ -20,7 +20,7 @@
   </a>
   <div class="card__body">
     <h3 class="card__title">
-      <a [routerLink]="['/shop', p.id]">{{ p.name }}</a>
+      <a [routerLink]="detailsLink()" [queryParams]="isService() ? { service: p.id } : null">{{ p.name }}</a>
     </h3>
     <app-rating-stars [rating]="p.rating" [count]="p.reviewCount" />
     <p class="card__price">
@@ -29,23 +29,23 @@
         <s>{{ p.compareAtPrice | inr }}</s>
       }
     </p>
-    @if (p.freeDelivery) {
+    @if (p.freeDelivery && !isService()) {
       <p class="card__ship">FREE delivery</p>
     }
-    <p class="card__vendor">Sold by {{ p.vendor }}</p>
-    @if (isOut) {
+    <p class="card__vendor">{{ isService() ? 'Provided by' : 'Sold by' }} {{ p.vendor }}</p>
+    @if (isOut && !isService()) {
       <p class="card__stock-status card__stock-status--out">Currently Out of Stock</p>
-    } @else if (p.stock_quantity !== undefined && p.stock_quantity <= 10) {
+    } @else if (!isService() && p.stock_quantity !== undefined && p.stock_quantity <= 10) {
       <p class="card__stock-status card__stock-status--low">Only {{ p.stock_quantity }} left</p>
     }
     <button
       type="button"
       class="card__btn"
-      [class.card__btn--out]="isOut"
-      [disabled]="isOut"
+      [class.card__btn--out]="isOut && !isService()"
+      [disabled]="isOut && !isService()"
       (click)="add($event)"
     >
-      {{ isOut ? 'Out of Stock' : 'Add to cart' }}
+      {{ isService() ? 'Book appointment' : (isOut ? 'Out of Stock' : 'Add to cart') }}
     </button>
   </div>
 </article>

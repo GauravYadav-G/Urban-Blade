@@ -1,6 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { PRODUCTS } from '@core/data/products.data';
 import type { Product, ProductCategory, MarketplacePrice, PriceComparison, Marketplace } from '@core/models/product.model';
 import { Observable, of, catchError, firstValueFrom } from 'rxjs';
 

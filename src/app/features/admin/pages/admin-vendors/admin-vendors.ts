@@ -31,11 +31,11 @@ export class AdminVendors {
   readonly createForm = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.minLength(2)]],
     email: ['', [Validators.required, Validators.email]],
-    password: ['Vendor@2026', [Validators.required, Validators.minLength(6)]],
+    password: ['', [Validators.required, Validators.minLength(12)]],
     contact_person: ['', Validators.required],
     phone: ['', [Validators.required, Validators.pattern('^[0-9]{10}$')]],
     commission_rate: [12, [Validators.required, Validators.min(1), Validators.max(50)]],
-    bank_name: ['HDFC Bank', Validators.required],
+    bank_name: ['', Validators.required],
     account_no: ['', Validators.required],
     ifsc: ['', Validators.required],
     upi: [''],
@@ -78,7 +78,7 @@ export class AdminVendors {
 
   readonly totalCommission = computed(() =>
     this.admin.vendors().reduce(
-      (sum, v) => sum + (v.total_sales || 0) * ((v.commission_rate || 12) / 100),
+      (sum, v) => sum + (v.total_sales || 0) * ((v.commission_rate ?? 0) / 100),
       0
     )
   );
@@ -95,14 +95,14 @@ export class AdminVendors {
     this.createForm.reset({
       name: '',
       email: '',
-      password: 'Vendor@2026',
+      password: '',
       contact_person: '',
       phone: '',
       commission_rate: 12,
-      bank_name: 'HDFC Bank',
-      account_no: '9821445012',
-      ifsc: 'HDFC0001234',
-      upi: 'vendor@hdfc',
+      bank_name: '',
+      account_no: '',
+      ifsc: '',
+      upi: '',
     });
     this.isCreateModalOpen.set(true);
   }
@@ -144,7 +144,7 @@ export class AdminVendors {
       phone: vendor.phone,
       commission_rate: vendor.commission_rate,
       status: vendor.status,
-      bank_name: vendor.payout_account?.bank || 'HDFC Bank',
+      bank_name: vendor.payout_account?.bank || '',
       account_no: vendor.payout_account?.accountNo || '',
       ifsc: vendor.payout_account?.ifsc || '',
       upi: vendor.payout_account?.upi || '',

@@ -1,77 +1,218 @@
 <div class="bookings-view">
+
+
   <!-- Page Header -->
   <header class="page-header">
     <div class="header-left">
-      <span class="status-indicator live">
-        <span class="pulse-dot"></span> Real-time Chair Dispatch
-      </span>
-      <h1 class="page-title">Stylist & Appointment Roster</h1>
+      <div class="stream-badge-row">
+        <span class="status-indicator live">
+          <span class="pulse-dot"></span> Appointment management
+        </span>
+        <span class="location-badge">Salon visits &amp; home service</span>
+      </div>
+      <h1 class="page-title">Bookings &amp; stylists</h1>
       <p class="page-subtitle">
-        Manage master barber schedules, client time-slots, and salon chair occupancy in real-time.
+        Manage appointments, assign your team and update each visit.
       </p>
     </div>
 
     <div class="header-stats">
       <div class="stat-pill">
-        <span class="stat-label">Today's Appointments</span>
-        <span class="stat-val">{{ admin.metrics().bookings.today }} clients</span>
+        <span class="stat-label">Today's Salon Arrivals</span>
+        <strong class="stat-val">{{ todayArrivalsCount() }} clients</strong>
       </div>
       <div class="stat-pill highlight">
-        <span class="stat-label">Chair Occupancy</span>
-        <span class="stat-val">{{ admin.metrics().bookings.occupancyRate }}%</span>
+        <span class="stat-label">Awaiting assignment</span>
+        <strong class="stat-val">{{ unassignedCount() }}</strong>
       </div>
-      <button type="button" class="btn-export" (click)="exportCSV()">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        <span>Export CSV</span>
-      </button>
-      <button type="button" class="btn-new-booking" (click)="openCreateModal()">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        <span>Book Client Slot</span>
-      </button>
+      <div class="stat-pill">
+        <span class="stat-label">Home Routes Today</span>
+        <strong class="stat-val">{{ homeRoutesCount() }} routes</strong>
+      </div>
+      <div class="header-action-group">
+        <button type="button" class="btn-export" (click)="exportCSV()" title="Export current list to CSV">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span>Export CSV</span>
+        </button>
+        <button type="button" class="btn-new-booking" (click)="openCreateModal()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          <span>Book Appointment</span>
+        </button>
+      </div>
     </div>
   </header>
+  @if(admin.bookingsError()){<p role="alert" class="alert-error">Appointments could not be refreshed. Previously loaded records may be out of date.</p>}
+  @if(admin.bookingsCheckedAt()){<p>Last refreshed: {{ admin.bookingsCheckedAt() | date:'medium' }}</p>}
+  <section class="staff-panel">
+    <h2>Stylist directory</h2><p>Admins assign staff to salon and home bookings. Salon customers never see staff names. Removing a stylist archives them for future assignments and preserves booking history.</p>
+    @if(stylistError()){<p role="alert" class="alert-error">{{ stylistError() }}</p>}
+    <div class="staff-editor"><label>Name<input [ngModel]="staffName()" (ngModelChange)="staffName.set($event)" /></label><label>Role<input [ngModel]="staffRole()" (ngModelChange)="staffRole.set($event)" /></label><button class="btn-primary" [disabled]="stylistSaving()" (click)="saveStylist()">{{ editingStylist()?'Save stylist':'Add stylist' }}</button><button class="btn-secondary" (click)="resetStylist()">Clear</button><button class="btn-secondary" (click)="loadStylists()">Refresh</button></div>
+    <div class="table-wrapper"><table><thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>@for(stylist of stylistRecords();track stylist.id){<tr><td>{{ stylist.name }}</td><td>{{ stylist.role }}</td><td>{{ stylist.is_active?'Active':'Archived' }}</td><td><button class="btn-secondary" (click)="editStylist(stylist)">{{ stylist.is_active?'Edit':'Edit & reactivate' }}</button>@if(stylist.is_active){<button class="btn-secondary" (click)="removeStylist(stylist)">Remove</button>}</td></tr>}@empty{<tr><td colspan="4">No stylist records loaded. Add your team to begin assigning bookings.</td></tr>}</tbody></table></div>
+  </section>
+
+  <!-- Location Type Tabs -->
+  <nav class="location-segment-bar" aria-label="Appointment location switcher">
+    <button
+      type="button"
+      class="segment-tab"
+      [class.active]="activeVisitType() === 'all'"
+      (click)="setVisitType('all')"
+    >
+      <span class="segment-title">All Bookings</span>
+      <span class="segment-count">{{ admin.bookings().length }}</span>
+    </button>
+    <button
+      type="button"
+      class="segment-tab"
+      [class.active]="activeVisitType() === 'salon'"
+      (click)="setVisitType('salon')"
+    >
+      <span class="segment-icon">💈</span>
+      <span class="segment-title">Salon Studio Visits</span>
+      <span class="segment-count">{{ salonCount() }}</span>
+    </button>
+    <button
+      type="button"
+      class="segment-tab"
+      [class.active]="activeVisitType() === 'home'"
+      (click)="setVisitType('home')"
+    >
+      <span class="segment-icon">🏠</span>
+      <span class="segment-title">Home Service Routes</span>
+      <span class="segment-count">{{ homeCount() }}</span>
+    </button>
+  </nav>
 
   <!-- Filter & Control Bar -->
-  <div class="filter-controls">
-    <!-- Status Filter -->
+  <section class="filter-controls">
+    <!-- Status Filter Pills -->
     <div class="filter-group">
       <span class="filter-label">Status:</span>
       <div class="pill-group">
-        <button class="filter-pill" [class.active]="selectedStatus() === 'all'" (click)="setStatus('all')">
-          All ({{ admin.bookings().length }})
+        <button
+          type="button"
+          class="filter-pill"
+          [class.active]="selectedStatus() === 'all'"
+          (click)="setStatus('all')"
+        >
+          All
         </button>
-        <button class="filter-pill" [class.active]="selectedStatus() === 'confirmed'" (click)="setStatus('confirmed')">
+        <button
+          type="button"
+          class="filter-pill"
+          [class.active]="selectedStatus() === 'confirmed'"
+          (click)="setStatus('confirmed')"
+        >
           Confirmed
         </button>
-        <button class="filter-pill" [class.active]="selectedStatus() === 'completed'" (click)="setStatus('completed')">
+        <button
+          type="button"
+          class="filter-pill"
+          [class.active]="selectedStatus() === 'pending'"
+          (click)="setStatus('pending')"
+        >
+          Pending
+        </button>
+        <button
+          type="button"
+          class="filter-pill"
+          [class.active]="selectedStatus() === 'completed'"
+          (click)="setStatus('completed')"
+        >
           Completed
         </button>
-        <button class="filter-pill" [class.active]="selectedStatus() === 'cancelled'" (click)="setStatus('cancelled')">
+        <button
+          type="button"
+          class="filter-pill"
+          [class.active]="selectedStatus() === 'cancelled'"
+          (click)="setStatus('cancelled')"
+        >
           Cancelled
         </button>
       </div>
     </div>
 
-    <!-- Stylist Filter -->
-    <div class="filter-group">
-      <span class="filter-label">Stylist:</span>
-      <div class="pill-group">
-        <button class="filter-pill" [class.active]="selectedStylist() === 'all'" (click)="setStylist('all')">
-          All Stylists
+    <!-- Stylist Filter (when viewing salon or all) -->
+    @if (stylistRecords().length > 0) {
+      <div class="filter-group">
+        <span class="filter-label">Stylist:</span>
+        <div class="pill-group">
+          <button
+            type="button"
+            class="filter-pill"
+            [class.active]="selectedStylist() === 'all'"
+            (click)="selectedStylist.set('all')"
+          >
+            All stylists
+          </button>
+          @for (s of stylists(); track s.id) {
+            <button
+              type="button"
+              class="filter-pill"
+              [class.active]="selectedStylist() === s.id"
+              (click)="selectedStylist.set(s.id)"
+            >
+              {{ s.name }}
+            </button>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Date Shortcut & Search -->
+    <div class="search-and-date-group">
+      <div class="date-picker-wrap">
+        <input
+          type="date"
+          aria-label="Filter by appointment date"
+          [ngModel]="selectedDate()"
+          (ngModelChange)="selectedDate.set($event)"
+        />
+        <button type="button" class="btn-today-shortcut" (click)="filterToday()" title="Jump to today's appointments">
+          Today
         </button>
-        @for (st of stylists(); track st) {
-          <button class="filter-pill" [class.active]="selectedStylist() === st" (click)="setStylist(st)">
-            {{ st }}
+        @if (selectedDate()) {
+          <button type="button" class="btn-clear-date" (click)="clearDate()" title="Clear date filter">
+            ✕
           </button>
         }
       </div>
+
+      <div class="search-box">
+        <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input
+          type="search"
+          placeholder="Search client, mobile, service, or address..."
+          [ngModel]="searchQuery()"
+          (ngModelChange)="searchQuery.set($event)"
+        />
+        @if (searchQuery()) {
+          <button type="button" class="btn-clear-search" (click)="searchQuery.set('')">✕</button>
+        }
+      </div>
     </div>
-  </div>
+  </section>
 
   <!-- Bookings Grid -->
   <div class="bookings-grid">
     @for (b of filteredBookings(); track b.id) {
-      <div class="booking-card" [class.completed]="b.status === 'completed'" [class.cancelled]="b.status === 'cancelled'">
+      <article
+        class="booking-card"
+        [class.completed]="b.status === 'completed'"
+        [class.cancelled]="b.status === 'cancelled'"
+        [class.home-visit]="b.visit_type === 'home'"
+      >
+        <!-- Card Header -->
         <div class="card-header">
           <div class="time-slot-badge">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -80,35 +221,75 @@
             </svg>
             <span>{{ b.time_slot }}</span>
           </div>
-          <span class="status-chip {{ b.status }}">{{ b.status | titlecase }}</span>
-        </div>
 
-        <div class="client-section">
-          <div class="client-avatar">
-            {{ b.customer_name ? b.customer_name.charAt(0) : 'C' }}
-          </div>
-          <div class="client-info">
-            <h3 class="client-name">{{ b.customer_name || 'Client' }}</h3>
-            <span class="client-contact">{{ b.customer_phone || 'N/A' }}</span>
-            <span class="client-email">{{ b.customer_email || 'N/A' }}</span>
-          </div>
-        </div>
-
-        <div class="service-details">
-          <div class="detail-item">
-            <span class="d-label">Stylist:</span>
-            <span class="d-val stylist-val">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                <circle cx="12" cy="7" r="4"></circle>
-              </svg>
-              {{ b.stylist_name || 'Master Barber' }}
+          <div class="badges-row">
+            <span class="visit-type-chip" [class.home]="b.visit_type === 'home'">
+              {{ b.visit_type === 'home' ? '🏠 Home Service' : '💈 Salon Studio' }}
+            </span>
+            <span class="status-chip {{ b.status }}">
+              {{ b.status | titlecase }}
             </span>
           </div>
-          <div class="detail-item">
-            <span class="d-label">Date:</span>
-            <span class="d-val">{{ b.booking_date }}</span>
+        </div>
+
+        <!-- Client Section -->
+        <div class="client-section">
+          <div class="client-avatar" [class.home-avatar]="b.visit_type === 'home'">
+            {{ b.customer_name ? (b.customer_name.charAt(0) | uppercase) : 'C' }}
           </div>
+          <div class="client-info">
+            <h3 class="client-name">{{ b.customer_name || 'Walk-in Client' }}</h3>
+            <a [href]="'tel:' + b.customer_phone" class="client-contact" (click)="$event.stopPropagation()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+              <span>{{ b.customer_phone || 'N/A' }}</span>
+            </a>
+            @if (b.customer_email) {
+              <a [href]="'mailto:' + b.customer_email" class="client-email" (click)="$event.stopPropagation()">
+                {{ b.customer_email }}
+              </a>
+            }
+          </div>
+        </div>
+
+        <!-- Service & Location Details -->
+        <div class="service-details">
+          @if (b.visit_type === 'home') {
+            <div class="detail-item address-item">
+              <span class="d-label">Destination Address:</span>
+              <div class="address-val">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                  <circle cx="12" cy="10" r="3"></circle>
+                </svg>
+                <span>{{ b.service_address || 'Address pending confirmation' }} · Assigned: {{ b.stylist_name || 'Unassigned' }}</span>
+              </div>
+            </div>
+          } @else {
+            <div class="detail-item">
+              <span class="d-label">Assigned stylist:</span>
+              <span class="d-val stylist-val">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+                {{ b.stylist_name || 'Unassigned' }}
+              </span>
+            </div>
+          }
+
+          <div class="detail-item-row">
+            <div class="detail-item">
+              <span class="d-label">Date:</span>
+              <span class="d-val date-val">{{ (b.booking_date || '').slice(0, 10) | date:'mediumDate' }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="d-label">Visit Type:</span>
+              <span class="d-val">{{ b.visit_type === 'home' ? 'Doorstep Grooming' : 'Main Salon Studio' }}</span>
+            </div>
+          </div>
+
           @if (b.notes) {
             <div class="notes-box">
               <span class="notes-label">Service:</span>
@@ -117,38 +298,58 @@
           }
         </div>
 
+        <!-- Card Footer -->
         <div class="card-footer">
           <div class="price-box">
-            <span class="fee-label">Service Fee</span>
-            <span class="price-val">₹{{ b.total_price }}</span>
+            <span class="fee-label">Total Fee</span>
+            <span class="price-val">₹{{ b.total_price | number:'1.0-0' }}</span>
           </div>
 
           <div class="card-actions">
             @if (b.status === 'confirmed' || b.status === 'pending') {
-              <button class="btn-action complete" (click)="updateStatus(b, 'completed')" title="Mark Completed">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <button
+                type="button"
+                class="btn-action complete"
+                (click)="updateStatus(b, 'completed', $event)"
+                title="Mark Appointment Fulfilled"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <polyline points="20 6 9 17 4 12"></polyline>
                 </svg>
                 <span>Done</span>
               </button>
-              <button class="btn-action reschedule" (click)="openReschedule(b, $event)" title="Reschedule Time Slot">
+              <button
+                type="button"
+                class="btn-action reschedule"
+                (click)="openReschedule(b, $event)"
+                title="Reschedule Appointment Slot"
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <circle cx="12" cy="12" r="10"></circle>
                   <polyline points="12 6 12 12 16 14"></polyline>
                 </svg>
+                <span>Reschedule</span>
               </button>
-              <button class="btn-action cancel" (click)="updateStatus(b, 'cancelled')" title="Cancel Appointment">
+              <button
+                type="button"
+                class="btn-action cancel"
+                (click)="updateStatus(b, 'cancelled', $event)"
+                title="Cancel Appointment"
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
               </button>
             } @else if (b.status === 'cancelled') {
-              <button class="btn-action restore" (click)="updateStatus(b, 'confirmed')">
-                <span>Restore</span>
+              <button
+                type="button"
+                class="btn-action restore"
+                (click)="updateStatus(b, 'confirmed', $event)"
+              >
+                <span>Restore Slot</span>
               </button>
-            }
- @else {
+            } @else {
               <span class="completed-tag">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <polyline points="20 6 9 17 4 12"></polyline>
@@ -156,52 +357,144 @@
                 Fulfilled
               </span>
             }
+
+            <button
+              type="button"
+              class="btn-action inspect"
+              (click)="openDetails(b, $event)"
+              title="Inspect Full Booking Details"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
           </div>
         </div>
-      </div>
+      </article>
     } @empty {
       <div class="empty-state-card">
         <span class="empty-icon">💈</span>
         <h3>No Appointments Scheduled</h3>
-        <p>There are no bookings matching the selected filter criteria.</p>
+        <p>No bookings match your selected location, date, barber, or search criteria.</p>
+        <button type="button" class="btn-clear-filters" (click)="setVisitType('all'); setStatus('all'); selectedStylist.set('all'); clearDate(); searchQuery.set('')">
+          Reset All Filters
+        </button>
       </div>
     }
   </div>
 
-  <!-- New Appointment Booking Modal -->
+  <!-- ═════════════════════════════════════════════════════════════════════════
+       NEW APPOINTMENT BOOKING MODAL
+       ═════════════════════════════════════════════════════════════════════════ -->
   @if (isCreateModalOpen()) {
     <div class="modal-backdrop" (click)="closeCreateModal()">
       <div class="booking-modal-card" (click)="$event.stopPropagation()">
         <div class="modal-head">
           <div>
-            <span class="modal-eyebrow">CHAIR DISPATCH</span>
+            <span class="modal-eyebrow">CHAIR &amp; ROUTE DISPATCH</span>
             <h3 class="modal-title">Book New Appointment</h3>
           </div>
-          <button class="btn-modal-close" (click)="closeCreateModal()">✕</button>
+          <button type="button" class="btn-modal-close" (click)="closeCreateModal()">✕</button>
         </div>
 
         <div class="modal-form">
+          <!-- Visit Location Selector -->
+          <div class="form-row">
+            <div class="form-field full-width">
+              <label>Service Location *</label>
+              <div class="radio-tab-group">
+                <button
+                  type="button"
+                  class="radio-tab"
+                  [class.active]="visitType() === 'salon'"
+                  (click)="visitType.set('salon')"
+                >
+                  <span class="radio-tab-icon">💈</span>
+                  <div class="radio-tab-copy">
+                    <strong>Salon Studio Visit</strong>
+                    <small>At Urban Blade Main Salon (Ghaziabad)</small>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  class="radio-tab"
+                  [class.active]="visitType() === 'home'"
+                  (click)="visitType.set('home')"
+                >
+                  <span class="radio-tab-icon">🏠</span>
+                  <div class="radio-tab-copy">
+                    <strong>Home Grooming Route</strong>
+                    <small>Service delivered to client doorstep</small>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div class="form-row">
             <div class="form-field">
               <label>Client Full Name *</label>
-              <input type="text" placeholder="e.g. Aman Dixit" [ngModel]="clientName()" (ngModelChange)="clientName.set($event)" />
+              <input
+                type="text"
+                placeholder="e.g. Aman Dixit"
+                [ngModel]="clientName()"
+                (ngModelChange)="clientName.set($event)"
+              />
             </div>
             <div class="form-field">
               <label>Mobile Number *</label>
-              <input type="tel" placeholder="e.g. 9811223344" [ngModel]="clientPhone()" (ngModelChange)="clientPhone.set($event)" />
+              <input
+                type="tel"
+                placeholder="e.g. 9811223344"
+                [ngModel]="clientPhone()"
+                (ngModelChange)="clientPhone.set($event)"
+              />
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-field">
               <label>Email Address</label>
-              <input type="email" placeholder="client@example.com" [ngModel]="clientEmail()" (ngModelChange)="clientEmail.set($event)" />
+              <input
+                type="email"
+                placeholder="client@example.com"
+                [ngModel]="clientEmail()"
+                (ngModelChange)="clientEmail.set($event)"
+              />
+            </div>
+
+            <div class="form-field"><label>Assigned stylist (admin only)</label><select [ngModel]="stylistName()" (ngModelChange)="stylistName.set($event)"><option value="">Unassigned</option>@for(s of stylists();track s.id){<option [value]="s.id">{{ s.name }}</option>}</select></div>
+          </div>
+
+          @if (visitType() === 'home') {
+            <div class="form-row">
+              <div class="form-field full-width">
+                <label>Destination Service Address *</label>
+                <textarea
+                  rows="3"
+                  placeholder="Complete flat/house number, building, sector/street, locality, city and postal code"
+                  [ngModel]="serviceAddress()"
+                  (ngModelChange)="serviceAddress.set($event)"
+                ></textarea>
+              </div>
+            </div>
+          }
+
+          <div class="form-row">
+            <div class="form-field">
+              <label>Appointment Date *</label>
+              <input
+                type="date"
+                [ngModel]="bookingDate()"
+                (ngModelChange)="bookingDate.set($event)"
+              />
             </div>
             <div class="form-field">
-              <label>Assigned Stylist</label>
-              <select [ngModel]="stylistName()" (ngModelChange)="stylistName.set($event)">
-                @for (s of stylists(); track s) {
-                  <option [value]="s">{{ s }}</option>
+              <label>Time Slot *</label>
+              <select [ngModel]="timeSlot()" (ngModelChange)="timeSlot.set($event)">
+                @for (slot of timeSlots; track slot) {
+                  <option [value]="slot">{{ slot }}</option>
                 }
               </select>
             </div>
@@ -209,102 +502,260 @@
 
           <div class="form-row">
             <div class="form-field">
-              <label>Appointment Date</label>
-              <input type="date" [ngModel]="bookingDate()" (ngModelChange)="bookingDate.set($event)" />
+              <label>Service Description *</label>
+              <input
+                type="text"
+                placeholder="e.g. Skin-Fade &amp; Hot Towel Shave"
+                [ngModel]="serviceName()"
+                (ngModelChange)="serviceName.set($event)"
+              />
             </div>
             <div class="form-field">
-              <label>Time Slot</label>
-              <select [ngModel]="timeSlot()" (ngModelChange)="timeSlot.set($event)">
-                <option value="10:00 AM">10:00 AM</option>
-                <option value="11:00 AM">11:00 AM</option>
-                <option value="12:00 PM">12:00 PM</option>
-                <option value="02:00 PM">02:00 PM</option>
-                <option value="03:30 PM">03:30 PM</option>
-                <option value="04:30 PM">04:30 PM</option>
-                <option value="05:30 PM">05:30 PM</option>
-                <option value="07:00 PM">07:00 PM</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-field">
-              <label>Service Description</label>
-              <input type="text" placeholder="e.g. Skin-Fade & Hot Towel Shave" [ngModel]="serviceName()" (ngModelChange)="serviceName.set($event)" />
-            </div>
-            <div class="form-field">
-              <label>Service Fee (₹)</label>
-              <input type="number" [ngModel]="servicePrice()" (ngModelChange)="servicePrice.set($event)" />
+              <label>Service Fee (₹) *</label>
+              <input
+                type="number"
+                min="0"
+                [ngModel]="servicePrice()"
+                (ngModelChange)="servicePrice.set($event)"
+              />
             </div>
           </div>
         </div>
 
         <div class="modal-actions">
           <button type="button" class="btn-cancel" (click)="closeCreateModal()">Cancel</button>
-          <button type="button" class="btn-confirm" (click)="saveNewBooking()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Confirm Reservation</span>
+          <button
+            type="button"
+            class="btn-confirm"
+            [disabled]="isSaving()"
+            (click)="saveNewBooking()"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <span>{{ isSaving() ? 'Saving…' : 'Confirm Reservation' }}</span>
           </button>
         </div>
       </div>
     </div>
   }
 
-  <!-- Reschedule Appointment Modal -->
+  <!-- ═════════════════════════════════════════════════════════════════════════
+       RESCHEDULE APPOINTMENT MODAL
+       ═════════════════════════════════════════════════════════════════════════ -->
   @if (isRescheduleModalOpen()) {
     <div class="modal-backdrop" (click)="closeReschedule()">
       <div class="booking-modal-card" (click)="$event.stopPropagation()">
         <div class="modal-head">
           <div>
-            <span class="modal-eyebrow">CHAIR DISPATCH</span>
+            <span class="modal-eyebrow">CHAIR &amp; ROUTE DISPATCH</span>
             <h3 class="modal-title">Reschedule Appointment</h3>
           </div>
-          <button class="btn-modal-close" (click)="closeReschedule()">✕</button>
+          <button type="button" class="btn-modal-close" (click)="closeReschedule()">✕</button>
         </div>
 
         <div class="modal-form">
-          <p class="reschedule-target" style="font-size: 0.85rem; color: #94a3b8; margin: 0 0 0.5rem;">
-            Rescheduling client <strong style="color: #f8fafc;">{{ reschedulingBooking()?.customer_name }}</strong> ({{ reschedulingBooking()?.notes }})
-          </p>
+          <div class="reschedule-target-box">
+            <span class="rt-label">Rescheduling Client:</span>
+            <strong class="rt-name">{{ reschedulingBooking()?.customer_name }}</strong>
+            <span class="rt-notes">"{{ reschedulingBooking()?.notes }}"</span>
+          </div>
 
+          <!-- Location Toggle for Reschedule -->
           <div class="form-row">
-            <div class="form-field">
-              <label>New Appointment Date</label>
-              <input type="date" [ngModel]="rescheduleDate()" (ngModelChange)="rescheduleDate.set($event)" />
-            </div>
-            <div class="form-field">
-              <label>New Time Slot</label>
-              <select [ngModel]="rescheduleSlot()" (ngModelChange)="rescheduleSlot.set($event)">
-                <option value="10:00 AM">10:00 AM</option>
-                <option value="11:00 AM">11:00 AM</option>
-                <option value="12:00 PM">12:00 PM</option>
-                <option value="02:00 PM">02:00 PM</option>
-                <option value="03:30 PM">03:30 PM</option>
-                <option value="04:30 PM">04:30 PM</option>
-                <option value="05:30 PM">05:30 PM</option>
-                <option value="07:00 PM">07:00 PM</option>
-              </select>
+            <div class="form-field full-width">
+              <label>Location Mode</label>
+              <div class="radio-tab-group compact">
+                <button
+                  type="button"
+                  class="radio-tab"
+                  [class.active]="rescheduleVisitType() === 'salon'"
+                  (click)="rescheduleVisitType.set('salon')"
+                >
+                  <span class="radio-tab-icon">💈</span>
+                  <div class="radio-tab-copy">
+                    <strong>Salon Studio</strong>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  class="radio-tab"
+                  [class.active]="rescheduleVisitType() === 'home'"
+                  (click)="rescheduleVisitType.set('home')"
+                >
+                  <span class="radio-tab-icon">🏠</span>
+                  <div class="radio-tab-copy">
+                    <strong>Home Route</strong>
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
 
           <div class="form-row">
-            <div class="form-field" style="grid-column: 1 / -1;">
-              <label>Re-assign Stylist</label>
-              <select [ngModel]="rescheduleStylist()" (ngModelChange)="rescheduleStylist.set($event)">
-                @for (s of stylists(); track s) {
-                  <option [value]="s">{{ s }}</option>
+            <div class="form-field">
+              <label>New Appointment Date *</label>
+              <input
+                type="date"
+                [ngModel]="rescheduleDate()"
+                (ngModelChange)="rescheduleDate.set($event)"
+              />
+            </div>
+            <div class="form-field">
+              <label>New Time Slot *</label>
+              <select [ngModel]="rescheduleSlot()" (ngModelChange)="rescheduleSlot.set($event)">
+                @for (slot of timeSlots; track slot) {
+                  <option [value]="slot">{{ slot }}</option>
                 }
               </select>
             </div>
           </div>
+
+
+            <div class="form-row">
+              <div class="form-field full-width">
+                <label>Assign stylist (admin only)</label>
+                <select [ngModel]="rescheduleStylist()" (ngModelChange)="rescheduleStylist.set($event)"><option value="">Unassigned</option>
+                  @for (s of stylists(); track s.id) {
+                    <option [value]="s.id">{{ s.name }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+          @if (rescheduleVisitType() === 'home') {
+            <div class="form-row">
+              <div class="form-field full-width">
+                <label>Destination Service Address *</label>
+                <textarea
+                  rows="3"
+                  placeholder="Complete home service address"
+                  [ngModel]="rescheduleAddress()"
+                  (ngModelChange)="rescheduleAddress.set($event)"
+                ></textarea>
+              </div>
+            </div>
+          }
         </div>
 
         <div class="modal-actions">
           <button type="button" class="btn-cancel" (click)="closeReschedule()">Cancel</button>
-          <button type="button" class="btn-confirm" (click)="confirmReschedule()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Update Slot</span>
+          <button
+            type="button"
+            class="btn-confirm"
+            [disabled]="isSaving()"
+            (click)="confirmReschedule()"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <span>{{ isSaving() ? 'Saving…' : 'Update Slot' }}</span>
           </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ═════════════════════════════════════════════════════════════════════════
+       APPOINTMENT INSPECTION & DETAILS MODAL
+       ═════════════════════════════════════════════════════════════════════════ -->
+  @if (isDetailsModalOpen() && inspectingBooking(); as item) {
+    <div class="modal-backdrop" (click)="closeDetails()">
+      <div class="booking-modal-card details-card" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <div>
+            <span class="modal-eyebrow">APPOINTMENT DOSSIER</span>
+            <h3 class="modal-title">Booking #{{ item.id.slice(0, 8).toUpperCase() }}</h3>
+          </div>
+          <button type="button" class="btn-modal-close" (click)="closeDetails()">✕</button>
+        </div>
+
+        <div class="details-body">
+          <div class="dossier-header-row">
+            <div class="dossier-avatar">
+              {{ item.customer_name ? (item.customer_name.charAt(0) | uppercase) : 'C' }}
+            </div>
+            <div class="dossier-client">
+              <h4>{{ item.customer_name }}</h4>
+              <span class="dossier-type-badge" [class.home]="item.visit_type === 'home'">
+                {{ item.visit_type === 'home' ? '🏠 Home Grooming Route' : '💈 Salon Studio Chair' }}
+              </span>
+            </div>
+            <span class="status-chip {{ item.status }}">
+              {{ item.status | titlecase }}
+            </span>
+          </div>
+
+          <div class="dossier-grid">
+            <div class="dossier-cell">
+              <span class="dc-label">Scheduled Date</span>
+              <strong class="dc-val">{{ (item.booking_date || '').slice(0, 10) | date:'fullDate' }}</strong>
+            </div>
+            <div class="dossier-cell">
+              <span class="dc-label">Time Slot</span>
+              <strong class="dc-val">{{ item.time_slot }}</strong>
+            </div>
+            <div class="dossier-cell">
+              <span class="dc-label">Mobile Phone</span>
+              <a [href]="'tel:' + item.customer_phone" class="dc-val dc-link">{{ item.customer_phone }}</a>
+            </div>
+            <div class="dossier-cell">
+              <span class="dc-label">Email</span>
+              <strong class="dc-val">{{ item.customer_email || 'Not provided' }}</strong>
+            </div>
+            @if (item.visit_type === 'home') {
+              <div class="dossier-cell full">
+                <span class="dc-label">Service Destination</span>
+                <strong class="dc-val dc-address">{{ item.service_address || 'Address unconfirmed' }} · Assigned: {{ item.stylist_name || 'Unassigned' }}</strong>
+              </div>
+            } @else {
+              <div class="dossier-cell full">
+                <span class="dc-label">Assigned stylist</span>
+                <strong class="dc-val">{{ item.stylist_name || 'Unassigned' }}</strong>
+              </div>
+            }
+            <div class="dossier-cell full">
+              <span class="dc-label">Booked Service &amp; Notes</span>
+              <p class="dc-notes">{{ item.notes || 'Salon Care Service' }}</p>
+            </div>
+            <div class="dossier-cell">
+              <span class="dc-label">Service Fee</span>
+              <strong class="dc-val dc-price">₹{{ item.total_price | number:'1.0-0' }}</strong>
+            </div>
+            <div class="dossier-cell">
+              <span class="dc-label">Payment Mode</span>
+              <strong class="dc-val">Studio / Doorstep Settlement</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions space-between">
+          <div class="left-actions">
+            <a [href]="'tel:' + item.customer_phone" class="btn-contact-action">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+              <span>Call Client</span>
+            </a>
+          </div>
+
+          <div class="right-actions">
+            @if (item.status === 'confirmed' || item.status === 'pending') {
+              <button type="button" class="btn-action complete" (click)="updateStatus(item, 'completed')">
+                Mark Fulfilled
+              </button>
+              <button type="button" class="btn-action reschedule" (click)="openReschedule(item)">
+                Reschedule Slot
+              </button>
+              <button type="button" class="btn-action cancel" (click)="updateStatus(item, 'cancelled')">
+                Cancel
+              </button>
+            } @else if (item.status === 'cancelled') {
+              <button type="button" class="btn-action restore" (click)="updateStatus(item, 'confirmed')">
+                Restore Appointment
+              </button>
+            }
+            <button type="button" class="btn-cancel" (click)="closeDetails()">Close</button>
+          </div>
         </div>
       </div>
     </div>

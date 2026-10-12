@@ -24,6 +24,18 @@ export class AdminProducts implements OnInit {
   readonly drawerOpen = signal(false);
   readonly editingProduct = signal<AdminProduct | null>(null);
 
+  availableStock(product: AdminProduct): number {
+    return Math.max(
+      0,
+      Number(product.availableQuantity ??
+        ((product.stock_quantity ?? product.stockQuantity ?? 0) - (product.stock_reserved ?? 0))) || 0
+    );
+  }
+
+  isAvailable(product: AdminProduct): boolean {
+    return product.inStock && this.availableStock(product) > 0;
+  }
+
   ngOnInit(): void {
     this.admin.refreshProducts();
   }
@@ -36,9 +48,9 @@ export class AdminProducts implements OnInit {
     const list = this.admin.products();
     return {
       all: list.length,
-      inStock: list.filter((p) => p.inStock && (p.stock_quantity ?? 0) > 0).length,
-      lowStock: list.filter((p) => (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) <= 15).length,
-      outOfStock: list.filter((p) => !p.inStock || (p.stock_quantity ?? 0) <= 0).length,
+      inStock: list.filter((p) => this.isAvailable(p)).length,
+      lowStock: list.filter((p) => this.isAvailable(p) && this.availableStock(p) <= 15).length,
+      outOfStock: list.filter((p) => !this.isAvailable(p)).length,
     };
   });
 
@@ -66,11 +78,11 @@ export class AdminProducts implements OnInit {
       list = list.filter((p) => p.kind === kind);
     }
     if (stock === 'in-stock') {
-      list = list.filter((p) => p.inStock && (p.stock_quantity ?? 0) > 0);
+      list = list.filter((p) => this.isAvailable(p));
     } else if (stock === 'low-stock') {
-      list = list.filter((p) => (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) <= 15);
+      list = list.filter((p) => this.isAvailable(p) && this.availableStock(p) <= 15);
     } else if (stock === 'out-of-stock') {
-      list = list.filter((p) => !p.inStock || (p.stock_quantity ?? 0) <= 0);
+      list = list.filter((p) => !this.isAvailable(p));
     }
 
     if (q) {
@@ -142,7 +154,7 @@ export class AdminProducts implements OnInit {
       p.category,
       p.price,
       p.compareAtPrice || '',
-      p.stock_quantity ?? 100,
+      p.stock_quantity ?? 0,
       p.inStock ? 'YES' : 'NO',
       p.badge || '',
       p.rating,

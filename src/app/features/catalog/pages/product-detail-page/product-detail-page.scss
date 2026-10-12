@@ -199,6 +199,11 @@ h1 {
   background: #ffa41c;
 }
 
+.btn--book {
+  background: var(--search-btn);
+  color: var(--ink);
+}
+
 .btn--disabled {
   background: #e2e8f0;
   color: #94a3b8;

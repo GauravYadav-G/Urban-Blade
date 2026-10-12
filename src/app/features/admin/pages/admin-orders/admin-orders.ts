@@ -1,19 +1,22 @@
+import { HttpClient } from '@angular/common/http';
 import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminService, type AdminOrder } from '@core/services/admin.service';
 import { AccountService } from '@core/services/account.service';
 import { ToastService } from '@core/services/toast.service';
+import { OrderInvoice } from '@shared/components/order-invoice/order-invoice';
 
 @Component({
   selector: 'app-admin-orders',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, OrderInvoice],
   templateUrl: './admin-orders.html',
   styleUrl: './admin-orders.scss',
 })
 export class AdminOrders implements OnInit, OnDestroy {
   readonly admin = inject(AdminService);
+  private readonly http = inject(HttpClient);
   readonly account = inject(AccountService);
   readonly toast = inject(ToastService);
 
@@ -45,6 +48,8 @@ export class AdminOrders implements OnInit, OnDestroy {
   readonly selectedCarrierPortal = signal<string>('auto');
   readonly isFetchingWebsite = signal<boolean>(false);
   readonly isReconciling = signal<boolean>(false);
+  readonly isRefunding = signal<boolean>(false);
+  readonly isCancelling = signal<boolean>(false);
   readonly websiteTelemetryModal = signal<{ order: AdminOrder; websiteData: any } | null>(null);
 
   // Inspector Edits
@@ -72,7 +77,7 @@ export class AdminOrders implements OnInit, OnDestroy {
   readonly manualCustomerStreet = signal('Salon Walk-in / Counter POS');
   readonly manualProductId = signal('');
   readonly manualQuantity = signal(1);
-  readonly manualPaymentMethod = signal<'upi' | 'cash_on_delivery' | 'card'>('upi');
+  readonly manualPaymentMethod = signal<'UPI' | 'Cash' | 'Card'>('UPI');
 
   ngOnInit(): void {
     this.admin.refreshOrders();
@@ -610,20 +615,69 @@ export class AdminOrders implements OnInit, OnDestroy {
     this.toast.success(`Updated order #${order.id.slice(0, 8).toUpperCase()} logistics specifications.`);
   }
 
+  recordCollection(order: AdminOrder): void {
+    const reference = window.prompt('Enter the receipt or carrier remittance reference for money already collected:')?.trim();
+    if (!reference || reference.length < 3) return;
+    this.http.post(`/api/admin/orders/${order.id}/collection`, { reference }).subscribe({
+      next: () => { this.admin.refreshOrders(); this.toast.success('COD collection recorded.'); },
+      error: error => this.toast.error(error.error?.message || 'Collection could not be recorded.'),
+    });
+  }
+
   cancelOrder(order: AdminOrder): void {
     const s = (order.status || '').toLowerCase().trim();
     if (s === 'delivered') {
       this.toast.error('Delivered orders have been fulfilled and cannot be cancelled.');
       return;
     }
-    if (s === 'cancelled') {
+    if (s === 'cancelled' && order.refund_status !== 'pending' && order.refund_status !== 'failed') {
+      return;
+    }
+    if (this.admin.isPaymentPaid(order) && order.payment_method !== 'Razorpay') {
+      const reference = window.prompt('Enter the receipt/reference for the refund already paid to this customer. No money is transferred by this action.')?.trim();
+      if (!reference || reference.length < 3) return;
+      this.http.post(`/api/admin/orders/${order.id}/refund/manual`, { reference, reason: 'Counter order cancelled and externally refunded' }).subscribe({
+        next: () => { this.admin.refreshOrders(); this.admin.refreshProducts(); this.toast.success('External refund recorded.'); },
+        error: error => this.toast.error(error.error?.message || 'External refund could not be recorded.'),
+      });
+      return;
+    }
+    if (this.admin.isPaymentPaid(order) || order.refund_status === 'pending' || order.refund_status === 'failed') {
+      const existingReason = order.refund_reason?.trim();
+      const reason = existingReason || window.prompt('Enter the customer-visible reason for this refund:', 'Order cancelled by administrator')?.trim();
+      if (!reason || reason.length < 3) {
+        this.toast.error('A refund reason of at least 3 characters is required.');
+        return;
+      }
+      if (!confirm(`Refund the full payment for Order #${order.id.slice(0, 8)} and restore its inventory?`)) return;
+      this.isRefunding.set(true);
+      this.admin.refundOrder(order.id, reason).subscribe({
+        next: (response) => {
+          this.isRefunding.set(false);
+          if (this.selectedOrder()?.id === order.id) this.selectedOrder.set(response.order);
+          this.toast.success(response.message);
+        },
+        error: (error) => {
+          this.isRefunding.set(false);
+          this.toast.error(error.error?.message || 'Refund could not be completed. No local cancellation was applied.');
+        },
+      });
       return;
     }
     if (confirm(`Are you sure you want to cancel Order #${order.id.slice(0, 8)}? Items will be restocked.`)) {
-      this.admin.cancelOrder(order.id);
-      if (this.selectedOrder()?.id === order.id) {
-        this.selectedOrder.update((o) => (o ? { ...o, status: 'cancelled' } : null));
-      }
+      if (this.isCancelling()) return;
+      this.isCancelling.set(true);
+      this.admin.cancelOrder(order.id).subscribe({
+        next: (response) => {
+          this.isCancelling.set(false);
+          if (this.selectedOrder()?.id === order.id) this.selectedOrder.set(response.order);
+          this.toast.success(`Order #${order.id.slice(0, 8)} cancelled. Inventory was updated by the server.`);
+        },
+        error: (error) => {
+          this.isCancelling.set(false);
+          this.toast.error(error.error?.message || 'Cancellation failed. Inventory was not changed.');
+        },
+      });
     }
   }
 
@@ -689,18 +743,6 @@ export class AdminOrders implements OnInit, OnDestroy {
 
   closeInvoice(): void {
     this.selectedInvoiceOrder.set(null);
-  }
-
-  printInvoice(): void {
-    const inv = this.selectedInvoiceOrder();
-    const originalTitle = document.title;
-    if (inv?.id) {
-      document.title = `Tax_Invoice_UB_${inv.id.slice(0, 8).toUpperCase()}`;
-    }
-    window.print();
-    setTimeout(() => {
-      document.title = originalTitle;
-    }, 1000);
   }
 
   openShippingLabel(order: AdminOrder, event?: Event): void {
@@ -784,13 +826,13 @@ export class AdminOrders implements OnInit, OnDestroy {
     const subtotal = prod.price * qty;
 
     const order: AdminOrder = {
-      id: `ord-pos-${Date.now().toString().slice(-6)}`,
+      id: crypto.randomUUID(),
       status: 'accepted',
       subtotal,
       total_amount: subtotal,
       currency: 'INR',
       payment_method: this.manualPaymentMethod(),
-      payment_status: 'paid',
+      payment_status: 'captured',
       shipping_address: {
         fullName: this.manualCustomerName().trim(),
         phone: this.manualCustomerPhone().trim(),
@@ -800,6 +842,7 @@ export class AdminOrders implements OnInit, OnDestroy {
       created_at: new Date().toISOString(),
       items: [
         {
+          product_id: prod.id,
           product_name: prod.name,
           unit_price: prod.price,
           quantity: qty,

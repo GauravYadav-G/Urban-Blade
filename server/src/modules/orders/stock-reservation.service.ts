@@ -1,5 +1,4 @@
 import type { PoolClient } from 'pg';
-import { invalidateCatalog } from '../../redis/cache.service.js';
 
 /**
  * Stock Reservation Service — the single source of truth for inventory holds.
@@ -56,6 +55,12 @@ function byProductId(items: StockLine[]): StockLine[] {
  * so the caller rolls the whole order back.
  */
 export async function reserveStock(client: PoolClient, orderId: string, items: StockLine[]): Promise<void> {
+  const existing = await client.query('SELECT product_id, quantity, status FROM stock_reservations WHERE order_id = $1 FOR UPDATE', [orderId]);
+  if (existing.rows.length) {
+    if (existing.rows.length === items.length && items.every(item => existing.rows.some(row => row.product_id === item.productId && Number(row.quantity) === item.quantity && row.status === 'active'))) return;
+    throw new Error('RESERVATION_CONFLICT');
+  }
+  (client as PoolClient & { catalogChanged?: boolean }).catalogChanged = true;
   // The aggregate counter is the row-level availability gate...
   for (const item of byProductId(items)) {
     const res = await client.query(
@@ -132,7 +137,6 @@ export async function commitStockReservation(client: PoolClient, orderId: string
           stock_reserved = stock_reserved - $1,
           -- Every SET expression sees the pre-update row values, so the new
           -- on-hand count must be spelled out as (stock_quantity - qty).
-          in_stock = (stock_quantity - $1 > 0),
           version = version + 1,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
@@ -155,10 +159,11 @@ export async function commitStockReservation(client: PoolClient, orderId: string
       `,
       [orderId]
     );
-    await invalidateCatalog().catch(() => {});
+    (client as PoolClient & { catalogChanged?: boolean }).catalogChanged = true;
   }
 
   if (unapplied.length) throw new Error('STOCK_LEDGER_INCONSISTENT');
+  if (active.length) (client as PoolClient & { catalogChanged?: boolean }).catalogChanged = true;
   return { activeReservations: active.length, unapplied };
 }
 
@@ -176,7 +181,6 @@ export async function releaseStockReservation(client: PoolClient, orderId: strin
       UPDATE products
       SET stock_reserved = stock_reserved - $1,
           -- Availability after the release is on-hand plus the units being freed.
-          in_stock = (stock_quantity > 0),
           version = version + 1,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
@@ -201,6 +205,7 @@ export async function releaseStockReservation(client: PoolClient, orderId: strin
   }
 
   if (unapplied.length) throw new Error('STOCK_LEDGER_INCONSISTENT');
+  if (active.length) (client as PoolClient & { catalogChanged?: boolean }).catalogChanged = true;
   return { activeReservations: active.length, unapplied };
 }
 
@@ -251,7 +256,7 @@ export async function claimPendingOrder(
     SET ${setClauses.join(', ')}
     WHERE id = $1
       AND status = 'accepted'
-      AND payment_status = 'pending'
+      AND payment_status IN ('pending', 'failed')
     RETURNING id;
     `,
     values
@@ -295,7 +300,7 @@ export async function cancelOrderAndReleaseStock(
         updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
       AND status = $2
-      AND payment_status = 'pending'
+      AND payment_status IN ('pending', 'failed')
     RETURNING id;
     `,
     [orderId, row.status]
@@ -305,11 +310,11 @@ export async function cancelOrderAndReleaseStock(
   const { activeReservations } = await releaseStockReservation(client, orderId);
   const committed = await client.query("SELECT product_id, quantity FROM stock_reservations WHERE order_id = $1 AND status = 'committed' ORDER BY product_id FOR UPDATE", [orderId]);
   for (const item of committed.rows) {
-    await client.query('UPDATE products SET stock_quantity = stock_quantity + $1, in_stock = TRUE, version = version + 1 WHERE id = $2', [item.quantity, item.product_id]);
+    await client.query('UPDATE products SET stock_quantity = stock_quantity + $1, version = version + 1 WHERE id = $2', [item.quantity, item.product_id]);
   }
   await client.query("UPDATE stock_reservations SET status = 'restored', resolved_at = NOW() WHERE order_id = $1 AND status = 'committed'", [orderId]);
   if (committed.rows.length > 0) {
-    await invalidateCatalog().catch(() => {});
+    (client as PoolClient & { catalogChanged?: boolean }).catalogChanged = true;
   }
   return { cancelled: true, released: activeReservations };
 }

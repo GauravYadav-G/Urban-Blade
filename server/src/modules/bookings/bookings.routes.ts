@@ -3,41 +3,12 @@ import crypto from 'crypto';
 import { query, withTransaction } from '../../db/pool.js';
 import { acquireLock, releaseLock } from '../../redis/lock.service.js';
 import { requireAuth, optionalAuth } from '../../core/auth.middleware.js';
-
-// Fallback stylists
-const fallbackStylists = [
-  {
-    id: 'stylist-vikram',
-    name: 'Vikram Sharma',
-    role: 'Master Barber & Stylist',
-    avatar_url: '/images/stylists/vikram.jpg',
-    rating: 4.95,
-  },
-  {
-    id: 'stylist-rohan',
-    name: 'Rohan Verma',
-    role: 'Senior Hair Specialist',
-    avatar_url: '/images/stylists/rohan.jpg',
-    rating: 4.88,
-  },
-  {
-    id: 'stylist-ayesha',
-    name: 'Ayesha Khan',
-    role: 'Skin & Grooming Expert',
-    avatar_url: '/images/stylists/ayesha.jpg',
-    rating: 4.92,
-  },
-];
+import { z } from 'zod';
 
 export async function bookingsRoutes(app: FastifyInstance) {
   // ─── LIST STYLISTS ────────────────────────────────────────────────────────
-  app.get('/bookings/stylists', async (request, reply) => {
-    try {
-      const res = await query('SELECT * FROM stylists WHERE is_active = true ORDER BY rating DESC');
-      if (res.rows.length > 0) return reply.send(res.rows);
-    } catch {}
-    return reply.send(fallbackStylists);
-  });
+  // Assignment is internal; do not expose the staff directory to customers.
+  app.get('/bookings/stylists', async () => []);
 
   // ─── GET AVAILABLE TIME SLOTS ─────────────────────────────────────────────
   app.get<{ Querystring: { stylistId: string; date: string } }>(
@@ -77,8 +48,6 @@ export async function bookingsRoutes(app: FastifyInstance) {
       customer_email?: string;
       customerPhone?: string;
       customer_phone?: string;
-      stylistId?: string;
-      stylist_id?: string;
       serviceId?: string;
       service_id?: string;
       serviceName?: string;
@@ -89,37 +58,50 @@ export async function bookingsRoutes(app: FastifyInstance) {
       totalPrice?: number;
       total_price?: number;
       notes?: string;
+      visitType?: 'salon' | 'home';
+      visit_type?: 'salon' | 'home';
+      serviceAddress?: string;
+      service_address?: string;
     };
   }>('/bookings', async (request, reply) => {
     const b = request.body || {};
-    const customerName = b.customerName || b.customer_name || 'Salon Guest';
-    const customerEmail = b.customerEmail || b.customer_email || 'client@urbanblade.in';
-    const customerPhone = b.customerPhone || b.customer_phone || null;
-    const stylistId = b.stylistId || b.stylist_id || (b as any).stylistName || (b as any).stylist_name || 'stylist-vikram';
-    const serviceId = b.serviceId || b.service_id;
-    const bookingDate = b.bookingDate || b.booking_date || new Date().toISOString().split('T')[0];
-    const timeSlot = b.timeSlot || b.time_slot || '11:00 AM';
-    const totalPrice = Number(b.totalPrice ?? b.total_price ?? 499);
-    const notes = b.notes || b.serviceName || (b as any).service_name || 'Salon Service';
-
-    // Resolve Stylist UUID if slug/mock ID was provided
-    let resolvedStylistId = stylistId;
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stylistId);
-    if (!isUuid) {
-      try {
-        const sRes = await query('SELECT id FROM stylists WHERE name ILIKE $1 OR role ILIKE $1 LIMIT 1', [
-          `%${stylistId.replace('stylist-', '')}%`,
-        ]);
-        if (sRes.rows.length > 0) {
-          resolvedStylistId = sRes.rows[0].id;
-        } else {
-          const anyS = await query('SELECT id FROM stylists LIMIT 1');
-          if (anyS.rows.length > 0) resolvedStylistId = anyS.rows[0].id;
-        }
-      } catch {}
+    if (['stylistId','stylist_id','stylistName','stylist_name'].some(key => Boolean((b as Record<string, unknown>)[key]))) {
+      return reply.code(400).send({error:'ADMIN_ASSIGNMENT_ONLY',message:'Staff assignments are managed by the salon.'});
+    }
+    const parsed = z.object({
+      customerName: z.string().trim().min(2).max(255),
+      customerEmail: z.union([z.string().email().max(255), z.literal('')]).optional(),
+      customerPhone: z.string().trim().regex(/^[0-9+ -]{10,18}$/),
+      serviceId: z.string().uuid().nullable().optional(),
+      bookingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      timeSlot: z.string().trim().min(4).max(20),
+      totalPrice: z.number().finite().min(0).max(1000000),
+      notes: z.string().trim().min(2).max(500),
+      visitType: z.enum(['salon', 'home']),
+      serviceAddress: z.string().trim().max(500).nullable().optional(),
+    }).safeParse({
+      customerName: b.customerName || b.customer_name,
+      customerEmail: b.customerEmail || b.customer_email || '',
+      customerPhone: b.customerPhone || b.customer_phone,
+      serviceId: b.serviceId || b.service_id || null,
+      bookingDate: b.bookingDate || b.booking_date,
+      timeSlot: b.timeSlot || b.time_slot,
+      totalPrice: Number(b.totalPrice ?? b.total_price),
+      notes: b.notes || b.serviceName || (b as any).service_name,
+      visitType: b.visitType || b.visit_type || 'salon',
+      serviceAddress: b.serviceAddress || b.service_address || null,
+    });
+    if (!parsed.success || (parsed.data.visitType === 'home' && !parsed.data.serviceAddress)) {
+      return reply.code(400).send({ error: 'INVALID_BOOKING', message: 'Complete the customer, service, schedule, visit type, and home address where required.' });
     }
 
-    const resourceKey = `slot:${resolvedStylistId}:${bookingDate}:${timeSlot.replace(/\s+/g, '')}`;
+    const booking = parsed.data;
+    const service=(await query("SELECT id,name,price FROM products WHERE kind='service' AND in_stock=true AND (($1::uuid IS NOT NULL AND id=$1) OR ($1::uuid IS NULL AND name=$2)) ORDER BY id LIMIT 1",[booking.serviceId || null, b.serviceName || booking.notes])).rows[0];
+    if(!service) return reply.code(400).send({error:'SERVICE_UNAVAILABLE',message:'Choose an available salon service.'});
+    booking.serviceId=service.id;
+    booking.totalPrice=Number(service.price);
+    booking.notes=service.name;
+    const resourceKey = `visit:${booking.visitType}:${booking.bookingDate}:${booking.timeSlot.replace(/\s+/g, '')}`;
 
     // 1. Acquire Atomic Distributed Lock to prevent race conditions
     const lock = await acquireLock(resourceKey, 30000);
@@ -136,40 +118,28 @@ export async function bookingsRoutes(app: FastifyInstance) {
 
       try {
         await withTransaction(async (client) => {
-          const conflictCheck = await client.query(
-            `
-            SELECT id FROM bookings 
-            WHERE stylist_id = $1 AND booking_date = $2 AND time_slot = $3 AND status != 'cancelled'
-            LIMIT 1 FOR UPDATE;
-            `,
-            [resolvedStylistId, bookingDate, timeSlot]
-          );
-
-          if (conflictCheck.rows.length > 0) {
-            throw new Error('ALREADY_BOOKED');
-          }
-
           const insertRes = await client.query(
             `
             INSERT INTO bookings (
               id, customer_name, customer_email, customer_phone, 
-              stylist_id, service_id, booking_date, time_slot, 
+              service_id, booking_date, time_slot, visit_type, service_address,
               status, total_price, notes
             ) VALUES (
-              $1, $2, $3, $4, $5, $6, $7, $8, 'confirmed', $9, $10
+              $1, $2, $3, $4, $5, $6, $7, $8, $9, 'confirmed', $10, $11
             ) RETURNING id;
             `,
             [
               bookingId,
-              customerName,
-              customerEmail,
-              customerPhone,
-              resolvedStylistId,
-              serviceId || null,
-              bookingDate,
-              timeSlot,
-              totalPrice,
-              notes || null,
+              booking.customerName,
+              booking.customerEmail || null,
+              booking.customerPhone,
+              booking.serviceId || null,
+              booking.bookingDate,
+              booking.timeSlot,
+              booking.visitType,
+              booking.serviceAddress || null,
+              booking.totalPrice,
+              booking.notes,
             ]
           );
           bookingId = insertRes.rows[0].id;
@@ -187,10 +157,19 @@ export async function bookingsRoutes(app: FastifyInstance) {
       return reply.status(201).send({
         id: bookingId,
         status: 'confirmed',
-        customerName,
-        bookingDate,
-        timeSlot,
-        message: 'Your salon visit has been successfully confirmed!',
+        customerName: booking.customerName,
+        customer_name: booking.customerName,
+        customer_email: booking.customerEmail || '',
+        customer_phone: booking.customerPhone,
+        bookingDate: booking.bookingDate,
+        booking_date: booking.bookingDate,
+        timeSlot: booking.timeSlot,
+        time_slot: booking.timeSlot,
+        visit_type: booking.visitType,
+        service_address: booking.serviceAddress || null,
+        total_price: booking.totalPrice,
+        notes: booking.notes,
+        message: 'Your appointment has been confirmed.',
       });
     } finally {
       // Always release distributed lock
@@ -228,14 +207,15 @@ export async function bookingsRoutes(app: FastifyInstance) {
           b.customer_name,
           b.customer_email,
           b.customer_phone,
-          b.booking_date,
+          to_char(b.booking_date, 'YYYY-MM-DD') as booking_date,
           b.time_slot,
           b.status,
           b.total_price::numeric,
           b.notes,
           b.created_at,
-          COALESCE(s.name, 'Master Barber') as stylist_name,
-          COALESCE(s.role, 'Senior Barber') as stylist_role
+          b.visit_type,
+          b.service_address,
+          CASE WHEN b.visit_type='home' THEN s.name ELSE NULL END as stylist_name
         FROM bookings b
         LEFT JOIN stylists s ON s.id = b.stylist_id
       `;

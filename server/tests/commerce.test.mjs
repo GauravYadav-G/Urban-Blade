@@ -105,7 +105,7 @@ test('stock inconsistency throws so caller can roll back the complete transactio
 test('webhook signatures are checked against exact request bytes', async () => {
   config.razorpay.webhookSecret = 'webhook-test-secret';
   const app = Fastify(); await app.register(paymentWebhookRoutes, { prefix: '/api' });
-  const raw = '{ "event": "payment.failed" }';
+  const raw = '{ "event": "unhandled.test" }';
   const signature = createHmac('sha256', config.razorpay.webhookSecret).update(raw).digest('hex');
   const request = { method: 'POST', url: '/api/payments/razorpay/webhook', headers: { 'content-type': 'application/json', 'x-razorpay-signature': signature }, payload: raw };
   assert.equal((await app.inject(request)).statusCode, 200);

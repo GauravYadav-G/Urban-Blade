@@ -1,0 +1,429 @@
+<div class="refunds-page">
+  <!-- Page Header -->
+  <header class="page-header">
+    <div class="header-left">
+      <div class="stream-badge-row">
+        <span class="status-indicator live">
+          <span class="pulse-dot"></span> Razorpay Direct Settlement
+        </span>
+        <span class="treasury-badge">ACID Cancellation &amp; Inventory Reacquisition</span>
+      </div>
+      <h1 class="page-title">Refund Management &amp; Audit Desk</h1>
+      <p class="page-subtitle">
+        Monitor payment gateway reversals, reconcile real-time settlement receipts, retry failed transfers, and audit restocked inventory.
+      </p>
+    </div>
+
+    <div class="header-actions">
+      <button
+        type="button"
+        class="btn-refresh"
+        [disabled]="admin.isSyncing()"
+        (click)="admin.refreshOrders(true)"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" [class.spin]="admin.isSyncing()">
+          <path d="M23 4v6h-6M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        <span>{{ admin.isSyncing() ? 'Syncing...' : 'Sync Gateway Records' }}</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Metric KPI Cards -->
+  <section class="metrics-grid">
+    <article class="metric-card">
+      <div class="metric-icon total-icon">🧾</div>
+      <div class="metric-copy">
+        <span class="metric-label">Total Refund Cases</span>
+        <strong class="metric-val">{{ refunds().length }}</strong>
+        <small class="metric-meta">Across online payment transactions</small>
+      </div>
+    </article>
+
+    <article class="metric-card pending">
+      <div class="metric-icon pending-icon">⏳</div>
+      <div class="metric-copy">
+        <span class="metric-label">In-Flight Processing</span>
+        <strong class="metric-val">{{ pendingCount() }}</strong>
+        <small class="metric-meta text-amber">Awaiting bank settlement</small>
+      </div>
+    </article>
+
+    <article class="metric-card failed">
+      <div class="metric-icon failed-icon">⚠️</div>
+      <div class="metric-copy">
+        <span class="metric-label">Action Required</span>
+        <strong class="metric-val">{{ failedCount() }}</strong>
+        <small class="metric-meta text-red">Ready for safe retry</small>
+      </div>
+    </article>
+
+    <article class="metric-card processed">
+      <div class="metric-icon processed-icon">₹</div>
+      <div class="metric-copy">
+        <span class="metric-label">Settled Refund Value</span>
+        <strong class="metric-val">{{ refundedValue() | currency:'INR':'symbol':'1.0-0' }}</strong>
+        <small class="metric-meta text-emerald">{{ processedCount() }} completed disbursements</small>
+      </div>
+    </article>
+  </section>
+
+  <!-- Filter & Search Toolbar -->
+  <section class="toolbar-card">
+    <div class="search-box">
+      <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <input
+        type="search"
+        placeholder="Search order ID, refund ID, payment ID, customer name, mobile or reason..."
+        [ngModel]="searchQuery()"
+        (ngModelChange)="searchQuery.set($event)"
+      />
+      @if (searchQuery()) {
+        <button type="button" class="btn-clear-search" (click)="searchQuery.set('')">✕</button>
+      }
+    </div>
+
+    <div class="filter-pills" aria-label="Filter refunds by status">
+      <button
+        type="button"
+        class="filter-pill"
+        [class.active]="filter() === 'all'"
+        (click)="filter.set('all')"
+      >
+        All Refunds ({{ refunds().length }})
+      </button>
+      <button
+        type="button"
+        class="filter-pill"
+        [class.active]="filter() === 'pending'"
+        (click)="filter.set('pending')"
+      >
+        Processing ({{ pendingCount() }})
+      </button>
+      <button
+        type="button"
+        class="filter-pill"
+        [class.active]="filter() === 'processed'"
+        (click)="filter.set('processed')"
+      >
+        Settled ({{ processedCount() }})
+      </button>
+      <button
+        type="button"
+        class="filter-pill"
+        [class.active]="filter() === 'failed'"
+        (click)="filter.set('failed')"
+      >
+        Action Required ({{ failedCount() }})
+      </button>
+    </div>
+  </section>
+
+  <section class="table-card">
+    <h2>Return requests</h2>
+    <p>Review full-order returns, confirm receipt and inspect goods before issuing a refund.</p>
+    <div class="table-scroll">
+      <table class="refunds-table">
+        <thead><tr><th>Order</th><th>Reason</th><th>Status</th><th>Review</th><th>Actions</th></tr></thead>
+        <tbody>
+          @for (order of returns(); track order.id) {
+            <tr>
+              <td>#{{ order.id.slice(0, 8) }}</td><td>{{ order.return_reason }}</td>
+              <td>{{ order.return_status }}</td><td>{{ order.return_review_note || 'Awaiting review' }}</td>
+              <td>
+                @if (order.return_status === 'requested') {
+                  <button class="btn-reconcile" [disabled]="processingOrderId() !== null" (click)="reviewReturn(order, 'approved')">Approve return</button>
+                  <button class="btn-reconcile" [disabled]="processingOrderId() !== null" (click)="reviewReturn(order, 'rejected')">Reject return</button>
+                }
+                @if (order.return_status === 'approved') {
+                  <button class="btn-reconcile" [disabled]="processingOrderId() !== null" (click)="reviewReturn(order, 'received')">Confirm receipt &amp; inspect</button>
+                }
+                @if (order.return_status === 'received' && order.refund_status !== 'processed') {
+                  <button class="btn-reconcile" [disabled]="processingOrderId() !== null" (click)="refundReturn(order)">{{ order.payment_method === 'Razorpay' ? 'Refund / check status' : 'Record external refund' }}</button>
+                }
+              </td>
+            </tr>
+          } @empty { <tr><td colspan="5">No return requests.</td></tr> }
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Refund Records Table -->
+  <section class="table-card">
+    @if (filteredRefunds().length === 0) {
+      <div class="empty-state-card">
+        <div class="empty-mark">₹</div>
+        <h3>No Refund Records Found</h3>
+        <p>
+          @if (refunds().length === 0) {
+            Refunds initiated by an administrator appear here.
+          } @else {
+            No refund cases match your selected search or status filters.
+          }
+        </p>
+        @if (searchQuery() || filter() !== 'all') {
+          <button type="button" class="btn-reset-filters" (click)="searchQuery.set(''); filter.set('all')">
+            Reset Filters
+          </button>
+        }
+      </div>
+    } @else {
+      <div class="table-scroll">
+        <table class="refunds-table">
+          <thead>
+            <tr>
+              <th>Order &amp; Customer</th>
+              <th>Gateway References</th>
+              <th>Refund Amount</th>
+              <th>Reason &amp; Failure Cause</th>
+              <th>Status</th>
+              <th>Settlement Timeline</th>
+              <th class="text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (order of filteredRefunds(); track order.id) {
+              <tr [class.row-failed]="order.refund_status === 'failed'">
+                <!-- Order & Customer -->
+                <td>
+                  <div class="customer-cell">
+                    <a routerLink="/admin/orders" class="order-link" title="Open in Orders Desk">
+                      #{{ order.id.slice(0, 8).toUpperCase() }}
+                    </a>
+                    <strong class="customer-name">
+                      {{ order.shipping_address.fullName || 'Walk-in Client' }}
+                    </strong>
+                    <span class="customer-phone">
+                      {{ order.shipping_address.phone || 'No phone provided' }}
+                    </span>
+                  </div>
+                </td>
+
+                <!-- Gateway References -->
+                <td>
+                  <div class="references-cell">
+                    <span class="ref-id mono" [title]="order.refund_id || 'Pending Gateway ID'">
+                      {{ order.refund_id || 'ID in-flight' }}
+                    </span>
+                    <small class="ref-sub">
+                      Pay: {{ order.transaction_id || order.gateway_order_id || '—' }}
+                    </small>
+                  </div>
+                </td>
+
+                <!-- Refund Amount -->
+                <td>
+                  <div class="amount-cell">
+                    <strong class="amount-val">
+                      {{ (order.refund_amount || order.total_amount) | currency:order.currency:'symbol':'1.0-0' }}
+                    </strong>
+                    <span class="amount-badge">Full Reimbursement</span>
+                  </div>
+                </td>
+
+                <!-- Reason & Failure -->
+                <td>
+                  <div class="reason-cell">
+                    <span class="reason-copy">{{ order.refund_reason || 'Customer cancellation' }}</span>
+                    @if (order.refund_failure_reason) {
+                      <div class="error-callout" title="Failure cause reported by gateway">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <line x1="12" y1="8" x2="12" y2="12"></line>
+                          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        <span>{{ order.refund_failure_reason }}</span>
+                      </div>
+                    }
+                  </div>
+                </td>
+
+                <!-- Status Badge -->
+                <td>
+                  <span class="status-pill {{ order.refund_status }}">
+                    {{ statusLabel(order) }}
+                  </span>
+                </td>
+
+                <!-- Timeline -->
+                <td>
+                  <div class="timeline-cell">
+                    <span class="timeline-entry">
+                      Req: {{ (order.refund_requested_at || order.created_at) | date:'mediumDate' }}
+                    </span>
+                    <small class="timeline-sub">
+                      @if (order.refunded_at) {
+                        Settled {{ order.refunded_at | date:'medium' }}
+                      } @else {
+                        Awaiting Bank Clearance
+                      }
+                    </small>
+                  </div>
+                </td>
+
+                <!-- Actions -->
+                <td class="text-right">
+                  <div class="action-cell">
+                    @if (order.refund_status === 'pending' || order.refund_status === 'failed') {
+                      <button
+                        type="button"
+                        class="btn-reconcile"
+                        [class.retry]="order.refund_status === 'failed'"
+                        [disabled]="processingOrderId() !== null"
+                        (click)="reconcile(order, $event)"
+                      >
+                        @if (processingOrderId() === order.id) {
+                          <span class="spin">⟳</span>
+                          <span>Reconciling…</span>
+                        } @else {
+                          <span>{{ order.refund_status === 'failed' ? 'Retry Safely' : 'Reconcile' }}</span>
+                        }
+                      </button>
+                    } @else {
+                      <span class="settled-tag">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <span>Settled</span>
+                      </span>
+                    }
+
+                    <button
+                      type="button"
+                      class="btn-inspect-order"
+                      (click)="openInspector(order, $event)"
+                      title="Inspect Refund Dossier"
+                    >
+                      Inspect
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════════
+       REFUND DOSSIER INSPECTOR MODAL
+       ═════════════════════════════════════════════════════════════════════════ -->
+  @if (inspectingOrder(); as dossier) {
+    <div class="modal-backdrop" (click)="closeInspector()">
+      <div class="modal-card" (click)="$event.stopPropagation()">
+        <header class="modal-header">
+          <div>
+            <span class="modal-eyebrow">PAYMENT GATEWAY AUDIT</span>
+            <h3 class="modal-title">Refund Dossier #{{ dossier.id.slice(0, 8).toUpperCase() }}</h3>
+          </div>
+          <button type="button" class="btn-modal-close" (click)="closeInspector()">✕</button>
+        </header>
+
+        <div class="modal-body">
+          <div class="dossier-summary-row">
+            <div class="summary-block">
+              <span class="sb-label">Customer</span>
+              <strong class="sb-val">{{ dossier.shipping_address.fullName || 'Walk-in Client' }}</strong>
+              <small class="sb-sub">{{ dossier.shipping_address.phone || 'No mobile' }}</small>
+            </div>
+            <div class="summary-block">
+              <span class="sb-label">Refund Amount</span>
+              <strong class="sb-val text-emerald">
+                {{ (dossier.refund_amount || dossier.total_amount) | currency:dossier.currency:'symbol':'1.0-0' }}
+              </strong>
+              <small class="sb-sub">100% of order value</small>
+            </div>
+            <div class="summary-block">
+              <span class="sb-label">Current State</span>
+              <span class="status-pill {{ dossier.refund_status }}">
+                {{ statusLabel(dossier) }}
+              </span>
+            </div>
+          </div>
+
+          <div class="audit-grid">
+            <div class="audit-cell">
+              <span class="ac-label">Razorpay Refund ID</span>
+              <strong class="ac-val mono">{{ dossier.refund_id || 'Pending generation' }}</strong>
+            </div>
+            <div class="audit-cell">
+              <span class="ac-label">Gateway Payment Reference</span>
+              <strong class="ac-val mono">{{ dossier.transaction_id || '—' }}</strong>
+            </div>
+            <div class="audit-cell">
+              <span class="ac-label">Gateway Order Reference</span>
+              <strong class="ac-val mono">{{ dossier.gateway_order_id || '—' }}</strong>
+            </div>
+            <div class="audit-cell">
+              <span class="ac-label">Payment Method</span>
+              <strong class="ac-val">{{ dossier.payment_method }} ({{ dossier.payment_status }})</strong>
+            </div>
+            <div class="audit-cell full">
+              <span class="ac-label">Cancellation &amp; Refund Reason</span>
+              <p class="ac-notes">"{{ dossier.refund_reason || 'Customer requested cancellation' }}"</p>
+            </div>
+            @if (dossier.refund_failure_reason) {
+              <div class="audit-cell full failed-cell">
+                <span class="ac-label text-red">Failure Explanation Reported by Gateway</span>
+                <p class="error-msg">{{ dossier.refund_failure_reason }}</p>
+              </div>
+            }
+            <div class="audit-cell">
+              <span class="ac-label">Initiated At</span>
+              <strong class="ac-val">{{ (dossier.refund_requested_at || dossier.created_at) | date:'medium' }}</strong>
+            </div>
+            <div class="audit-cell">
+              <span class="ac-label">Settlement Completed At</span>
+              <strong class="ac-val">
+                {{ dossier.refunded_at ? (dossier.refunded_at | date:'medium') : 'Pending reconciliation' }}
+              </strong>
+            </div>
+          </div>
+
+          <!-- Restocked Items List -->
+          @if (dossier.items && dossier.items.length > 0) {
+            <div class="restocked-section">
+              <span class="rs-title">Order Items ({{ dossier.items.length }})</span>
+              <div class="items-list">
+                @for (item of dossier.items; track item.product_name) {
+                  <div class="item-row">
+                    <span class="item-qty">{{ item.quantity }}x</span>
+                    <strong class="item-name">{{ item.product_name }}</strong>
+                    <span class="item-price">₹{{ item.unit_price * item.quantity | number:'1.0-0' }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+
+        <footer class="modal-footer">
+          <div class="footer-left">
+            <a routerLink="/admin/orders" (click)="closeInspector()" class="btn-view-order">
+              Open in Orders Console →
+            </a>
+          </div>
+          <div class="footer-right">
+            @if (dossier.refund_status === 'pending' || dossier.refund_status === 'failed') {
+              <button
+                type="button"
+                class="btn-reconcile primary"
+                [disabled]="processingOrderId() !== null"
+                (click)="reconcile(dossier)"
+              >
+                {{ processingOrderId() === dossier.id ? 'Reconciling…' : (dossier.refund_status === 'failed' ? 'Retry Refund Now' : 'Check Gateway Settlement') }}
+              </button>
+            }
+            <button type="button" class="btn-close-modal" (click)="closeInspector()">Close</button>
+          </div>
+        </footer>
+      </div>
+    </div>
+  }
+</div>

@@ -1,3 +1,6 @@
+import { stylistsRoutes } from './modules/admin/stylists.routes.js';
+import { financeAuditRoutes } from './modules/admin/finance-audit.routes.js';
+import { inventoryRoutes } from './modules/admin/inventory.routes.js';
 import fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
@@ -20,6 +23,7 @@ import { cartRoutes } from './modules/cart/cart.routes.js';
 import { bookingsRoutes } from './modules/bookings/bookings.routes.js';
 import { paymentWebhookRoutes } from './modules/orders/payment-webhook.routes.js';
 import { ordersRoutes } from './modules/orders/orders.routes.js';
+import { returnsRoutes } from './modules/orders/returns.routes.js';
 import { adminRoutes } from './modules/admin/admin.routes.js';
 import { supportRoutes } from './modules/support/support.routes.js';
 
@@ -118,6 +122,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(ordersRoutes, { prefix: '/api' });
   await app.register(paymentWebhookRoutes, { prefix: '/api' });
   await app.register(adminRoutes, { prefix: '/api' });
+  await app.register(stylistsRoutes, { prefix: '/api' });
+  await app.register(financeAuditRoutes, { prefix: '/api' });
+  await app.register(inventoryRoutes, { prefix: '/api' });
+  await app.register(returnsRoutes, { prefix: '/api' });
   await app.register(supportRoutes, { prefix: '/api' });
 
   // ─── 7. INITIALIZE BACKGROUND SAGA QUEUES & CLEANUP TASKS ─────────────────

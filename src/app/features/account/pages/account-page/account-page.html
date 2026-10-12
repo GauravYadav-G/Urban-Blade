@@ -307,7 +307,7 @@
               <div class="ap-details">
                 <span class="ap-kicker">UPCOMING SALON SESSION</span>
                 <h3>{{ nextBk.booking_date }} at {{ nextBk.time_slot }}</h3>
-                <p>Stylist: <strong>{{ nextBk.stylist_name || 'Master Barber Vikram Sharma' }}</strong> · {{ nextBk.stylist_role || 'Director of Styling' }}</p>
+                <p><strong>{{ nextBk.visit_type === 'home' ? 'Home visit' : 'Salon visit' }}</strong>@if (nextBk.visit_type === 'home' && nextBk.service_address) { · {{ nextBk.service_address }} }</p>
               </div>
               <span class="status-pill {{ nextBk.status }}">{{ nextBk.status | uppercase }}</span>
             </div>
@@ -610,6 +610,11 @@
                     </div>
 
                     <div class="order-button-group">
+                      @if (ord.return_status) { <span>Return: {{ ord.return_status }} · {{ ord.return_review_note || 'Awaiting review' }}</span> }
+                      @if (ord.refund_status) { <span>Refund: {{ ord.refund_status }}</span> }
+                      @if (ord.status === 'delivered' && !ord.return_status && ord.payment_status !== 'refunded') {
+                        <button type="button" class="btn-invoice" [disabled]="requestingReturn() !== null" (click)="requestReturn(ord)">Request return</button>
+                      }
                       <button type="button" class="btn-invoice" (click)="openInvoice(ord, $event)" title="View & print official GST tax invoice">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -696,8 +701,8 @@
                       </svg>
                     </div>
                     <div class="stylist-info">
-                      <h4>{{ bk.stylist_name || 'Master Barber Vikram Sharma' }}</h4>
-                      <span>{{ bk.stylist_role || 'Director of Styling' }}</span>
+                      <h4>{{ bk.visit_type === 'home' ? 'Home visit' : 'Salon visit' }}</h4>@if(bk.visit_type === 'home'){<p>Assigned stylist: {{ bk.stylist_name || 'Awaiting assignment' }}</p>}
+                      <span>{{ bk.visit_type === 'home' ? (bk.service_address || 'Address pending') : 'Urban Blade Salon' }}</span>
                     </div>
                   </div>
                   @if (bk.notes) {
@@ -1064,153 +1069,6 @@
 <!-- ═════════════════════════════════════════════════════════════════════════
      PRINTABLE OFFICIAL GST TAX INVOICE MODAL
      ═════════════════════════════════════════════════════════════════════════ -->
-@if (selectedInvoiceOrder()) {
-  @let inv = selectedInvoiceOrder()!;
-  <div class="invoice-modal-backdrop" (click)="closeInvoice()">
-    <div class="invoice-container" (click)="$event.stopPropagation()">
-      
-      <!-- Sticky Actions Bar -->
-      <div class="invoice-actions-bar">
-        <div class="inv-title">
-          <span>TAX INVOICE / CASH MEMORANDUM</span>
-        </div>
-        <div class="inv-btns">
-          <button type="button" class="inv-print-btn" (click)="printInvoice()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="6 9 6 2 18 2 18 9"></polyline>
-              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-              <rect x="6" y="14" width="12" height="8"></rect>
-            </svg>
-            <span>Print Tax Invoice</span>
-          </button>
-          <button type="button" class="inv-close-btn" (click)="closeInvoice()" title="Close invoice">✕</button>
-        </div>
-      </div>
-
-      <!-- Printable Area adhering to src/styles/_invoice.scss -->
-      <div id="printable-area" class="printable-invoice">
-        <div class="inv-header">
-          <div class="seller-info">
-            <h2 class="salon-name">URBAN BLADE LUXURY GROOMING STUDIO</h2>
-            <p class="salon-sub">Master Barbers, Precision Blades & Luxury Male Grooming</p>
-            <p class="salon-address">Flagship Studio: Sector 12, Pratap Vihar, Ghaziabad, UP - 201009</p>
-            <p class="salon-gstin"><strong>GSTIN:</strong> 09AAEFU1234F1Z5 · <strong>PAN:</strong> AAEFU1234F</p>
-            <p class="salon-contact">support&#64;urbanblade.in · +91 90156 18265</p>
-          </div>
-          <div class="inv-badge-col">
-            <div class="original-stamp">ORIGINAL FOR RECIPIENT</div>
-            <div class="inv-number-block">
-              <span class="inv-num-label">INVOICE NO:</span>
-              <strong class="inv-num">UB-INV-{{ inv.id.slice(0, 8).toUpperCase() }}</strong>
-              <span class="inv-date">Date: {{ inv.created_at | date:'dd MMM yyyy, hh:mm a' }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="inv-meta-grid">
-          <div class="meta-col">
-            <span class="meta-label">BILLED & SHIPPED TO:</span>
-            <strong class="buyer-name">{{ inv.shipping_address?.fullName || account.user()?.name }}</strong>
-            <p class="buyer-address">
-              {{ inv.shipping_address?.street || 'Sector 12, Pratap Vihar' }}<br/>
-              {{ inv.shipping_address?.city || 'Ghaziabad' }}, {{ inv.shipping_address?.state || 'Uttar Pradesh' }} - {{ inv.shipping_address?.pinCode || '201009' }}
-            </p>
-            <p class="buyer-contact">Phone: {{ inv.shipping_address?.phone || profilePhone() || 'Not Provided' }} · Email: {{ inv.shipping_address?.email || account.user()?.email }}</p>
-          </div>
-
-          <div class="meta-col">
-            <span class="meta-label">TRANSACTION & LOGISTICS:</span>
-            <p><strong>Order ID:</strong> #{{ inv.id.toUpperCase() }}</p>
-            <p><strong>Payment Mode:</strong> {{ inv.payment_method | uppercase }} ({{ inv.payment_status }})</p>
-            <p><strong>Carrier:</strong> Delhivery Air Express</p>
-            <p><strong>AWB Code:</strong> {{ inv.tracking_number || 'TRK-UB-EXPRESS' }}</p>
-            <p><strong>Place of Supply:</strong> {{ inv.shipping_address?.state || 'Uttar Pradesh (09)' }}</p>
-          </div>
-        </div>
-
-        <table class="inv-table">
-          <thead>
-            <tr>
-              <th class="col-sr">#</th>
-              <th class="col-desc">Description of Goods</th>
-              <th class="col-hsn">HSN/SAC</th>
-              <th class="col-qty">Qty</th>
-              <th class="col-rate">Unit Price</th>
-              <th class="col-taxable">Taxable Val</th>
-              <th class="col-gst">GST (18%)</th>
-              <th class="col-total">Total (INR)</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (line of inv.items; track line.product_name; let i = $index) {
-              @let itemTaxable = (line.unit_price * line.quantity) / 1.18;
-              @let itemGst = (line.unit_price * line.quantity) - itemTaxable;
-              <tr>
-                <td class="col-sr">{{ i + 1 }}</td>
-                <td class="col-desc">
-                  <strong>{{ line.product_name }}</strong>
-                </td>
-                <td class="col-hsn">33059040</td>
-                <td class="col-qty">{{ line.quantity }}</td>
-                <td class="col-rate">₹{{ (line.unit_price / 1.18) | inr }}</td>
-                <td class="col-taxable">₹{{ itemTaxable | inr }}</td>
-                <td class="col-gst">₹{{ itemGst | inr }}</td>
-                <td class="col-total">₹{{ (line.unit_price * line.quantity) | inr }}</td>
-              </tr>
-            }
-          </tbody>
-        </table>
-
-        <!-- Totals & Taxes Summary -->
-        <div class="inv-totals-wrap">
-          <div class="inv-words-col">
-            <span class="words-label">Amount in Words:</span>
-            <p class="words-text">Indian Rupees {{ inv.total_amount | inr }} Only</p>
-            <div class="tax-declaration">
-              <span>Tax is payable on reverse charge: <strong>NO</strong></span>
-              <p>This is a computer generated tax invoice issued under Rule 48 of the CGST Rules, 2017.</p>
-            </div>
-          </div>
-
-          <div class="inv-summary-col">
-            <div class="sum-row">
-              <span>Taxable Value:</span>
-              <strong>₹{{ (inv.total_amount / 1.18) | inr }}</strong>
-            </div>
-            <div class="sum-row">
-              <span>CGST (9%):</span>
-              <span>₹{{ ((inv.total_amount - (inv.total_amount / 1.18)) / 2) | inr }}</span>
-            </div>
-            <div class="sum-row">
-              <span>SGST (9%):</span>
-              <span>₹{{ ((inv.total_amount - (inv.total_amount / 1.18)) / 2) | inr }}</span>
-            </div>
-            @if (inv.discount_amount && inv.discount_amount > 0) {
-              <div class="sum-row text-discount">
-                <span>VIP Coupon Discount ({{ inv.coupon_code }}):</span>
-                <span>-₹{{ inv.discount_amount | inr }}</span>
-              </div>
-            }
-            <div class="sum-row sum-grand-total">
-              <span>Grand Total (Incl. GST):</span>
-              <strong>₹{{ inv.total_amount | inr }}</strong>
-            </div>
-          </div>
-        </div>
-
-        <div class="inv-footer">
-          <div class="inv-sign-block">
-            <div class="digital-seal">URBAN BLADE VERIFIED STAMP</div>
-            <span class="sign-label">For URBAN BLADE LUXURY GROOMING STUDIO</span>
-            <span class="sign-sub">Authorized Signatory</span>
-          </div>
-          <div class="inv-terms">
-            <strong>Terms & Conditions:</strong>
-            <p>1. Goods once sold are covered under 7-day doorstep replacement guarantee.</p>
-            <p>2. Any dispute is subject to Ghaziabad / Delhi NCR jurisdiction only.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+@if (selectedInvoiceOrder(); as invoice) {
+  <app-order-invoice [order]="invoice" (close)="closeInvoice()" />
 }
