@@ -4,16 +4,6 @@
     <!-- Top Header -->
     <header class="support-header">
       <div class="header-info">
-        <div class="brand-pill">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-          </svg>
-          <span>Urban AI Concierge & Master Live Desk</span>
-          <span class="live-sync-indicator" title="Connected to PostgreSQL live support engine">
-            <span class="live-beacon"></span>
-            <span>LIVE SYNC</span>
-          </span>
-        </div>
         <h2>Customer Inquiries & Live Support Hub</h2>
         <p>Real-time bidirectional synchronization with storefront "Ask Urban AI", carrier logistics, and customer orders.</p>
       </div>
@@ -359,7 +349,7 @@
                 <div class="message-bubble {{ msg.sender }}">
                   <div class="bubble-header">
                     @if (msg.sender === 'ai') {
-                      <span class="sender-label ai-label">Urban AI Concierge</span>
+                      <span class="sender-label ai-label">Urban AI</span>
                     } @else if (msg.sender === 'user') {
                       <span class="sender-label user-label">{{ currentInquiry.user_name }}</span>
                     } @else {
@@ -384,7 +374,7 @@
                   </svg>
                 </div>
                 <div class="message-bubble ai typing-indicator">
-                  <span>AI Concierge is analyzing context & orders</span>
+                  <span>Urban AI is analyzing context & orders</span>
                   <div class="typing-dots">
                     <span>.</span><span>.</span><span>.</span>
                   </div>
