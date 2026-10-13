@@ -18,6 +18,36 @@ import { requireAdmin, requireStaff } from '../../core/auth.middleware.js';
 import { PayoutProviderError, createRazorpayXPayout, type VendorPayoutAccount } from './vendor-payout.service.js';
 import { validateVendorUpiWithRazorpay } from './razorpay-validation.service.js';
 
+const taskCreateSchema = z.object({
+  title: z.string().trim().min(3).max(255),
+  description: z.string().trim().max(4000).optional(),
+  assignee: z.string().trim().min(1).max(255).optional(),
+  priority: z.enum(['low', 'medium', 'high']).optional(),
+  dueDate: z.string().trim().min(1).max(255).optional(),
+  relatedUser: z.string().trim().max(255).optional(),
+}).strict();
+const taskUpdateSchema = z.object({
+  status: z.enum(['pending', 'in_progress', 'completed']).optional(),
+  priority: z.enum(['low', 'medium', 'high']).optional(),
+  assignee: z.string().trim().min(1).max(255).optional(),
+}).strict().refine(value => Object.keys(value).length > 0);
+const inquiryCreateSchema = z.object({
+  userName: z.string().trim().min(2).max(100),
+  userEmail: z.string().trim().email().max(255),
+  subject: z.string().trim().min(1).max(255),
+  orderId: z.string().trim().max(255).optional(),
+  vendorName: z.string().trim().max(255).optional(),
+  priority: z.enum(['low', 'medium', 'high']).optional(),
+  initialMessage: z.string().trim().max(4000).optional(),
+}).strict();
+const inquiryMessageSchema = z.object({
+  text: z.string().trim().min(1).max(4000),
+  sender: z.enum(['admin', 'ai']).default('admin'),
+}).strict();
+const inquiryStatusSchema = z.object({
+  status: z.enum(['open', 'ai_resolved', 'escalated', 'closed']),
+}).strict();
+
 export async function adminRoutes(app: FastifyInstance) {
   // ─── AUTHENTICATION & RBAC (OWASP TOP 10 ACCESS CONTROL GUARD) ───────────
   // Protect ALL admin operations: reject unauthenticated or non-staff callers
@@ -1494,8 +1524,10 @@ export async function adminRoutes(app: FastifyInstance) {
       relatedUser?: string;
     };
   }>('/admin/tasks', async (request, reply) => {
-    const t = request.body;
-    const id = `tsk-${Date.now()}`;
+    const parsed = taskCreateSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_TASK', message: 'Enter a task title of at least three characters and valid assignment details.' });
+    const t = parsed.data;
+    const id = `tsk-${crypto.randomUUID()}`;
     try {
       const res = await query(
         `INSERT INTO admin_tasks (id, title, description, assignee, priority, status, due_date, related_user)
@@ -1513,7 +1545,9 @@ export async function adminRoutes(app: FastifyInstance) {
     Body: { status?: string; priority?: string; assignee?: string };
   }>('/admin/tasks/:id', async (request, reply) => {
     const { id } = request.params;
-    const { status, priority, assignee } = request.body;
+    const parsed = taskUpdateSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_TASK_UPDATE', message: 'Choose a valid task status, priority, or assignee.' });
+    const { status, priority, assignee } = parsed.data;
     try {
       const res = await query(
         `UPDATE admin_tasks
@@ -1521,6 +1555,7 @@ export async function adminRoutes(app: FastifyInstance) {
          WHERE id = $4 RETURNING *;`,
         [status || null, priority || null, assignee || null, id]
       );
+      if (!res.rowCount) return reply.code(404).send({ error: 'TASK_NOT_FOUND' });
       return reply.send({ ok: true, task: res.rows[0] });
     } catch (err: any) {
       return reply.status(500).send({ error: 'FAILED_TO_UPDATE_TASK', message: err.message });
@@ -1558,8 +1593,10 @@ export async function adminRoutes(app: FastifyInstance) {
       initialMessage?: string;
     };
   }>('/admin/support/inquiries', async (request, reply) => {
+    const parsed = inquiryCreateSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_INQUIRY', message: 'Enter a customer name, valid email, subject, and message of at most 4000 characters.' });
     try {
-      const { userName, userEmail, subject, orderId, vendorName, priority = 'medium', initialMessage } = request.body;
+      const { userName, userEmail, subject, orderId, vendorName, priority = 'medium', initialMessage } = parsed.data;
       const inqId = `inq-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
       const messages = initialMessage
         ? [{ id: `m-${Date.now()}`, sender: 'admin', text: initialMessage, timestamp: new Date().toISOString() }]
@@ -1594,24 +1631,21 @@ export async function adminRoutes(app: FastifyInstance) {
     Body: { text: string; sender: string };
   }>('/admin/support/inquiries/:id/message', async (request, reply) => {
     const { id } = request.params;
-    const { text, sender } = request.body;
+    const parsed = inquiryMessageSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_REPLY', message: 'Enter a reply of 1–4000 characters with an admin or AI sender.' });
+    const { text, sender } = parsed.data;
     try {
-      const existing = await query('SELECT messages FROM support_inquiries WHERE id = $1', [id]);
-      if (existing.rows.length === 0) return reply.status(404).send({ error: 'INQUIRY_NOT_FOUND' });
-
-      const msgs = existing.rows[0].messages || [];
       const newMsg = {
-        id: `m-${Date.now()}`,
-        sender: sender || 'admin',
+        id: `m-${crypto.randomUUID()}`,
+        sender,
         text,
         timestamp: new Date().toISOString(),
       };
-      msgs.push(newMsg);
-
       const res = await query(
-        'UPDATE support_inquiries SET messages = $1::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *;',
-        [JSON.stringify(msgs), id]
+        "UPDATE support_inquiries SET messages = COALESCE(messages, '[]'::jsonb) || $1::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *;",
+        [JSON.stringify([newMsg]), id]
       );
+      if (!res.rowCount) return reply.code(404).send({ error: 'INQUIRY_NOT_FOUND' });
       return reply.send({ ok: true, inquiry: res.rows[0] });
     } catch (err: any) {
       return reply.status(500).send({ error: 'FAILED_TO_SEND_MESSAGE', message: err.message });
@@ -1623,9 +1657,12 @@ export async function adminRoutes(app: FastifyInstance) {
     Body: { status: string };
   }>('/admin/support/inquiries/:id/status', async (request, reply) => {
     const { id } = request.params;
-    const { status } = request.body;
+    const parsed = inquiryStatusSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_INQUIRY_STATUS', message: 'Choose an open, resolved, escalated, or closed status.' });
+    const { status } = parsed.data;
     try {
       const res = await query('UPDATE support_inquiries SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *;', [status, id]);
+      if (!res.rowCount) return reply.code(404).send({ error: 'INQUIRY_NOT_FOUND' });
       return reply.send({ ok: true, inquiry: res.rows[0] });
     } catch (err: any) {
       return reply.status(500).send({ error: 'FAILED_TO_UPDATE_STATUS', message: err.message });

@@ -1,7 +1,9 @@
-import { Component, inject, signal, computed, output, OnInit, OnDestroy, ViewChild, ElementRef, afterNextRender, Input } from '@angular/core';
+import { Component, inject, signal, computed, output, OnInit, OnDestroy, ViewChild, ElementRef, Input, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminService } from '../../../../core/services/admin.service';
+import { ToastService } from '../../../../core/services/toast.service';
 import { SupportInquiry } from '../../../../core/models/support.model';
 
 @Component({
@@ -15,6 +17,10 @@ export class SupportChatboxComponent implements OnInit, OnDestroy {
   @Input() inline = false;
 
   admin = inject(AdminService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly toast = inject(ToastService);
+  readonly isSending = signal(false);
+  readonly isCreatingTicket = signal(false);
   close = output<void>();
 
   @ViewChild('messagesViewport') private messagesViewport?: ElementRef<HTMLDivElement>;
@@ -124,18 +130,22 @@ export class SupportChatboxComponent implements OnInit, OnDestroy {
   sendAdminMessage(): void {
     const text = this.replyText().trim();
     const inquiry = this.selectedInquiry();
-    if (!text || !inquiry) return;
+    if (!text || !inquiry || this.isSending()) return;
 
-    this.admin.sendInquiryMessage(inquiry.id, text, 'admin');
-    this.replyText.set('');
-    setTimeout(() => this.scrollToBottom(), 100);
+    this.isSending.set(true);
+    this.admin.sendInquiryMessage(inquiry.id, text, 'admin', () => {
+      if (this.selectedInquiry()?.id === inquiry.id && this.replyText().trim() === text) {
+        this.replyText.set('');
+      }
+      setTimeout(() => this.scrollToBottom(), 100);
+    }, () => this.isSending.set(false));
   }
 
   triggerAiReply(customPrompt?: string): void {
     const inquiry = this.selectedInquiry();
     if (!inquiry || this.isGeneratingAi()) return;
 
-    const prompt = customPrompt || inquiry.messages[inquiry.messages.length - 1]?.text || inquiry.subject;
+    const prompt = customPrompt || inquiry.messages?.[inquiry.messages.length - 1]?.text || inquiry.subject;
     this.isGeneratingAi.set(true);
 
     this.admin
@@ -146,19 +156,22 @@ export class SupportChatboxComponent implements OnInit, OnDestroy {
         customerName: inquiry.user_name,
         vendorName: inquiry.vendor_name || undefined,
       })
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (res) => {
           this.isGeneratingAi.set(false);
           if (res && res.reply) {
-            this.admin.sendInquiryMessage(inquiry.id, res.reply, 'ai');
-            if (inquiry.status === 'open') {
-              this.admin.updateInquiryStatus(inquiry.id, 'ai_resolved');
-            }
+            this.admin.sendInquiryMessage(inquiry.id, res.reply, 'ai', () => {
+              if (inquiry.status === 'open') {
+                this.admin.updateInquiryStatus(inquiry.id, 'ai_resolved');
+              }
+            });
             setTimeout(() => this.scrollToBottom(), 100);
           }
         },
         error: () => {
           this.isGeneratingAi.set(false);
+          this.toast.error('AI reply could not be generated. Please retry or write a reply.');
         },
       });
   }
@@ -167,7 +180,7 @@ export class SupportChatboxComponent implements OnInit, OnDestroy {
     const inquiry = this.selectedInquiry();
     if (!inquiry || this.isGeneratingAi()) return;
 
-    const lastMsg = inquiry.messages[inquiry.messages.length - 1]?.text || inquiry.subject;
+    const lastMsg = inquiry.messages?.[inquiry.messages.length - 1]?.text || inquiry.subject;
     this.isGeneratingAi.set(true);
 
     this.admin
@@ -178,15 +191,17 @@ export class SupportChatboxComponent implements OnInit, OnDestroy {
         customerName: inquiry.user_name,
         vendorName: inquiry.vendor_name || undefined,
       })
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (res) => {
           this.isGeneratingAi.set(false);
           if (res && res.reply) {
-            this.replyText.set(res.reply);
+            if (this.selectedInquiry()?.id === inquiry.id) this.replyText.set(res.reply);
           }
         },
         error: () => {
           this.isGeneratingAi.set(false);
+          this.toast.error('AI draft could not be generated. Please retry or write a reply.');
         },
       });
   }
@@ -254,7 +269,8 @@ export class SupportChatboxComponent implements OnInit, OnDestroy {
     const name = this.newUserName().trim();
     const email = this.newUserEmail().trim();
     const subject = this.newSubject().trim();
-    if (!name || !email || !subject) return;
+    if (!name || !email || !subject || this.isCreatingTicket()) return;
+    this.isCreatingTicket.set(true);
 
     this.admin.createInquiry({
       userName: name,
@@ -263,14 +279,14 @@ export class SupportChatboxComponent implements OnInit, OnDestroy {
       orderId: this.newOrderId().trim() || undefined,
       priority: this.newPriority(),
       initialMessage: this.newInitialMessage().trim() || undefined,
-    });
-
-    this.isNewTicketModalOpen.set(false);
-    this.newUserName.set('');
-    this.newUserEmail.set('');
-    this.newSubject.set('');
-    this.newOrderId.set('');
-    this.newInitialMessage.set('');
+    }, () => {
+      this.isNewTicketModalOpen.set(false);
+      this.newUserName.set('');
+      this.newUserEmail.set('');
+      this.newSubject.set('');
+      this.newOrderId.set('');
+      this.newInitialMessage.set('');
+    }, () => this.isCreatingTicket.set(false));
   }
 
   handleEnterKey(event: Event): void {

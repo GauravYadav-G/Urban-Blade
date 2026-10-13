@@ -26,8 +26,12 @@ export const adminGuard: CanActivateFn = (route, state) => {
         '/admin/coupons',
         '/admin/website',
         '/admin/system',
+        '/admin/support',
       ];
-      const isForbidden = forbiddenForVendors.some((f) => url.startsWith(f));
+      const childPath = route.routeConfig?.path;
+      const isForbidden = forbiddenForVendors.some((f) =>
+        url.startsWith(f) || f === `/admin/${childPath}`
+      );
       if (isForbidden) {
         return router.createUrlTree(['/admin/dashboard']);
       }

@@ -645,7 +645,7 @@ async function runAdminOperationsFullAudit() {
           title: 'Daily Barbershop Sterilization Audit',
           description: 'Check autoclave temperature and sterilize all titanium blades for Bay 1-4.',
           priority: 'high',
-          assignedTo: 'Master Barber Ravi',
+          assignee: 'Master Barber Ravi',
         },
       });
       if (res.statusCode !== 201 && res.statusCode !== 200) {
@@ -653,6 +653,7 @@ async function runAdminOperationsFullAudit() {
       }
       const data = JSON.parse(res.body);
       const t = data.task || data;
+      if (t.assignee !== 'Master Barber Ravi') throw new Error('Task assignee was not persisted');
       createdTaskId = t.id;
       return `Created Task ID: ${createdTaskId} (Priority: high)`;
     });
@@ -745,10 +746,11 @@ async function runAdminOperationsFullAudit() {
         method: 'PUT',
         url: `/api/admin/support/inquiries/${createdInquiryId}/status`,
         headers: adminJson,
-        payload: { status: 'resolved' },
+        payload: { status: 'closed' },
       });
       if (res.statusCode !== 200) throw new Error(`Status ${res.statusCode}: ${res.body}`);
-      return 'Ticket marked as resolved';
+      if (res.json().inquiry?.status !== 'closed') throw new Error('Ticket status was not persisted');
+      return 'Ticket marked as closed';
     });
 
     await recordStep('Support', 'AI Copilot Contextual Assistant (POST /api/admin/support/ai-chat)', async () => {

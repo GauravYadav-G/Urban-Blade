@@ -55,7 +55,7 @@ export class AdminSessionService {
 
     if (storedExpiry) {
       const expiry = Number(storedExpiry);
-      if (now >= expiry) {
+      if (!Number.isFinite(expiry) || now >= expiry) {
         this.handleSessionExpired();
         return;
       }
@@ -99,7 +99,8 @@ export class AdminSessionService {
     if (typeof window === 'undefined') return true;
     const storedExpiry = localStorage.getItem(SESSION_EXPIRES_KEY);
     if (!storedExpiry) return true;
-    return Date.now() < Number(storedExpiry);
+    const expiry = Number(storedExpiry);
+    return Number.isFinite(expiry) && Date.now() < expiry;
   }
 
   private resetExpiryTimestamp(): void {
@@ -125,7 +126,12 @@ export class AdminSessionService {
         return;
       }
 
-      const diffMs = Number(storedExpiry) - Date.now();
+      const expiry = Number(storedExpiry);
+      if (!Number.isFinite(expiry)) {
+        this.handleSessionExpired();
+        return;
+      }
+      const diffMs = expiry - Date.now();
       const remainingSec = Math.max(0, Math.floor(diffMs / 1000));
       this.remainingSecondsSignal.set(remainingSec);
 
@@ -144,6 +150,7 @@ export class AdminSessionService {
 
   private handleSessionExpired(): void {
     this.stopSessionMonitoring();
+    this.remainingSecondsSignal.set(0);
     localStorage.removeItem(SESSION_EXPIRES_KEY);
     this.account.adminSignOut();
     this.toast.error('🔒 Admin session expired due to inactivity. Please sign in again.');

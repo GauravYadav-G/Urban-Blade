@@ -413,7 +413,7 @@
                 type="button" 
                 class="btn-send-admin"
                 (click)="sendAdminMessage()"
-                [disabled]="!replyText().trim()"
+                [disabled]="isSending() || !replyText().trim()"
               >
                 <span>Send as Specialist</span>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -527,7 +527,7 @@
 
         <div class="sub-modal-actions">
           <button type="button" class="btn-cancel" (click)="isNewTicketModalOpen.set(false)">Cancel</button>
-          <button type="submit" class="btn-create-submit" [disabled]="!newUserName().trim() || !newUserEmail().trim() || !newSubject().trim()">
+          <button type="submit" class="btn-create-submit" [disabled]="isCreatingTicket() || !newUserName().trim() || !newUserEmail().trim() || !newSubject().trim()">
             Create Ticket & Sync
           </button>
         </div>

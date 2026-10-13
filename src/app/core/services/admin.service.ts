@@ -223,10 +223,7 @@ const PUBLIC_API_BASE =
 
 const API_BASE = ADMIN_API_BASE;
 
-const SUPPORT_API_BASE =
-  typeof window !== 'undefined' && window.location.port === '4200'
-    ? 'http://localhost:4000/api/support'
-    : '/api/support';
+const SUPPORT_API_BASE = `${ADMIN_API_BASE}/support`;
 
 @Injectable({ providedIn: 'root' })
 export class AdminService {
@@ -279,6 +276,11 @@ export class AdminService {
       const user = this.account.user();
       untracked(() => {
         this.sessionEnded.next();
+        this.broadcastChannel?.close();
+        this.broadcastChannel = null;
+        this.pendingDeletes.clear();
+        this.activeSupportInquiryId.set(null);
+        this.isChatDrawerOpen.set(false);
         this.adjustingStock.set(new Set());
         this.orders.set([]); this.bookings.set([]); this.customers.set([]);
         this.products.set([]); this.vendors.set([]); this.adminTasks.set([]); this.supportInquiries.set([]);
@@ -1239,7 +1241,14 @@ export class AdminService {
 
     this.adminTasks.update((list) => [newTask, ...list]);
     this.saveTasks(this.adminTasks());
-    this.http.post<{ ok: boolean; task?: AdminTask }>(`${API_BASE}/tasks`, newTask).pipe(takeUntil(this.sessionEnded)).subscribe({
+    this.http.post<{ ok: boolean; task?: AdminTask }>(`${API_BASE}/tasks`, {
+      title: newTask.title,
+      description: newTask.description,
+      assignee: newTask.assignee,
+      priority: newTask.priority,
+      dueDate: newTask.due_date,
+      relatedUser: newTask.related_user,
+    }).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
         if (res?.task) {
           this.adminTasks.update((list) => list.map((t) => (t.id === newTask.id ? res.task! : t)));
@@ -1293,7 +1302,7 @@ export class AdminService {
   private readonly pendingDeletes = new Set<string>();
 
   private startInquiriesLivePolling(): void {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !this.broadcastChannel) {
       if ('BroadcastChannel' in window) {
         this.broadcastChannel = new BroadcastChannel('urban_support_bus');
         this.broadcastChannel.onmessage = (e) => {
@@ -1311,6 +1320,7 @@ export class AdminService {
   }
 
   refreshInquiries(showToast = false): void {
+    if (!this.account.isAdmin()) return;
     this.http.get<{ data: SupportInquiry[] }>(`${SUPPORT_API_BASE}/inquiries`).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
         if (res?.data && Array.isArray(res.data)) {
@@ -1323,8 +1333,8 @@ export class AdminService {
           this.supportInquiries.set(filtered);
           this.saveInquiries(filtered);
 
-          if (!this.activeSupportInquiryId() && filtered[0]) {
-            this.activeSupportInquiryId.set(filtered[0].id);
+          if (!filtered.some(inquiry => inquiry.id === this.activeSupportInquiryId())) {
+            this.activeSupportInquiryId.set(filtered[0]?.id ?? null);
           }
 
           if (filtered.length > prevCount && prevCount > 0 && showToast) {
@@ -1344,10 +1354,11 @@ export class AdminService {
     vendorName?: string;
     priority?: 'low' | 'medium' | 'high';
     initialMessage?: string;
-  }): void {
-    this.http.post<{ ok: boolean; inquiry: SupportInquiry }>(`${SUPPORT_API_BASE}/inquiries`, payload).pipe(takeUntil(this.sessionEnded)).subscribe({
+  }, onSaved?: () => void, onComplete?: () => void): void {
+    this.http.post<{ ok: boolean; inquiry: SupportInquiry }>(`${SUPPORT_API_BASE}/inquiries`, payload).pipe(takeUntil(this.sessionEnded), finalize(() => onComplete?.())).subscribe({
       next: (res) => {
-        if (res?.inquiry) {
+        if (res?.ok && res.inquiry) {
+          onSaved?.();
           this.supportInquiries.update((list) => [res.inquiry, ...list]);
           this.saveInquiries(this.supportInquiries());
           this.activeSupportInquiryId.set(res.inquiry.id);
@@ -1355,6 +1366,8 @@ export class AdminService {
           if (this.broadcastChannel) {
             this.broadcastChannel.postMessage({ type: 'ADMIN_REPLY', inquiryId: res.inquiry.id });
           }
+        } else {
+          this.toast.error('Ticket was not saved. Please retry.');
         }
       },
       error: () => {
@@ -1370,6 +1383,7 @@ export class AdminService {
   deleteInquiries(ids: string[]): void {
     if (!ids.length) return;
     const snapshot = this.supportInquiries();
+    const identity = this.account.user();
 
     // Mark as pending so polling never restores them
     ids.forEach((id) => this.pendingDeletes.add(id));
@@ -1385,11 +1399,13 @@ export class AdminService {
 
     // Fire parallel DELETEs to backend
     const deletes = ids.map((id) =>
-      firstValueFrom(this.http.delete<{ ok: boolean }>(`${SUPPORT_API_BASE}/inquiries/${id}`))
+      firstValueFrom(this.http.delete<{ ok: boolean }>(`${SUPPORT_API_BASE}/inquiries/${id}`).pipe(takeUntil(this.sessionEnded)))
         .catch(() => null)
     );
 
     Promise.all(deletes).then((results) => {
+      if (identity !== this.account.user()) return;
+      ids.forEach(id => this.pendingDeletes.delete(id));
       const failed = ids.filter((_, i) => results[i] === null);
       if (failed.length === 0) {
         this.toast.success(`${ids.length} ${ids.length === 1 ? 'inquiry' : 'inquiries'} permanently deleted.`);
@@ -1409,64 +1425,49 @@ export class AdminService {
   }
 
 
-  sendInquiryMessage(inquiryId: string, text: string, sender: 'admin' | 'ai' = 'admin'): void {
-    const newMsg = {
-      id: `m-${Date.now()}`,
-      sender,
-      text,
-      timestamp: new Date().toISOString(),
-    };
-
-    this.supportInquiries.update((list) =>
-      list.map((inq) =>
-        inq.id === inquiryId
-          ? {
-              ...inq,
-              messages: [...(inq.messages || []), newMsg],
-              updated_at: new Date().toISOString(),
-            }
-          : inq
-      )
-    );
-    this.saveInquiries(this.supportInquiries());
-
-    this.http
-      .post<{ ok: boolean; inquiry?: SupportInquiry }>(`${SUPPORT_API_BASE}/inquiries/${inquiryId}/message`, {
-        text,
-        sender,
-      })
-      .pipe(takeUntil(this.sessionEnded)).subscribe({
-        next: (res) => {
-          if (res?.inquiry) {
-            this.supportInquiries.update((list) => list.map((i) => (i.id === inquiryId ? res.inquiry! : i)));
-            this.saveInquiries(this.supportInquiries());
-          }
-          if (this.broadcastChannel) {
-            this.broadcastChannel.postMessage({ type: 'ADMIN_REPLY', inquiryId });
-          }
-        },
-        error: () => {},
-      });
+  sendInquiryMessage(
+    inquiryId: string,
+    text: string,
+    sender: 'admin' | 'ai' = 'admin',
+    onSaved?: () => void,
+    onComplete?: () => void
+  ): void {
+    this.http.post<{ ok: boolean; inquiry?: SupportInquiry }>(
+      `${SUPPORT_API_BASE}/inquiries/${inquiryId}/message`, { text, sender }
+    ).pipe(takeUntil(this.sessionEnded), finalize(() => onComplete?.())).subscribe({
+      next: (res) => {
+        if (!res?.ok || !res.inquiry) {
+          this.toast.error('Reply was not saved. Please retry.');
+          return;
+        }
+        this.supportInquiries.update(list => list.map(inquiry =>
+          inquiry.id === inquiryId ? res.inquiry! : inquiry
+        ));
+        this.saveInquiries(this.supportInquiries());
+        this.broadcastChannel?.postMessage({ type: 'ADMIN_REPLY', inquiryId });
+        onSaved?.();
+      },
+      error: () => this.toast.error('Reply could not be sent. Please retry.'),
+    });
   }
 
   updateInquiryStatus(inquiryId: string, status: SupportInquiry['status']): void {
-    this.supportInquiries.update((list) =>
-      list.map((inq) => (inq.id === inquiryId ? { ...inq, status, updated_at: new Date().toISOString() } : inq))
-    );
-    this.saveInquiries(this.supportInquiries());
-    this.toast.success(`Inquiry ticket updated: ${status.replace('_', ' ').toUpperCase()}`);
-
-    this.http.put<{ ok: boolean; inquiry?: SupportInquiry }>(`${SUPPORT_API_BASE}/inquiries/${inquiryId}/status`, { status }).pipe(takeUntil(this.sessionEnded)).subscribe({
+    this.http.put<{ ok: boolean; inquiry?: SupportInquiry }>(
+      `${SUPPORT_API_BASE}/inquiries/${inquiryId}/status`, { status }
+    ).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
-        if (res?.inquiry) {
-          this.supportInquiries.update((list) => list.map((i) => (i.id === inquiryId ? res.inquiry! : i)));
-          this.saveInquiries(this.supportInquiries());
+        if (!res?.ok || !res.inquiry) {
+          this.toast.error('Ticket status was not saved. Please retry.');
+          return;
         }
-        if (this.broadcastChannel) {
-          this.broadcastChannel.postMessage({ type: 'STATUS_CHANGE', inquiryId, status });
-        }
+        this.supportInquiries.update(list => list.map(inquiry =>
+          inquiry.id === inquiryId ? res.inquiry! : inquiry
+        ));
+        this.saveInquiries(this.supportInquiries());
+        this.toast.success(`Inquiry ticket updated: ${status.replace('_', ' ').toUpperCase()}`);
+        this.broadcastChannel?.postMessage({ type: 'STATUS_CHANGE', inquiryId, status });
       },
-      error: () => {},
+      error: () => this.toast.error('Ticket status could not be updated. Please retry.'),
     });
   }
 

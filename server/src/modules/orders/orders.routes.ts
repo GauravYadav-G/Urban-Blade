@@ -158,6 +158,8 @@ export async function ordersRoutes(app: FastifyInstance) {
     const result = await query('SELECT * FROM orders WHERE id::text = $1 AND user_id = $2', [request.params.orderId, request.user.id]);
     let order = result.rows[0];
     if (!order) return reply.code(404).send({ error: 'ORDER_NOT_FOUND' });
+    // A settled refund is terminal; a provider outage cannot make it uncertain.
+    if (order.payment_status === 'refunded') return { refunded: true, pending: false, cancelled: true };
     if (order.payment_method === 'Razorpay') {
       try { order = await reconcileOrderPayment(order.id); }
       catch (err) {

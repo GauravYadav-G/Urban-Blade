@@ -7,20 +7,23 @@ import { CartService } from '@core/services/cart.service';
 import { SiteSettingsService } from '@core/services/site-settings.service';
 import { PaymentService } from '@core/services/payment.service';
 import type { SavedAddress } from '@core/models/address.model';
+import { of } from 'rxjs';
 
 describe('Checkout address restoration', () => {
   let page: CheckoutPage;
   let resolveLoad: () => void;
   const saved: SavedAddress = { id: 'saved-home', fullName: 'Alice Customer', mobile: '9811223344', house: 'Flat 12', street: 'Rosewood Avenue', landmark: 'Near park', city: 'Delhi', state: 'Delhi', pinCode: '110001', isDefault: true, location: null };
   let addresses: { addresses: ReturnType<typeof signal<SavedAddress[]>>; load: jasmine.Spy };
+  let payment: { restorePendingOrder: () => null; reconcileOrder: jasmine.Spy; clearPendingOrder: jasmine.Spy };
   beforeEach(() => {
+    payment = { restorePendingOrder: () => null, reconcileOrder: jasmine.createSpy('reconcileOrder'), clearPendingOrder: jasmine.createSpy('clearPendingOrder') };
     addresses = { addresses: signal<SavedAddress[]>([]), load: jasmine.createSpy('load').and.callFake(() => new Promise<void>(resolve => { resolveLoad = resolve; })) };
     TestBed.configureTestingModule({ providers: [
       { provide: AddressService, useValue: addresses },
       { provide: AccountService, useValue: { user: () => ({ name: 'Alice', email: 'alice@example.invalid' }) } },
       { provide: CartService, useValue: { lines: () => [] } },
       { provide: SiteSettingsService, useValue: {} },
-      { provide: PaymentService, useValue: { restorePendingOrder: () => null } },
+      { provide: PaymentService, useValue: payment },
     ] });
     page = TestBed.runInInjectionContext(() => new CheckoutPage());
   });
@@ -51,5 +54,15 @@ describe('Checkout address restoration', () => {
     await initialized;
     expect(page.form.controls.city.value).toBe('Delhi');
     expect(page.selectedAddressId()).toBe(saved.id);
+  });
+
+  it('explains a refunded payment without calling it an unpaid expired checkout', async () => {
+    page.pending.set({ orderId: 'refunded-order' } as import('@core/services/payment.service').RazorpayOrderResponse);
+    payment.reconcileOrder.and.returnValue(of({ refunded: true, cancelled: true, pending: false }));
+    await page.checkPayment();
+    expect(page.message()).toContain('payment was refunded');
+    expect(page.pending()).toBeNull();
+    expect(payment.clearPendingOrder).toHaveBeenCalled();
+    expect(page.busy()).toBeFalse();
   });
 });

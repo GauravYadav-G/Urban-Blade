@@ -1,0 +1,72 @@
+Urban Blade ecommerce test evidence — 2026-10-13
+
+Final backend run: npm --prefix server test (exit 0)
+✔ customer address books persist across sessions and isolate ownership (4599.489334ms)
+✔ online concierge configuration, failures, recovery, grounding and cache isolation (40.22ms)
+✔ durable carrier tracking retries, deduplicates and exposes the same verified snapshot (4731.763917ms)
+✔ checkout requires authentication (170.398ms)
+✔ legacy self-certified payment endpoint is retired (10.320375ms)
+✔ client discounts cannot change authoritative prices (1.385042ms)
+✔ fractional, excessive and duplicate cart quantities are rejected (1.605833ms)
+✔ stock availability excludes existing reservations (0.441625ms)
+✔ another customer cannot verify or cancel an order (10.0815ms)
+✔ synthetic payment signatures never confirm orders (5.182917ms)
+✔ payment from a different gateway order cannot be substituted (8.753083ms)
+✔ idempotency blocks concurrent requests, replays success and rejects changed payloads (53.10925ms)
+✔ stock release is a no-op when a hold was already resolved (1.027833ms)
+✔ stock inconsistency throws so caller can roll back the complete transaction (1.308167ms)
+✔ webhook signatures are checked against exact request bytes (5.728709ms)
+✔ COD rejects a stale displayed price before changing stock (8.302125ms)
+✔ COD persists an order owned by the signed-in user with provider-independent pending payment (6.504042ms)
+  ✔ refund lookup failures before submission remain safely retryable (7.797208ms)
+  ✔ delayed partial refunds cannot regress full refund settlement or money totals (11.949875ms)
+  ✔ partial refund amounts never decrease on out-of-order provider responses (5.311291ms)
+  ✔ a requested full refund is not mistaken for settled money (5.278125ms)
+  ✔ settled refunds remain reviewable during gateway outages (4.624708ms)
+✔ production checkout persists atomically without Redis and enforces API boundaries (5597.421375ms)
+  ✔ AUTH-01 register a customer with no administrative privilege (220.684667ms)
+  ✔ AUTH-02 reject duplicate registrations (2.436084ms)
+  ✔ AUTH-03 reject invalid email and short password (4.343375ms)
+  ✔ AUTH-04 reject incorrect login credentials (99.00225ms)
+  ✔ AUTH-05 login and read the authenticated profile (79.693459ms)
+  ✔ SEC-01 prevent customer access to admin money records (1.038209ms)
+  ✔ SEC-02 only administrators can initiate refunds (2.610083ms)
+  ✔ CAT-09 public API searches and filters products (2.134708ms)
+  ✔ CAT-10 public API sorts and paginates products (0.924875ms)
+  ✔ INV-01 catalog availability excludes reserved stock (0.802666ms)
+  ✔ INV-02 an unavailable product cannot be quoted for checkout (2.132042ms)
+  ✔ COUPON-01 valid coupons obey the maximum discount cap (2.528625ms)
+  ✔ COUPON-02 expired codes cannot reduce the checkout price (1.753167ms)
+  ✔ COUPON-03 coupon minimum order values are enforced (2.639666ms)
+  ✔ CART-13 authenticated carts persist and reject duplicate product lines (5.360875ms)
+  ✔ TOTAL-01 shipping fee changes at the configured threshold (0.0735ms)
+  ✔ TOTAL-02 inclusive tax does not add tax twice (0.039292ms)
+  ✔ TOTAL-03 exclusive tax uses the discounted merchandise amount (0.043458ms)
+  ✔ AUTH-06 logout revokes the old access token (1.72475ms)
+✔ Web and GitHub ecommerce scenarios adapted for Urban Blade (4491.64975ms)
+✔ readiness sends once with slow onSend and database up (148.551959ms)
+✔ readiness sends once with slow onSend and database down (71.645416ms)
+✔ load shedding responds once, skips commerce handler and permits readiness (123.2095ms)
+ℹ tests 46
+ℹ pass 46
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+
+Final frontend run: npm test -- --watch=false --browsers=ChromeHeadless (exit 0)
+TOTAL: 64 SUCCESS
+
+Initial frontend run before cart fixes: exit 1
+Chrome Headless 155.0.0.0 (Mac OS 10.15.7) Standard ecommerce cart scenarios CART-10 rejects fractional quantities in persisted cart data FAILED
+	Expected false to be true.
+Chrome Headless 155.0.0.0 (Mac OS 10.15.7) Standard ecommerce cart scenarios CART-11 discards malformed entries without losing valid saved items FAILED
+	Expected 0 to be 1.
+Chrome Headless 155.0.0.0 (Mac OS 10.15.7) Standard ecommerce cart scenarios CART-12 rejects negative prices during server-cart merge FAILED
+	Expected $.length = 1 to equal 0.
+	Expected -500 to be 0.
+TOTAL: 3 FAILED, 61 SUCCESS
+
+Admin audit: 49 passed, 0 failed (exit 0)
+Guidelines audit: 15 passed, 0 failed (exit 0)
+Angular production build: passed (exit 0)
+Database and gateway tests use disposable databases and test doubles.

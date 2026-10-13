@@ -67,7 +67,9 @@ async function applyGatewayRefund(orderId: string, refund: GatewayRefund) {
         refund_amount = total_amount,
         payment_status = CASE WHEN $2::text = 'processed' THEN 'refunded' ELSE payment_status END,
         refunded_at = CASE WHEN $2::text = 'processed' THEN COALESCE(refunded_at, NOW()) ELSE refunded_at END,
-        refund_failure_reason = NULL, version = version + 1, updated_at = NOW()
+        refund_failure_reason = NULL,
+        payment_reconciliation_error = CASE WHEN $2::text = 'processed' THEN NULL ELSE payment_reconciliation_error END,
+        version = version + 1, updated_at = NOW()
        WHERE id = $1 RETURNING *`,
       [orderId, refund.status, refund.id]
     );
@@ -80,7 +82,7 @@ async function applyGatewayRefund(orderId: string, refund: GatewayRefund) {
 export async function initiateOrderRefund(
   orderId: string,
   reason: string,
-  gateway: RefundGateway = paymentGateway()
+  gateway?: RefundGateway
 ) {
   const claim = await withTransaction(async client => {
     const locked = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
@@ -109,7 +111,12 @@ export async function initiateOrderRefund(
 
   if (claim.action === 'complete') return claim.order;
 
+  // Only a fresh claim can be retried after a pre-submission lookup failure.
+  // Once the refund POST starts, a timeout is ambiguous and must stay pending.
+  let requestStarted = false;
+  let refundFound = false;
   try {
+    gateway ??= paymentGateway();
     let refund: GatewayRefund | undefined;
     if (claim.action === 'reconcile') {
       refund = await gateway.payments.fetchRefund(claim.order.razorpay_payment_id, claim.order.refund_id) as GatewayRefund;
@@ -118,12 +125,14 @@ export async function initiateOrderRefund(
       // its response. Recover it by our stable receipt before creating another.
       const existing = await gateway.payments.fetchMultipleRefund(claim.order.razorpay_payment_id);
       refund = existing.items.find(item => item.receipt === claim.order.refund_receipt) as GatewayRefund | undefined;
+      refundFound = Boolean(refund);
       if (!refund && claim.action === 'recover') {
         // Never create another refund after an ambiguous timeout or process crash.
         // A signed webhook or provider lookup will reconcile the first attempt.
         return claim.order;
       }
       if (!refund) {
+        requestStarted = true;
         refund = await gateway.payments.refund(claim.order.razorpay_payment_id, {
           amount: Math.round(Number(claim.order.total_amount) * 100),
           speed: 'normal',
@@ -135,9 +144,11 @@ export async function initiateOrderRefund(
     return await applyGatewayRefund(orderId, refund);
   } catch (error: any) {
     await query(
-      `UPDATE orders SET refund_failure_reason = $2, updated_at = NOW()
+      `UPDATE orders SET refund_failure_reason = $2,
+        refund_status = CASE WHEN $3::boolean THEN 'failed' ELSE refund_status END, updated_at = NOW()
        WHERE id = $1 AND refund_status = 'pending' AND refund_id IS NULL`,
-      [orderId, String(error?.message || 'Refund request failed').slice(0, 500)]
+      [orderId, String(error?.message || 'Refund request failed').slice(0, 500),
+        claim.action === 'create' && !requestStarted && !refundFound]
     );
     throw error;
   }

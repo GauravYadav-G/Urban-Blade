@@ -115,6 +115,7 @@
           </div>
 
           <!-- Circular Action Buttons -->
+          @if (account.isAdmin()) {
           <button
             type="button"
             class="circle-action-btn"
@@ -128,6 +129,8 @@
               <span class="unread-dot"></span>
             }
           </button>
+
+          }
 
           <!-- Session Countdown Pill -->
           <div class="session-pill" [class.warning]="session.isWarning()" title="Session auto-locks after 15m of inactivity">
@@ -169,7 +172,7 @@
   </div>
 
   <!-- AI Support Chatbox Hub Modal -->
-  @if (isSupportChatOpen()) {
+  @if (account.isAdmin() && isSupportChatOpen()) {
     <app-support-chatbox (close)="isSupportChatOpen.set(false)" />
   }
 

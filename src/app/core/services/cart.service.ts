@@ -30,11 +30,7 @@ export class CartService {
   );
 
   mergeServerCart(items: CartLine[]): void {
-    const valid = Array.isArray(items)
-      ? items
-          .filter(i => i && i.kind !== 'service' && typeof i.productId === 'string' && Number.isInteger(i.qty) && i.qty > 0 && Number.isFinite(i.unitPrice))
-          .map(i => ({ ...i, qty: Math.min(i.qty, MAX_CART_QTY) }))
-      : [];
+    const valid = this.normalizeLines(items);
     const merged = new Map(valid.map(i => [i.productId, i]));
     for (const local of this.linesSignal()) merged.set(local.productId, local);
     const next = Array.from(merged.values()).slice(0, 100);
@@ -141,14 +137,23 @@ export class CartService {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return [];
-      const parsed = JSON.parse(raw) as CartLine[];
-      return Array.isArray(parsed)
-        ? parsed
-            .filter(l => l?.kind !== 'service')
-            .map(l => ({ ...l, qty: Math.min(Math.max(1, Number(l.qty) || 1), MAX_CART_QTY) }))
-        : [];
+      return this.normalizeLines(JSON.parse(raw));
     } catch {
       return [];
     }
+  }
+
+  private normalizeLines(items: unknown): CartLine[] {
+    if (!Array.isArray(items)) return [];
+    const valid = items.filter((item): item is CartLine => {
+      if (!item || typeof item !== 'object') return false;
+      return typeof item.lineId === 'string' && item.lineId.length > 0 &&
+        typeof item.productId === 'string' && item.productId.length > 0 &&
+        typeof item.name === 'string' && typeof item.imageUrl === 'string' &&
+        item.currency === 'INR' && ['retail', 'gift'].includes(item.kind) &&
+        Number.isInteger(item.qty) && item.qty > 0 &&
+        Number.isFinite(item.unitPrice) && item.unitPrice >= 0;
+    });
+    return valid.slice(0, 100).map(item => ({ ...item, qty: Math.min(item.qty, MAX_CART_QTY) }));
   }
 }

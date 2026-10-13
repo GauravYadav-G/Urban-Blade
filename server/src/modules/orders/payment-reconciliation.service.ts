@@ -27,14 +27,24 @@ export async function reconcileOrderPayment(orderId: string, gateway?: Gateway) 
     if (refundPaise > 0 || verified.status === 'refunded') {
       await withTransaction(async client => {
         const current = (await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [order.id])).rows[0];
-        const full = refundPaise === Math.round(Number(current.total_amount) * 100);
+        if (current.razorpay_payment_id && current.razorpay_payment_id !== verified.id) throw new Error('PAYMENT_MISMATCH');
+        const totalPaise = Math.round(Number(current.total_amount) * 100);
+        // Provider reads can finish out of order. Confirmed refunded money and
+        // terminal success must never be overwritten by an older snapshot.
+        const snapshot = (await client.query('SELECT refunded_paise FROM gateway_payments WHERE id = $1', [verified.id])).rows[0];
+        // refund_amount on a pending/failed request is the requested amount,
+        // so only the gateway ledger proves that money has been returned.
+        const confirmedRefundPaise = Math.max(refundPaise, Number(snapshot?.refunded_paise || 0),
+          current.payment_status === 'refunded' || current.refund_status === 'processed' ? totalPaise : 0);
+        const full = confirmedRefundPaise === totalPaise;
         if (full && (!['shipped','delivered'].includes(current.status) || current.return_status === 'received')) await restoreCommittedStock(client, order.id);
         await client.query(`UPDATE orders SET razorpay_payment_id = $2, transaction_id = $2,
           payment_status = CASE WHEN $3::boolean THEN 'refunded' ELSE 'captured' END,
           refund_status = CASE WHEN $3::boolean THEN 'processed' ELSE refund_status END,
           refund_amount = $4, refunded_at = CASE WHEN $3::boolean THEN COALESCE(refunded_at,NOW()) ELSE refunded_at END,
+          payment_reconciliation_error = CASE WHEN $3::boolean THEN NULL ELSE payment_reconciliation_error END,
           status = CASE WHEN $3::boolean AND status NOT IN ('shipped','delivered') THEN 'cancelled' ELSE status END,
-          payment_checked_at = NOW(), updated_at = NOW() WHERE id = $1`, [order.id, verified.id, full, refundPaise / 100]);
+          payment_checked_at = NOW(), updated_at = NOW() WHERE id = $1`, [order.id, verified.id, full, confirmedRefundPaise / 100]);
       });
       await invalidateCatalog().catch(() => {});
     }

@@ -1,0 +1,97 @@
+Urban Blade admin test evidence — 2026-10-13
+
+Final full frontend suite (exit 0)
+TOTAL: 79 SUCCESS
+
+Initial frontend failures (exit 1)
+Chrome Headless 155.0.0.0 (Mac OS 10.15.7) Admin inactivity session scenarios AS-04 malformed expiry data fails closed rather than freezing the countdown FAILED
+	Expected spy signOut to have been called.
+	Expected false to be true.
+Chrome Headless 155.0.0.0 (Mac OS 10.15.7) Admin product management scenarios AP-04 isolates vendors using exact names rather than prefixes FAILED
+	Expected $.length = 3 to equal 2.
+	Expected $[1] = 'other' to equal 'reserved'.
+Chrome Headless 155.0.0.0 (Mac OS 10.15.7) Admin product management scenarios AP-05 hides vendor records when the tenant identity is missing FAILED
+	Expected $.length = 3 to equal 0.
+TOTAL: 3 FAILED, 76 SUCCESS
+
+Final full backend suite (exit 0)
+✔ customer address books persist across sessions and isolate ownership (9207.904875ms)
+  ✔ AA-01 reject unauthenticated admin reads across modules (43.751458ms)
+  ✔ AA-02 isolate vendor users from master-admin modules (40.2675ms)
+  ✔ AA-03 deny product updates from a similarly named vendor (26.588792ms)
+  ✔ AI-01 reject stale inventory versions without changing quantities (5.231625ms)
+  ✔ AI-02 reject stock below outstanding reservations (2.178542ms)
+  ✔ AT-01 create a task with its due date and customer context (3.22725ms)
+  ✔ AT-02 reject blank task titles (1.570334ms)
+  ✔ AT-03 reject unknown task states (2.038084ms)
+  ✔ AT-04 return not-found for missing task updates (1.968792ms)
+  ✔ AH-01 create a support inquiry for a customer (2.838959ms)
+  ✔ AH-02 reject empty replies (1.496333ms)
+  ✔ AH-03 reject forged message sender roles (1.411083ms)
+  ✔ AH-04 reject unknown inquiry statuses (1.269625ms)
+  ✔ AH-05 return not-found for missing inquiry status updates (1.674541ms)
+  ✔ AH-06 preserve concurrent replies and assign distinct message IDs (3.726917ms)
+✔ Standard admin authorization, validation and data-integrity scenarios (8463.984ms)
+✔ online concierge configuration, failures, recovery, grounding and cache isolation (152.733042ms)
+✔ durable carrier tracking retries, deduplicates and exposes the same verified snapshot (9418.482875ms)
+✔ checkout requires authentication (1078.338875ms)
+✔ legacy self-certified payment endpoint is retired (11.599541ms)
+✔ client discounts cannot change authoritative prices (1.258458ms)
+✔ fractional, excessive and duplicate cart quantities are rejected (1.011125ms)
+✔ stock availability excludes existing reservations (0.378625ms)
+✔ another customer cannot verify or cancel an order (14.351458ms)
+✔ synthetic payment signatures never confirm orders (4.732041ms)
+✔ payment from a different gateway order cannot be substituted (12.83775ms)
+✔ idempotency blocks concurrent requests, replays success and rejects changed payloads (58.903917ms)
+✔ stock release is a no-op when a hold was already resolved (0.843917ms)
+✔ stock inconsistency throws so caller can roll back the complete transaction (3.42525ms)
+✔ webhook signatures are checked against exact request bytes (9.866375ms)
+✔ COD rejects a stale displayed price before changing stock (17.061709ms)
+✔ COD persists an order owned by the signed-in user with provider-independent pending payment (17.471125ms)
+  ✔ refund lookup failures before submission remain safely retryable (7.191458ms)
+  ✔ delayed partial refunds cannot regress full refund settlement or money totals (6.253958ms)
+  ✔ partial refund amounts never decrease on out-of-order provider responses (5.546542ms)
+  ✔ a requested full refund is not mistaken for settled money (5.093834ms)
+  ✔ settled refunds remain reviewable during gateway outages (3.387584ms)
+✔ production checkout persists atomically without Redis and enforces API boundaries (10393.156958ms)
+  ✔ AUTH-01 register a customer with no administrative privilege (134.7715ms)
+  ✔ AUTH-02 reject duplicate registrations (6.176333ms)
+  ✔ AUTH-03 reject invalid email and short password (2.324667ms)
+  ✔ AUTH-04 reject incorrect login credentials (78.596125ms)
+  ✔ AUTH-05 login and read the authenticated profile (90.90475ms)
+  ✔ SEC-01 prevent customer access to admin money records (1.812792ms)
+  ✔ SEC-02 only administrators can initiate refunds (3.007875ms)
+  ✔ CAT-09 public API searches and filters products (2.3ms)
+  ✔ CAT-10 public API sorts and paginates products (1.035167ms)
+  ✔ INV-01 catalog availability excludes reserved stock (0.865959ms)
+  ✔ INV-02 an unavailable product cannot be quoted for checkout (1.936208ms)
+  ✔ COUPON-01 valid coupons obey the maximum discount cap (4.0605ms)
+  ✔ COUPON-02 expired codes cannot reduce the checkout price (2.224916ms)
+  ✔ COUPON-03 coupon minimum order values are enforced (3.846875ms)
+  ✔ CART-13 authenticated carts persist and reject duplicate product lines (22.248875ms)
+  ✔ TOTAL-01 shipping fee changes at the configured threshold (0.278875ms)
+  ✔ TOTAL-02 inclusive tax does not add tax twice (0.059041ms)
+  ✔ TOTAL-03 exclusive tax uses the discounted merchandise amount (0.05475ms)
+  ✔ AUTH-06 logout revokes the old access token (4.790542ms)
+✔ Web and GitHub ecommerce scenarios adapted for Urban Blade (8307.646875ms)
+✔ readiness sends once with slow onSend and database up (972.069583ms)
+✔ readiness sends once with slow onSend and database down (70.68625ms)
+✔ load shedding responds once, skips commerce handler and permits readiness (129.19425ms)
+ℹ tests 62
+ℹ pass 62
+ℹ fail 0
+ℹ skipped 0
+
+Initial admin API scenario failures (exit 1)
+  ✖ AT-02 reject blank task titles (4.787667ms)
+  ✖ AT-03 reject unknown task states (5.694833ms)
+  ✖ AT-04 return not-found for missing task updates (5.308ms)
+  ✖ AH-02 reject empty replies (4.929625ms)
+  ✖ AH-03 reject forged message sender roles (4.7005ms)
+  ✖ AH-04 reject unknown inquiry statuses (4.669833ms)
+  ✖ AH-05 return not-found for missing inquiry status updates (3.673917ms)
+
+Required admin audit final: 49 passed, 0 failed (exit 0)
+Guidelines: 15 passed, 0 failed (exit 0)
+Production frontend build: passed (exit 0)
+Intermediate audit exposed outdated assignee/status fixtures; corrected to canonical API fields with persisted-value assertions.

@@ -94,7 +94,7 @@ export class PaymentService {
   quoteOrder(items: CheckoutItemRequest[], couponCode?: string): Observable<OrderQuote> {
     return this.http.post<OrderQuote>(`${API_BASE}/orders/quote`, { items, couponCode }).pipe(timeout(30000));
   }
-  reconcileOrder(orderId: string): Observable<{receipt?: PaymentReceipt; pending?: boolean; cancelled?: boolean}> {
+  reconcileOrder(orderId: string): Observable<{receipt?: PaymentReceipt; pending?: boolean; cancelled?: boolean; refunded?: boolean}> {
     return this.http.post<any>(`${API_BASE}/orders/${encodeURIComponent(orderId)}/reconcile`, {}).pipe(timeout(30000));
   }
   rememberPendingOrder(order: RazorpayOrderResponse): void {
@@ -104,6 +104,7 @@ export class PaymentService {
     try { const saved = JSON.parse(sessionStorage.getItem('urban-blade-pending-payment') || 'null'); return saved?.user === this.account.user()?.email && saved?.order?.orderId ? saved.order : null; } catch { return null; }
   }
   clearPendingOrder(): void {
+    this.attempt = null;
     this.activeRazorpayOrder.set(null);
     try { sessionStorage.removeItem('urban-blade-pending-payment'); sessionStorage.removeItem('checkout-attempt'); } catch {}
   }

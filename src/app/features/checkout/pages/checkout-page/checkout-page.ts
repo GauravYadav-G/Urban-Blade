@@ -140,7 +140,13 @@ export class CheckoutPage implements OnInit {
     try {
       const result = await firstValueFrom(this.payment.reconcileOrder(order.orderId));
       if (result.receipt) this.complete(result.receipt);
-      else if (result.cancelled) { this.pending.set(null); this.payment.clearPendingOrder(); this.message.set('This checkout expired without a confirmed payment. Review your cart to start again.'); }
+      else if (result.cancelled) {
+        this.pending.set(null);
+        this.payment.clearPendingOrder();
+        this.message.set(result.refunded
+          ? 'Your payment was refunded. Review your cart to start a new order.'
+          : 'This checkout expired without a confirmed payment. Review your cart to start again.');
+      }
       else this.message.set('Payment has not been confirmed yet. Resume this order to pay, or check again if your account was debited.');
     } catch (err: any) { this.error.set(err.error?.message || 'Payment status is unavailable. Do not pay again until confirmation is available.'); }
     finally { this.busy.set(false); }

@@ -389,6 +389,68 @@ try {
   assert.equal((await req('GET','/api/admin/metrics/daily',undefined,admin)).statusCode,503);
 } finally {pool.query=workingQuery;}
 checked++;
+// Money lifecycle regressions use real SQL and gateway fixtures only.
+await t.test('refund lookup failures before submission remain safely retryable', async () => {
+  const id = 'abababab-abab-4aba-8aba-abababababab';
+  await query("INSERT INTO orders(id,user_id,status,subtotal,total_amount,currency,shipping_address,payment_method,payment_status,razorpay_payment_id) VALUES($1,$2,'confirmed',500,500,'INR','{}','Razorpay','captured','pay_lookup_retry')", [id, customer]);
+  let creates = 0;
+  await assert.rejects(initiateOrderRefund(id, 'Customer cancellation', { payments: {
+    fetchMultipleRefund: async () => { throw new Error('lookup outage'); },
+    refund: async () => { creates++; },
+  } }), /lookup outage/);
+  assert.equal(creates, 0);
+  assert.equal((await query('SELECT refund_status FROM orders WHERE id=$1', [id])).rows[0].refund_status, 'failed');
+  const retried = await initiateOrderRefund(id, 'Customer cancellation', { payments: {
+    fetchMultipleRefund: async () => ({ items: [] }),
+    refund: async () => { creates++; return { id: 'rfnd_lookup_retry', payment_id: 'pay_lookup_retry', amount: 50000, status: 'processed' }; },
+  } });
+  assert.equal(retried.payment_status, 'refunded');
+  assert.equal(creates, 1);
+});
+await t.test('delayed partial refunds cannot regress full refund settlement or money totals', async () => {
+  const inventoryBefore = (await query('SELECT stock_quantity FROM products WHERE id=$1', [product])).rows[0].stock_quantity;
+  const stalePayment = { id: 'pay_fixture', order_id: 'order_fixture', amount: 59900, currency: 'INR', status: 'captured', amount_refunded: 10000 };
+  const result = await reconcileOrderPayment(online, {
+    orders: { fetchPayments: async () => ({ items: [stalePayment] }) },
+    payments: { fetch: async () => stalePayment },
+  });
+  assert.equal(result.payment_status, 'refunded');
+  assert.equal(result.refund_status, 'processed');
+  assert.equal(Number(result.refund_amount), 599);
+  assert.equal((await query('SELECT stock_quantity FROM products WHERE id=$1', [product])).rows[0].stock_quantity, inventoryBefore);
+});
+await t.test('partial refund amounts never decrease on out-of-order provider responses', async () => {
+  providerPayment.amount_refunded = 5000;
+  const result = await reconcileOrderPayment(repairOrder, repairGateway);
+  assert.equal(Number(result.refund_amount), 100);
+});
+await t.test('a requested full refund is not mistaken for settled money', async () => {
+  const id = 'acacacac-acac-4aca-8aca-acacacacacac';
+  await query("INSERT INTO orders(id,user_id,idempotency_key,status,subtotal,total_amount,currency,shipping_address,payment_method,payment_status,razorpay_payment_id,refund_status,refund_amount) VALUES($1,$2,'order_pending_refund','cancelled',500,500,'INR','{}','Razorpay','captured','pay_pending_refund','pending',500)", [id, customer]);
+  const payment = { id: 'pay_pending_refund', order_id: 'order_pending_refund', amount: 50000, currency: 'INR', status: 'captured', amount_refunded: 10000 };
+  const result = await reconcileOrderPayment(id, {
+    orders: { fetchPayments: async () => ({ items: [payment] }) }, payments: { fetch: async () => payment },
+  });
+  assert.equal(result.payment_status, 'captured');
+  assert.equal(result.refund_status, 'pending');
+  assert.equal(Number(result.refund_amount), 100);
+});
+await t.test('settled refunds remain reviewable during gateway outages', async () => {
+  const previousKeyId = config.razorpay.keyId;
+  const previousKeySecret = config.razorpay.keySecret;
+  config.razorpay.keyId = '';
+  config.razorpay.keySecret = '';
+  try {
+    const result = await req('POST', `/api/orders/${online}/reconcile`, {});
+    assert.equal(result.statusCode, 200, result.body);
+    assert.equal(result.json().refunded, true);
+    const completed = await initiateOrderRefund(online, 'Repeat completed refund');
+    assert.equal(completed.refund_status, 'processed');
+  } finally {
+    config.razorpay.keyId = previousKeyId;
+    config.razorpay.keySecret = previousKeySecret;
+  }
+});
 console.log(`PASS: schema applied twice, indexes applied, ${checked} API/database assertions (production mode, Redis disconnected).`);
 
 });

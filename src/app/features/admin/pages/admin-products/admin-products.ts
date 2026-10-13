@@ -66,18 +66,16 @@ export class AdminProducts implements OnInit {
   readonly filteredProducts = computed(() => {
     let list = this.admin.products();
     const isVendor = this.account.isVendor();
-    const activeVendor = this.account.activeVendorName()?.toLowerCase();
+    const activeVendor = this.account.activeVendorName()?.trim().toLowerCase();
     const q = this.searchQuery().trim().toLowerCase();
     const cat = this.selectedCategory();
     const kind = this.selectedKind();
     const stock = this.selectedStockFilter();
 
-    if (isVendor && activeVendor) {
-      list = list.filter(
-        (p) =>
-          p.vendor?.toLowerCase() === activeVendor ||
-          p.vendor?.toLowerCase().includes(activeVendor)
-      );
+    if (isVendor) {
+      list = activeVendor
+        ? list.filter(p => p.vendor?.trim().toLowerCase() === activeVendor)
+        : [];
     }
 
     if (cat !== 'all') {
