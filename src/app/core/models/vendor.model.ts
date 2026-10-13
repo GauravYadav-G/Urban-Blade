@@ -3,6 +3,30 @@ export interface VendorPayoutAccount {
   accountNo: string;
   ifsc: string;
   upi?: string;
+  verified?: boolean;
+  verificationMethod?: string;
+  verificationReference?: string;
+  verifiedBeneficiaryName?: string;
+  verifiedAt?: string;
+  verifiedBy?: string;
+}
+
+export interface RazorpayUpiValidationResult {
+  valid: boolean;
+  vpa: string;
+  vendorName: string;
+  registeredBeneficiaryName: string;
+  nameMatchScore: number;
+  nameMatch: boolean;
+  pspProvider: string;
+  validationReference: string;
+  gateway: string;
+  mode?: 'live' | 'test';
+  isSimulated?: boolean;
+  status: 'active' | 'invalid';
+  validatedAt: string;
+  error?: string;
+  message?: string;
 }
 
 export interface VendorAccount {

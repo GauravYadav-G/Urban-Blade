@@ -4,11 +4,12 @@ import { query } from '../../db/pool.js';
 // Merchandise earnings exclude shipping/tax and allocate the order discount.
 // Only delivered, paid orders without an open/accepted return are payable.
 export async function vendorBalances(client?: PoolClient) {
-  const sql = `SELECT v.id, v.name, v.commission_rate, v.payout_account,
+  const sql = `SELECT v.id, v.name, v.status, v.commission_rate, v.payout_account,
     COALESCE(s.gross_sales, 0)::numeric AS gross_sales,
     ROUND(COALESCE(s.gross_sales, 0) * v.commission_rate / 100, 2) AS platform_cut,
     COALESCE(p.paid, 0)::numeric AS paid_amount,
-    GREATEST(0, ROUND(COALESCE(s.gross_sales, 0) * (1 - v.commission_rate / 100), 2) - COALESCE(p.paid, 0)) AS payable_amount
+    COALESCE(p.pending, 0)::numeric AS pending_amount,
+    GREATEST(0, ROUND(COALESCE(s.gross_sales, 0) * (1 - v.commission_rate / 100), 2) - COALESCE(p.paid, 0) - COALESCE(p.pending, 0)) AS payable_amount
     FROM vendors v
     LEFT JOIN (
       SELECT LOWER(pr.vendor) AS vendor,
@@ -19,9 +20,10 @@ export async function vendorBalances(client?: PoolClient) {
       GROUP BY LOWER(pr.vendor)
     ) s ON s.vendor = LOWER(v.name)
     LEFT JOIN (
-      SELECT vendor_id, SUM(amount) AS paid
+      SELECT vendor_id, SUM(amount) FILTER (WHERE provider_status IN ('manual_recorded', 'processed')) AS paid,
+        SUM(amount) FILTER (WHERE provider_status NOT IN ('manual_recorded', 'processed', 'failed', 'reversed', 'cancelled', 'rejected')) AS pending
       FROM vendor_payouts
-      WHERE provider_status IN ('manual_recorded', 'queued', 'pending', 'processing', 'processed')
+      WHERE provider_status NOT IN ('failed', 'reversed', 'cancelled', 'rejected')
       GROUP BY vendor_id
     ) p ON p.vendor_id = v.id
     ORDER BY v.name`;

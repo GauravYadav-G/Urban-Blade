@@ -32,12 +32,27 @@ test('durable carrier tracking retries, deduplicates and exposes the same verifi
     if (originalEnabled === undefined) delete process.env.CARRIER_TRACKING_ENABLED; else process.env.CARRIER_TRACKING_ENABLED = originalEnabled;
     await app.close(); await db.close(); await pool.end();
   });
+  const { mapRawStatusToInternal } = await import('../dist/modules/orders/carrier-portal.service.js');
+  for (const status of ['Undelivered', 'RTO delivered', 'Delivery failed', 'Cancelled']) assert.throws(() => mapRawStatusToInternal(status));
   const customer = '10000000-0000-4000-8000-000000000001';
   const admin = '10000000-0000-4000-8000-000000000002';
   const order = '10000000-0000-4000-8000-000000000003';
   await query("INSERT INTO users(id,email,name,password_hash,role) VALUES($1,'customer@example.com','Customer','unused','customer'),($2,'admin@example.com','Admin','unused','admin')", [customer, admin]);
   await query(`INSERT INTO orders(id,user_id,status,subtotal,total_amount,shipping_address,payment_method,payment_status,tracking_number,carrier)
     VALUES($1,$2,'processing',100,100,'{}','Cash on Delivery','pending','12345','Delhivery')`, [order, customer]);
+  const headers = { authorization: 'Bearer ' + app.jwt.sign({ id: admin, role: 'admin', email: 'admin@example.com', name: 'Admin' }) };
+  const lookup = payload => app.inject({ method: 'POST', url: '/api/admin/orders/fetch-carrier-website', headers, payload });
+  assert.equal((await app.inject({ method:'POST', url:'/api/admin/orders/fetch-carrier-website', payload:{orderIdOrNumber:order} })).statusCode,401);
+  assert.equal((await lookup({orderIdOrNumber:''})).statusCode,400);
+  assert.equal((await lookup({orderIdOrNumber:order,carrier:'Shiprocket'})).json().error,'CARRIER_MISMATCH');
+  for (const carrier of ['Shiprocket','BlueDart Express','DTDC Air','Urban Express Logistics']) {
+    const response=await lookup({orderIdOrNumber:'external-awb',carrier});
+    assert.equal(response.statusCode,409,response.body);
+    assert.equal(response.json().error,'CARRIER_PORTAL_ONLY');
+    assert.equal(response.json().manualReview.awb,'external-awb');
+    assert.equal(Boolean(response.json().manualReview.portalUrl),carrier!=='Urban Express Logistics');
+  }
+  assert.equal((await query('SELECT status FROM orders WHERE id=$1',[order])).rows[0].status,'processing');
   let status = 'In Transit', statusType = 'UD', awb = '12345', scanTime = '2026-10-12T10:00:00', calls = 0;
   const carrierFetch = async () => {
     calls++;
@@ -86,6 +101,16 @@ test('durable carrier tracking retries, deduplicates and exposes the same verifi
   assert.equal(delivered.payment_status, 'pending', 'tracking must not mark COD as paid');
   await query("UPDATE orders SET tracking_next_check_at=NOW()-INTERVAL '1 second' WHERE id=$1", [order]);
   assert.equal(await syncDueCarrierOrders(), 0, 'delivered orders leave the tracking queue');
+  const linked=await lookup({orderIdOrNumber:'#'+order});
+  assert.equal(linked.statusCode,200,linked.body);
+  assert.equal(linked.json().applied,false);
+  assert.equal(linked.json().order.id,order);
+  const bulk=await app.inject({method:'POST',url:'/api/admin/orders/bulk-fetch-carrier-websites',headers,payload:{orderIds:[order,'10000000-0000-4000-8000-999999999999']}});
+  assert.equal(bulk.statusCode,200,bulk.body);
+  assert.equal(bulk.json().checkedCount,1);
+  assert.equal(bulk.json().updatedCount,0);
+  assert.equal(bulk.json().failedCount,1);
+
   await query("UPDATE orders SET tracking_number='67890' WHERE id=$1", [order]);
   const reset = (await query('SELECT * FROM orders WHERE id=$1', [order])).rows[0];
   assert.equal(reset.tracking_data, null);

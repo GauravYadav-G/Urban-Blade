@@ -181,6 +181,31 @@ const payout=await req('POST','/api/admin/finance/process-payout',payoutPayload,
 assert.equal(payout.statusCode,200,payout.body);assert.equal(payout.json().disbursed,false);
 assert.equal((await req('POST','/api/admin/finance/process-payout',payoutPayload,admin)).statusCode,200);
 assert.equal((await query('SELECT COUNT(*)::int n FROM vendor_payouts')).rows[0].n,1);
+const payoutRetry=await req('POST','/api/admin/finance/process-payout',payoutPayload,admin);
+assert.equal(payoutRetry.json().payout.id,payout.json().payout.id);
+assert.equal(payoutRetry.json().disbursed,false);
+assert.equal((await req('POST','/api/admin/finance/process-payout',{...payoutPayload,mode:'razorpayx'},admin)).statusCode,409);
+await query("INSERT INTO vendor_payouts(vendor_id,amount,reference,provider,provider_status,recorded_by) VALUES($1,50,'pending-fixture','razorpayx','processing',$2)",[vendorId,admin]);
+const {vendorBalances}=await mod('modules/admin/vendor-finance.service.js');
+const pendingBalance=(await vendorBalances()).rows.find(row=>row.id===vendorId);
+assert.equal(Number(pendingBalance.paid_amount),100);
+assert.equal(Number(pendingBalance.pending_amount),50);
+assert.equal(Number(pendingBalance.payable_amount),246);
+await query("DELETE FROM vendor_payouts WHERE reference='pending-fixture'");
+const forgedVerification=await req('PUT',`/api/admin/vendors/${vendorId}`,{payoutAccount:{upi:'vendor@upi',verified:true,verificationReference:'forged'}},admin);
+assert.equal(forgedVerification.statusCode,200,forgedVerification.body);
+assert.equal(forgedVerification.json().vendor.payout_account.verified,false);
+assert.equal(forgedVerification.json().vendor.payout_account.verificationReference,null);
+const verifiedAccount={upi:'vendor@upi',bank:'',accountNo:'',ifsc:'',verified:true,verificationReference:'provider-fixture',verifiedAt:'2026-10-13T00:00:00Z'};
+await query('UPDATE vendors SET payout_account=$1::jsonb WHERE id=$2',[JSON.stringify(verifiedAccount),vendorId]);
+const contactUpdate=await req('PUT',`/api/admin/vendors/${vendorId}`,{contact_person:'Updated contact',payout_account:{upi:'vendor@upi',bank:'',accountNo:'',ifsc:''}},admin);
+assert.equal(contactUpdate.statusCode,200,contactUpdate.body);
+assert.equal(contactUpdate.json().vendor.payout_account.verified,true);
+const destinationUpdate=await req('PUT',`/api/admin/vendors/${vendorId}`,{payout_account:{upi:'changed@upi'}},admin);
+assert.equal(destinationUpdate.json().vendor.payout_account.verified,false);
+assert.equal(destinationUpdate.json().vendor.payout_account.verificationReference,null);
+
+
 assert.equal((await req('POST','/api/admin/finance/process-payout',{...payoutPayload,amount:1000,reference:'too-large'},admin)).statusCode,409);
 assert.equal((await req('POST','/api/admin/finance/process-payout',{...payoutPayload,amount:-1},admin)).statusCode,400);checked++;
 assert.equal((await req('POST',`/api/orders/${returnOrder}/return`,{reason:'Wrong size'},other)).statusCode,404);

@@ -1,104 +1,42 @@
 @let inv = order();
-<div class="invoice-modal-backdrop" (click)="close.emit()">
-  <div class="invoice-container" role="dialog" aria-modal="true" aria-label="Tax invoice" (click)="$event.stopPropagation()">
-    <div class="invoice-actions-bar no-print">
-      <div class="inv-title">Tax Invoice / Cash Memorandum</div>
-      <div class="inv-btns">
-        <button type="button" class="inv-print-btn" (click)="print()">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <polyline points="6 9 6 2 18 2 18 9"></polyline>
-            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-            <rect x="6" y="14" width="12" height="8"></rect>
-          </svg>
-          <span>Print / Save PDF</span>
-        </button>
-        <button type="button" class="inv-close-btn" (click)="close.emit()" aria-label="Close invoice">✕</button>
-      </div>
+<div class="receipt-overlay" (click)="close.emit()">
+  <section class="receipt-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-title" (click)="$event.stopPropagation()">
+    <div class="receipt-toolbar">
+      <div><span class="receipt-eyebrow">YOUR ORDER DOCUMENT</span><strong>Invoice &amp; purchase summary</strong></div>
+      <div class="receipt-actions"><button type="button" class="receipt-print" (click)="print()">Print / Save PDF</button><button type="button" class="receipt-close" (click)="close.emit()" aria-label="Close invoice">×</button></div>
     </div>
-
-    <article id="printable-area" class="printable-invoice">
-      <div class="inv-header">
-        <div class="seller-info">
-          <h2 class="salon-name">{{ site.settings().business.name }}</h2>
-          <span class="salon-tagline">{{ site.settings().business.tagline }}</span>
-          <p class="salon-addr">
-            {{ site.settings().business.address }}<br />
-            {{ site.settings().business.email }} · {{ site.settings().business.phoneDisplay }}
-          </p>
-        </div>
-        <div class="inv-meta">
-          <span class="inv-badge">ORIGINAL TAX INVOICE</span>
-          <div class="inv-meta-row"><strong>Invoice:</strong> UB-INV-{{ inv.id.slice(0, 8).toUpperCase() }}</div>
-          <div class="inv-meta-row"><strong>Issued:</strong> {{ inv.created_at | date:'dd MMM yyyy, hh:mm a' }}</div>
-          <div class="inv-meta-row"><strong>Payment:</strong> {{ inv.payment_method | uppercase }} ({{ inv.payment_status | uppercase }})</div>
+    <article id="printable-area" class="receipt-paper">
+      <div class="receipt-brand-row">
+        <div class="receipt-brand"><span class="receipt-monogram" aria-hidden="true">UB<span>•</span></span><div><h2>{{ site.settings().business.name }}</h2><p>{{ site.settings().business.tagline }}</p></div></div>
+        <span class="receipt-edition">ORDER RECEIPT<br /><strong>Original copy</strong></span>
+      </div>
+      <div class="receipt-hero">
+        <div><span class="receipt-eyebrow">CRAFTED FOR YOUR EVERYDAY</span><h1 id="receipt-title">Your purchase,<br /><span>all in the details.</span></h1><p>Thank you for choosing {{ site.settings().business.name }}.</p></div>
+        <div class="receipt-reference"><span>Tax invoice / cash memorandum</span><strong>{{ invoiceNumber() }}</strong><time>{{ inv.created_at | date:'dd MMM yyyy · hh:mm a' }}</time><span class="receipt-payment" [class.received]="inv.payment_status==='captured'">{{ paymentLabel() }}</span></div>
+      </div>
+      <div class="receipt-addresses">
+        <div><span class="receipt-eyebrow">FROM</span><h3>{{ site.settings().business.name }}</h3><p>{{ site.settings().business.address }}</p><p>{{ site.settings().business.email }}<br />{{ site.settings().business.phoneDisplay }}</p></div>
+        <div><span class="receipt-eyebrow">BILLED &amp; SHIPPED TO</span><h3>{{ inv.shipping_address?.fullName || 'Customer' }}</h3><p>{{ inv.shipping_address?.street || 'Address not supplied' }}<br />{{ inv.shipping_address?.city }}{{ inv.shipping_address?.state ? ', ' + inv.shipping_address?.state : '' }} {{ inv.shipping_address?.postalCode || inv.shipping_address?.pinCode }}</p><p>{{ inv.shipping_address?.phone }}<br />{{ inv.shipping_address?.email }}</p></div>
+      </div>
+      <div class="receipt-items">
+        <table aria-label="Purchased items"><thead><tr><th>Item</th><th>Description</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>
+          @for (line of inv.items; track $index) { <tr><td>{{ $index + 1 | number:'2.0-0' }}</td><td><strong>{{ line.product_name }}</strong></td><td>{{ line.quantity }}</td><td>{{ line.unit_price | inr:2 }}</td><td>{{ line.unit_price * line.quantity | inr:2 }}</td></tr> }
+          @empty { <tr><td colspan="5">Item details are unavailable for this order.</td></tr> }
+        </tbody></table>
+      </div>
+      <div class="receipt-bottom">
+        <div class="receipt-note"><span class="receipt-eyebrow">A LITTLE CARE GOES A LONG WAY</span><h3>Good grooming.<br />Great days ahead.</h3><p>Keep this invoice for your records. For help with your order, contact our team with your invoice number.</p><p class="receipt-tax-note">{{ savedTax() === null ? 'A tax breakdown was not recorded for this order. The original order total is shown.' : 'Tax and totals reflect the values saved with your order.' }}</p></div>
+        <div class="receipt-totals">
+          @if (inv.subtotal != null) { <div><span>Items subtotal</span><span>{{ inv.subtotal | inr:2 }}</span></div> }
+          @if (inv.discount_amount) { <div><span>Discount {{ inv.coupon_code }}</span><span>−{{ inv.discount_amount | inr:2 }}</span></div> }
+          @if (inv.shipping_fee != null) { <div><span>Delivery</span><span>{{ inv.shipping_fee === 0 ? 'Complimentary' : (inv.shipping_fee | inr:2) }}</span></div> }
+          @if (savedTax() !== null) { <div><span>Tax{{ inv.tax_inclusive ? ' (included)' : '' }}{{ taxRate() !== null ? ' · '+taxRate()+'%' : '' }}</span><span>{{ savedTax() | inr:2 }}</span></div> }
+          <div class="receipt-grand-total"><span>Grand total<small>INR · Indian rupees</small></span><strong>{{ inv.total_amount | inr:2 }}</strong></div>
+          <p>{{ inv.payment_method }} · {{ paymentLabel() }}</p>
         </div>
       </div>
-
-      <div class="inv-meta-grid">
-        <div class="meta-col">
-          <span class="meta-label">Billed &amp; shipped to</span>
-          <strong class="buyer-name">{{ inv.shipping_address?.fullName || 'Customer' }}</strong>
-          <p class="buyer-address">
-            {{ inv.shipping_address?.street || 'Address not supplied' }}<br />
-            {{ inv.shipping_address?.city || '' }}{{ inv.shipping_address?.state ? ', ' + inv.shipping_address?.state : '' }}
-            {{ inv.shipping_address?.pinCode || inv.shipping_address?.postalCode || '' }}
-          </p>
-          <p class="buyer-contact">
-            {{ inv.shipping_address?.phone || 'Phone not supplied' }}
-            @if (inv.shipping_address?.email) { · {{ inv.shipping_address?.email }} }
-          </p>
-        </div>
-        <div class="meta-col">
-          <span class="meta-label">Transaction &amp; logistics</span>
-          <p><strong>Order ID:</strong> #{{ inv.id.toUpperCase() }}</p>
-          @if (inv.transaction_id) { <p><strong>Transaction:</strong> {{ inv.transaction_id }}</p> }
-          @if (inv.gateway_order_id) { <p><strong>Gateway order:</strong> {{ inv.gateway_order_id }}</p> }
-          @if (inv.carrier) { <p><strong>Carrier:</strong> {{ inv.carrier }}</p> }
-          @if (inv.tracking_number) { <p><strong>AWB:</strong> {{ inv.tracking_number }}</p> }
-        </div>
-      </div>
-
-      <table class="inv-table">
-        <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit price</th><th>Taxable value</th><th>Tax</th><th>Total</th></tr></thead>
-        <tbody>
-          @for (line of inv.items; track $index) {
-            @let lineTotal = line.unit_price * line.quantity;
-            <tr>
-              <td>{{ $index + 1 }}</td><td><strong>{{ line.product_name }}</strong></td><td>{{ line.quantity }}</td>
-              <td>₹{{ line.unit_price | inr }}</td><td>₹{{ taxableValue(lineTotal) | inr }}</td>
-              <td>₹{{ taxValue(lineTotal) | inr }}</td><td>₹{{ lineTotal | inr }}</td>
-            </tr>
-          } @empty {
-            <tr><td colspan="7">No invoice line items are available for this order.</td></tr>
-          }
-        </tbody>
-      </table>
-
-      <div class="inv-totals-wrap">
-        <div class="inv-words-col">
-          <span class="words-label">Document status</span>
-          <p class="words-text">Computer-generated invoice for order {{ inv.id }}.</p>
-          <div class="tax-declaration"><p>Tax values use the live storefront tax configuration in effect when this document is viewed.</p></div>
-        </div>
-        <div class="inv-summary-col">
-          <div class="sum-row"><span>Subtotal:</span><span>₹{{ (inv.subtotal ?? inv.total_amount) | inr }}</span></div>
-          @if (inv.discount_amount && inv.discount_amount > 0) {
-            <div class="sum-row text-discount"><span>Discount {{ inv.coupon_code || '' }}:</span><span>-₹{{ inv.discount_amount | inr }}</span></div>
-          }
-          @if (inv.shipping_fee && inv.shipping_fee > 0) {
-            <div class="sum-row"><span>Shipping:</span><span>₹{{ inv.shipping_fee | inr }}</span></div>
-          }
-          @if (taxRate() > 0) {
-            <div class="sum-row"><span>Tax {{ inv.tax_inclusive ? 'included' : '' }} ({{ taxRate() }}%):</span><span>₹{{ invoiceTax() | inr }}</span></div>
-          }
-          <div class="sum-row sum-grand-total"><span>Grand total:</span><strong>₹{{ inv.total_amount | inr }}</strong></div>
-        </div>
-      </div>
-
-      <div class="inv-footer">
-        <div class="inv-sign-block"><div class="digital-seal">URBAN BLADE VERIFIED</div><span class="sign-sub">Computer-generated document</span></div>
-        <div class="inv-terms"><strong>Support</strong><p>{{ site.settings().business.email }} · {{ site.settings().business.phoneDisplay }}</p></div>
-      </div>
+      <div class="receipt-audit"><div><span>Order reference</span><strong>{{ inv.id }}</strong></div>@if(inv.transaction_id){<div><span>Payment reference</span><strong>{{ inv.transaction_id }}</strong></div>}@if(inv.gateway_order_id){<div><span>Gateway order</span><strong>{{ inv.gateway_order_id }}</strong></div>}@if(inv.carrier || inv.tracking_number){<div><span>Delivery partner / AWB</span><strong>{{ inv.carrier }}{{ inv.tracking_number ? ' · '+inv.tracking_number : '' }}</strong></div>}</div>
+      <div class="receipt-footer"><span>{{ site.settings().business.name }} <b>•</b> Grooming, considered.</span><small>Computer-generated document</small></div>
     </article>
-  </div>
+  </section>
 </div>

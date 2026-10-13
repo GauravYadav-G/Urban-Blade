@@ -45,29 +45,18 @@ export class OrderInvoice {
   readonly close = output<void>();
   readonly site = inject(SiteSettingsService);
 
-  readonly taxRate = computed(() =>
-    Math.max(
-      0,
-      Number(this.order().tax_rate_percent) ||
-        (this.site.settings().ecommerce.taxEnabled
-          ? Number(this.site.settings().ecommerce.taxRatePercent) || 0
-          : 0)
-    )
-  );
-
-  taxableValue(amount: number): number {
-    const rate = this.taxRate();
-    return rate > 0 ? amount / (1 + rate / 100) : amount;
-  }
-
-  taxValue(amount: number): number {
-    return amount - this.taxableValue(amount);
-  }
-
-  invoiceTax(): number {
-    const stored = Number(this.order().tax_amount);
-    return Number.isFinite(stored) && stored > 0 ? stored : this.taxValue(this.order().total_amount);
-  }
+  readonly taxRate = computed(() => {
+    const value = this.order().tax_rate_percent;
+    return value != null && Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : null;
+  });
+  readonly savedTax = computed(() => {
+    const value = this.order().tax_amount;
+    return value != null && Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : null;
+  });
+  readonly invoiceNumber = computed(() => `UB-INV-${this.order().id.slice(0, 8).toUpperCase()}`);
+  readonly paymentLabel = computed(() => ({
+    captured: 'Payment received', refunded: 'Payment refunded', pending: 'Payment pending', failed: 'Payment failed',
+  }[this.order().payment_status] || this.order().payment_status));
 
   print(): void {
     const originalTitle = document.title;

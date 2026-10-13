@@ -1,31 +1,95 @@
-<!-- Floating Luxury Concierge Widget Container -->
+<!-- Floating Subtle Luxury Concierge Widget Container -->
 <div class="floating-ai-wrapper">
   
   <!-- Pop-Up Luxury Concierge Window -->
   @if (isOpen()) {
-    <div class="ai-popup-window" (click)="$event.stopPropagation()">
-      <!-- Pop-up Top Bar (Subtle & Normal) -->
+    <section 
+      id="urban-ai-panel" 
+      class="ai-popup-window" 
+      [class.is-expanded]="isExpanded()"
+      role="dialog" 
+      aria-modal="false" 
+      aria-labelledby="urban-ai-title" 
+      (click)="$event.stopPropagation()"
+    >
+      <!-- Pop-up Top Bar (Subtle Monochromatic Header) -->
       <header class="popup-header">
         <div class="header-agent">
-          <div class="agent-avatar-wrap">
-            <svg class="agent-avatar-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <div class="agent-avatar-wrap" aria-hidden="true">
+            <!-- Clean Monochromatic Chat / Concierge SVG -->
+            <svg class="agent-mono-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
             </svg>
-            <span class="live-dot"></span>
+            <span class="live-status-dot"></span>
           </div>
 
           <div class="agent-copy">
-            <h4>Urban Blade Support</h4>
-            <span class="agent-status">
+            <h4 id="urban-ai-title" class="agent-name">Ask Urban Blade</h4>
+            <div class="agent-status-bar">
               <span class="status-indicator"></span>
-              <span>Online</span>
-            </span>
+              <span class="status-text">Online · 24/7 Desk</span>
+            </div>
           </div>
         </div>
 
         <div class="header-actions-right">
-          <button type="button" class="btn-clear-chat" (click)="clearChat()" title="Reset & Delete Chat">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <!-- Audio Chime Toggle -->
+          <button 
+            type="button" 
+            class="header-btn btn-sound" 
+            (click)="toggleSound()" 
+            [title]="soundEnabled() ? 'Mute' : 'Unmute'" 
+            [attr.aria-label]="soundEnabled() ? 'Mute' : 'Unmute'"
+          >
+            @if (soundEnabled()) {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+              </svg>
+            } @else {
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <line x1="23" y1="9" x2="17" y2="15"></line>
+                <line x1="17" y1="9" x2="23" y2="15"></line>
+              </svg>
+            }
+          </button>
+
+          <!-- Window Size Expand / Contract -->
+          <button 
+            type="button" 
+            class="header-btn btn-expand" 
+            (click)="toggleExpand()" 
+            [title]="isExpanded() ? 'Compact view' : 'Spacious view'" 
+            [attr.aria-label]="isExpanded() ? 'Compact view' : 'Spacious view'"
+          >
+            @if (isExpanded()) {
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="4 14 10 14 10 20"></polyline>
+                <polyline points="20 10 14 10 14 4"></polyline>
+                <line x1="14" y1="10" x2="21" y2="3"></line>
+                <line x1="3" y1="21" x2="10" y2="14"></line>
+              </svg>
+            } @else {
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <polyline points="9 21 3 21 3 15"></polyline>
+                <line x1="21" y1="3" x2="14" y2="10"></line>
+                <line x1="3" y1="21" x2="10" y2="14"></line>
+              </svg>
+            }
+          </button>
+
+          <!-- Reset / Clear Thread -->
+          <button 
+            type="button" 
+            class="header-btn btn-clear-chat" 
+            (click)="clearChat()" 
+            title="Reset conversation" 
+            aria-label="Reset conversation"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
               <path d="M10 11v6"></path>
@@ -33,8 +97,16 @@
               <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
             </svg>
           </button>
-          <button type="button" class="btn-close-popup" (click)="toggleOpen()" title="Close chat">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+
+          <!-- Close Popup -->
+          <button 
+            type="button" 
+            class="header-btn btn-close-popup" 
+            (click)="toggleOpen()" 
+            title="Close chat" 
+            aria-label="Close chat"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
@@ -42,39 +114,42 @@
         </div>
       </header>
 
-      <!-- Quick Luxury Chips Bar -->
-      <div class="popup-chips-bar">
+      <!-- Quick Action Prompt Bar -->
+      <div class="popup-chips-bar" role="toolbar" aria-label="Suggestions">
         @for (chip of quickChips; track chip.label) {
           <button type="button" class="p-chip" (click)="onChipClick(chip)">
-            <span>{{ chip.label }}</span>
+            <span class="chip-text">{{ chip.label }}</span>
           </button>
         }
       </div>
 
       <!-- Messages Thread Viewport -->
-      <div class="popup-messages-area" #messagesViewport>
+      <div class="popup-messages-area" #messagesViewport role="log" aria-live="polite" aria-relevant="additions text">
         @for (msg of messages(); track msg.id) {
           <div class="p-msg-row {{ msg.sender }}">
             <div class="p-bubble {{ msg.sender }}">
               <div class="p-bubble-header">
                 @if (msg.sender === 'ai') {
                   <span class="p-sender ai">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
                     </svg>
                     <span>Support</span>
                   </span>
                 } @else if (msg.sender === 'admin') {
                   <span class="p-sender admin">
-                    <span>Support Specialist</span>
+                    <span>Specialist</span>
                   </span>
                 } @else {
                   <span class="p-sender user">You</span>
                 }
-                <span class="p-time">{{ msg.timestamp | date:'shortTime' }}</span>
+                
+                <div class="p-meta-right">
+                  <span class="p-time">{{ msg.timestamp | date:'shortTime' }}</span>
+                </div>
               </div>
 
-              <!-- Message Text Body with Formatted Markdown Support -->
+              <!-- Message Text Body with Formatted Rich Text Support -->
               <div class="p-body" [innerHTML]="formatMessage(msg.text)"></div>
 
               <!-- ── OPERATION CARD 1: IN-CHAT INTERACTIVE SALON CHAIR BOOKING ── -->
@@ -86,10 +161,9 @@
                   <div class="chat-op-card booking-pass-ticket">
                     <div class="ticket-header">
                       <div class="ticket-brand">
-                        <span class="t-scissor">✂</span>
                         <div class="t-titles">
-                          <span class="t-kicker">OFFICIAL STUDIO BOARDING PASS</span>
-                          <span class="t-main">VIP Chair Confirmed</span>
+                          <span class="t-kicker">STUDIO PASS</span>
+                          <span class="t-main">Chair Confirmed</span>
                         </div>
                       </div>
                       <span class="ticket-ref">#UB-{{ ticket.bookingId.slice(0, 8) | uppercase }}</span>
@@ -98,36 +172,36 @@
                     <div class="ticket-body">
                       <div class="ticket-grid">
                         <div class="t-col">
-                          <span class="t-lbl">SERVICE & FEE</span>
+                          <span class="t-lbl">SERVICE</span>
                           <span class="t-val highlight">{{ ticket.serviceName }} (₹{{ ticket.price }})</span>
                         </div>
                         <div class="t-col">
-                          <span class="t-lbl">MASTER BARBER</span>
+                          <span class="t-lbl">SPECIALIST</span>
                           <span class="t-val">{{ ticket.stylistName }}</span>
                         </div>
                         <div class="t-col">
-                          <span class="t-lbl">DATE & TIME</span>
+                          <span class="t-lbl">SCHEDULE</span>
                           <span class="t-val time-val">{{ ticket.dateStr }} · {{ ticket.timeSlot }}</span>
                         </div>
                         <div class="t-col">
-                          <span class="t-lbl">CLIENT GUEST</span>
+                          <span class="t-lbl">CLIENT</span>
                           <span class="t-val">{{ ticket.customerName }}</span>
                         </div>
                       </div>
 
                       <div class="ticket-venue">
-                        <span class="t-venue-lbl">📍 Flagship Venue:</span>
+                        <span class="t-venue-lbl">Venue:</span>
                         <span class="t-venue-val">{{ ticket.venue }}</span>
-                        <span class="t-landmark">Near Noida Sector 62 Metro · Valet Parking Available</span>
+                        <span class="t-landmark">Valet Parking Available</span>
                       </div>
                     </div>
 
                     <div class="ticket-footer">
                       <button type="button" class="btn-ticket-act primary" (click)="navigateToBookings()">
-                        <span>📍 View in My Account Bookings ➔</span>
+                        <span>View in Account ➔</span>
                       </button>
                       <a [href]="'tel:' + ticket.hotline" class="btn-ticket-act outline">
-                        <span>📞 Studio Desk</span>
+                        <span>Call Desk</span>
                       </a>
                     </div>
                   </div>
@@ -136,19 +210,16 @@
                   <div class="chat-op-card booking-wizard-card">
                     <div class="wizard-header">
                       <div class="wz-title-wrap">
-                        <span class="wz-icon">💈</span>
-                        <div>
-                          <strong>Select Service & Reserve Chair</strong>
-                          <span>Direct in-chat booking · 100% Guaranteed Slot</span>
-                        </div>
+                        <strong>Reserve Chair</strong>
+                        <span>Live reservation</span>
                       </div>
-                      <span class="wz-venue-pill">Sector 63 Studio</span>
+                      <span class="wz-venue-pill">Sector 63</span>
                     </div>
 
                     <!-- Step 1: Select Service -->
                     @if (bk.services && bk.services.length > 0) {
                       <div class="wz-step">
-                        <label class="wz-step-title">1. Signature Salon Service:</label>
+                        <label class="wz-step-title">Select Service:</label>
                         <div class="wz-service-pills">
                           @for (svc of bk.services; track svc.id) {
                             <button 
@@ -168,7 +239,7 @@
                     <!-- Step 2: Select Master Barber -->
                     @if (bk.stylists && bk.stylists.length > 0) {
                       <div class="wz-step">
-                        <label class="wz-step-title">2. Select Master Barber / Specialist:</label>
+                        <label class="wz-step-title">Select Specialist:</label>
                         <div class="wz-stylist-grid">
                           @for (st of bk.stylists; track st.id) {
                             <button 
@@ -186,7 +257,6 @@
                               <div class="st-info">
                                 <span class="st-name">{{ st.name }}</span>
                                 <span class="st-role">{{ st.role }}</span>
-                                <span class="st-rating">★ {{ st.rating }}</span>
                               </div>
                             </button>
                           }
@@ -196,7 +266,7 @@
 
                     <!-- Step 3: Date & Slot Selection -->
                     <div class="wz-step">
-                      <label class="wz-step-title">3. Choose Appointment Date:</label>
+                      <label class="wz-step-title">Choose Date:</label>
                       <div class="wz-dates-row">
                         @for (d of dateOptions(); track d.dateStr) {
                           <button 
@@ -211,7 +281,7 @@
                         }
                       </div>
 
-                      <label class="wz-step-title slot-margin">4. Convenient Floor Time Slot:</label>
+                      <label class="wz-step-title slot-margin">Time Slot:</label>
                       <div class="wz-slots-grid">
                         @for (slot of slotOptions(); track slot) {
                           <button 
@@ -228,26 +298,26 @@
 
                     <!-- Step 4: Guest Contact Details -->
                     <div class="wz-step contact-step">
-                      <label class="wz-step-title">5. Client Contact Information:</label>
+                      <label class="wz-step-title">Contact:</label>
                       <div class="wz-contact-inputs">
                         <input 
                           type="text" 
                           [value]="form.customerName" 
                           (input)="updateBookingCustomer(msg.id, 'name', $any($event.target).value)" 
-                          placeholder="Your Full Name" 
+                          placeholder="Your Name" 
                         />
                         <input 
                           type="tel" 
                           [value]="form.customerPhone" 
                           (input)="updateBookingCustomer(msg.id, 'phone', $any($event.target).value)" 
-                          placeholder="Mobile Number (e.g. 98123 45678)" 
+                          placeholder="Phone Number" 
                         />
                       </div>
                     </div>
 
                     @if (bookingError()[msg.id]; as err) {
                       <div class="wz-error-alert">
-                        <span>⚠️ {{ err }}</span>
+                        <span>{{ err }}</span>
                       </div>
                     }
 
@@ -261,12 +331,11 @@
                       >
                         @if (isSubmittingBooking()[msg.id]) {
                           <span class="spinner-dot"></span>
-                          <span>Securing Barber Chair...</span>
+                          <span>Reserving...</span>
                         } @else {
-                          <span>✂️ Confirm Chair Reservation · ₹{{ form.price }}</span>
+                          <span>Confirm Chair · ₹{{ form.price }}</span>
                         }
                       </button>
-                      <span class="wz-guarantee-note">🔒 Instant Slot Lock · Zero Advance Cancellation Fee</span>
                     </div>
                   </div>
                 }
@@ -277,10 +346,9 @@
                 <div class="chat-op-card booking-pass-ticket">
                   <div class="ticket-header">
                     <div class="ticket-brand">
-                      <span class="t-scissor">✂</span>
                       <div class="t-titles">
-                        <span class="t-kicker">OFFICIAL STUDIO BOARDING PASS</span>
-                        <span class="t-main">VIP Chair Confirmed</span>
+                        <span class="t-kicker">STUDIO PASS</span>
+                        <span class="t-main">Chair Confirmed</span>
                       </div>
                     </div>
                     <span class="ticket-ref">#UB-{{ bc.id.slice(0, 8) | uppercase }}</span>
@@ -293,7 +361,7 @@
                         <span class="t-val highlight">{{ bc.serviceName }} (₹{{ bc.totalPrice }})</span>
                       </div>
                       <div class="t-col">
-                        <span class="t-lbl">MASTER BARBER</span>
+                        <span class="t-lbl">SPECIALIST</span>
                         <span class="t-val">{{ bc.stylistName }}</span>
                       </div>
                       <div class="t-col">
@@ -307,18 +375,18 @@
                     </div>
 
                     <div class="ticket-venue">
-                      <span class="t-venue-lbl">📍 Flagship Venue:</span>
+                      <span class="t-venue-lbl">Venue:</span>
                       <span class="t-venue-val">{{ bc.venue }}</span>
-                      <span class="t-landmark">Near Noida Sector 62 Metro · Valet Parking Available</span>
+                      <span class="t-landmark">Valet Parking Available</span>
                     </div>
                   </div>
 
                   <div class="ticket-footer">
                     <button type="button" class="btn-ticket-act primary" (click)="navigateToBookings()">
-                      <span>📍 View in My Account Bookings ➔</span>
+                      <span>View in Account ➔</span>
                     </button>
                     <a [href]="'tel:' + bc.hotline" class="btn-ticket-act outline">
-                      <span>📞 Call Desk</span>
+                      <span>Call Desk</span>
                     </a>
                   </div>
                 </div>
@@ -330,7 +398,7 @@
                   <div class="op-card-header">
                     <div class="carrier-badge">
                       <span class="carrier-dot"></span>
-                      <strong>{{ ord.carrier || 'Delhivery Air' }}</strong>
+                      <strong>{{ ord.carrier || 'Delhivery' }}</strong>
                     </div>
                     <span class="status-pill {{ ord.status }}">
                       {{ ord.raw_status || ord.status | uppercase }}
@@ -339,21 +407,37 @@
 
                   <div class="op-card-body">
                     <div class="op-metric-row">
-                      <span class="metric-lbl">Tracking AWB:</span>
-                      <span class="metric-val font-mono">{{ ord.tracking_number }}</span>
+                      <span class="metric-lbl">AWB:</span>
+                      <div class="awb-copy-wrap">
+                        <span class="metric-val font-mono">{{ ord.tracking_number }}</span>
+                        @if (ord.tracking_number) {
+                          <button 
+                            type="button" 
+                            class="btn-copy-awb" 
+                            (click)="copyTrackingNumber(ord.tracking_number)" 
+                            [title]="copiedTrackingId() === ord.tracking_number ? 'Copied' : 'Copy AWB'"
+                          >
+                            @if (copiedTrackingId() === ord.tracking_number) {
+                              <span class="awb-copied">Copied</span>
+                            } @else {
+                              <span>Copy</span>
+                            }
+                          </button>
+                        }
+                      </div>
                     </div>
                     <div class="op-metric-row">
-                      <span class="metric-lbl">Live Checkpoint:</span>
-                      <span class="metric-val">{{ ord.current_location || 'Regional Dispatch Hub, Delhi NCR' }}</span>
+                      <span class="metric-lbl">Location:</span>
+                      <span class="metric-val">{{ ord.current_location || 'Regional Dispatch Hub' }}</span>
                     </div>
                     <div class="op-metric-row">
-                      <span class="metric-lbl">Order Value:</span>
+                      <span class="metric-lbl">Total:</span>
                       <span class="metric-val price">₹{{ ord.total_amount | number:'1.0-0' }}</span>
                     </div>
 
                     @if (ord.items && ord.items.length > 0) {
                       <div class="op-items-summary">
-                        <span class="items-title">Package Contents:</span>
+                        <span class="items-title">Items:</span>
                         <div class="items-pills">
                           @for (item of ord.items; track item.product_name) {
                             <span class="item-pill">{{ item.quantity }}x {{ item.product_name }}</span>
@@ -366,12 +450,12 @@
                   <div class="op-card-footer">
                     @if (ord.portal_url) {
                       <button type="button" class="btn-op primary" (click)="openCarrierUrl(ord.portal_url)">
-                        <span>Live Scans on {{ ord.carrier }} Portal ↗</span>
+                        <span>Carrier Portal ↗</span>
                       </button>
                     }
                     @if (ord.can_cancel) {
                       <button type="button" class="btn-op danger" (click)="cancelOrder(ord.id)">
-                        <span>🚫 1-Click Cancel & Instant Refund</span>
+                        <span>Cancel Order</span>
                       </button>
                     }
                   </div>
@@ -384,17 +468,17 @@
                   <div class="cancelled-header">
                     <div class="cancel-icon">✓</div>
                     <div class="cancel-copy">
-                      <strong>Cancellation & Refund Processed</strong>
-                      <span>Order #{{ cord.id.slice(0, 8) | uppercase }} has been stopped.</span>
+                      <strong>Order Cancelled</strong>
+                      <span>Order #{{ cord.id.slice(0, 8) | uppercase }}</span>
                     </div>
                   </div>
                   <div class="cancelled-details">
-                    <span>Full reversal to original payment mode initiated. Items safely restocked to studio inventory.</span>
+                    <span>The order has been cancelled before dispatch.</span>
                   </div>
                 </div>
               }
 
-              <!-- ── OPERATION CARD 5: PRODUCT RECOMMENDATIONS WITH 1-CLICK ADD TO CART ── -->
+              <!-- ── OPERATION CARD 5: PRODUCT RECOMMENDATIONS (SUBTLE, MINIMALIST, MONOCHROMATIC) ── -->
               @if (msg.operation?.type === 'product_recommendations' && msg.operation?.products && msg.operation?.products!.length > 0) {
                 <div class="chat-op-card products-carousel">
                   <div class="products-grid">
@@ -402,25 +486,11 @@
                       <div class="op-product-card">
                         <div class="op-prod-img-wrap" (click)="viewProduct(prod.slug)">
                           <img [src]="prod.image_url" [alt]="prod.name" loading="lazy" />
-                          @if (prod.badge) {
-                            <span class="prod-badge {{ prod.badge }}">{{ prod.badge | uppercase }}</span>
-                          }
                         </div>
 
                         <div class="op-prod-details">
-                          <h5 class="op-prod-name" (click)="viewProduct(prod.slug)">{{ prod.name }}</h5>
-                          <div class="op-prod-rating">
-                            <span class="star">★</span>
-                            <span>{{ prod.rating | number:'1.1-1' }}</span>
-                            <span class="category-tag">{{ prod.category }}</span>
-                          </div>
-
-                          <div class="op-prod-price-row">
-                            <span class="curr-price">₹{{ prod.price | number:'1.0-0' }}</span>
-                            @if (prod.compare_at_price && prod.compare_at_price > prod.price) {
-                              <span class="comp-price">₹{{ prod.compare_at_price | number:'1.0-0' }}</span>
-                            }
-                          </div>
+                          <span class="op-prod-name" (click)="viewProduct(prod.slug)">{{ prod.name }}</span>
+                          <span class="curr-price">₹{{ prod.price | number:'1.0-0' }}</span>
 
                           <button 
                             type="button" 
@@ -429,9 +499,9 @@
                             (click)="addToCart(prod)"
                           >
                             @if (addedProductIds().has(prod.id)) {
-                              <span>✓ Added to Cart</span>
+                              <span>Added</span>
                             } @else {
-                              <span>🛒 Add to Cart</span>
+                              <span>+ Add</span>
                             }
                           </button>
                         </div>
@@ -445,18 +515,17 @@
               @if (msg.operation?.type === 'escalation' && msg.operation?.contact; as esc) {
                 <div class="chat-op-card escalation-card">
                   <div class="esc-header">
-                    <span class="esc-badge">HIGH PRIORITY QUEUE</span>
-                    <strong>Senior Operations Desk Assigned</strong>
+                    <span class="esc-badge">Support Desk</span>
+                    <strong>Specialist Assigned</strong>
                   </div>
                   <div class="esc-channels">
                     <a [href]="'tel:' + esc.phone" class="btn-channel phone">
-                      <span>📞 Call {{ esc.phone }}</span>
+                      <span>Call</span>
                     </a>
-                    <a [href]="'https://wa.me/' + esc.whatsapp" target="_blank" class="btn-channel whatsapp">
-                      <span>💬 WhatsApp Concierge</span>
+                    <a [href]="'https://wa.me/' + esc.whatsapp" target="_blank" rel="noopener noreferrer" class="btn-channel whatsapp">
+                      <span>WhatsApp</span>
                     </a>
                   </div>
-                  <span class="esc-note">Average connect response time: &lt; 2 minutes</span>
                 </div>
               }
 
@@ -477,10 +546,10 @@
 
         @if (isGenerating()) {
           <div class="p-msg-row ai">
-            <div class="p-bubble ai typing">
+            <div class="p-bubble ai typing" role="status" aria-label="Preparing response">
               <div class="ai-typing-glow">
-                <span class="typing-label">Urban AI is thinking...</span>
-                <div class="dots">
+                <span class="typing-label">Typing</span>
+                <div class="dots" aria-hidden="true">
                   <span></span><span></span><span></span>
                 </div>
               </div>
@@ -496,7 +565,8 @@
             type="text" 
             [(ngModel)]="inputValue"
             name="chatInput"
-            placeholder="Ask about orders, haircut prices, book barber chair, or hair fall..." 
+            aria-label="Ask a question"
+            placeholder="Ask about rates, styling, orders, or book..." 
             [disabled]="isGenerating()"
             autocomplete="off"
             (keydown.enter)="sendMessage()"
@@ -506,9 +576,10 @@
             class="btn-send-popup" 
             [disabled]="!inputValue.trim() || isGenerating()" 
             (click)="sendMessage()"
-            title="Send query"
+            title="Send"
+            aria-label="Send message"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="22" y1="2" x2="11" y2="13"></line>
               <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
             </svg>
@@ -516,37 +587,41 @@
         </div>
 
         <div class="p-footer-badge">
-          <span class="dot-secure"></span>
-          <span>Urban Blade Lakebase AI Concierge · Sector 63 Flagship Studio Synced</span>
+          <span>Private Session · Ask Urban Blade</span>
         </div>
       </footer>
-    </div>
+    </section>
   }
 
   <!-- ═══════════════════════════════════════════════════════════════════════════
-       UNIQUE SUBTLE FLOATING LAUNCHER: CLEAN SVG CHAT TRIGGER
+       SUBTLE MONOCHROMATIC FLOATING LAUNCHER TRIGGER
        ═══════════════════════════════════════════════════════════════════════════ -->
   <button 
     type="button" 
     class="floating-chat-trigger" 
     [class.is-open]="isOpen()"
     (click)="toggleOpen()" 
-    title="Support Chat"
+    title="Ask Urban Blade"
+    aria-controls="urban-ai-panel"
+    [attr.aria-expanded]="isOpen()"
+    [attr.aria-label]="isOpen() ? 'Close Ask Urban Blade' : 'Open Ask Urban Blade'"
   >
     @if (isOpen()) {
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="18" y1="6" x2="6" y2="18"></line>
-        <line x1="6" y1="6" x2="18" y2="18"></line>
-      </svg>
+      <div class="trigger-close-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </div>
     } @else {
       <div class="trigger-inner">
         <div class="trigger-icon-wrap">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg class="trigger-mono-svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
           </svg>
           <span class="online-indicator-dot"></span>
         </div>
-        <span class="trigger-label">Chat</span>
+        <span class="trigger-label">Ask</span>
         @if (unreadAdminCount() > 0) {
           <span class="trigger-unread-badge">{{ unreadAdminCount() }}</span>
         }

@@ -147,15 +147,15 @@
   }
 
   <!-- ═════════════════════════════════════════════════════════════════════════
-       3.5 DIRECT CARRIER WEBSITE LIVE FETCH BAR (NO API KEYS NEEDED)
+       3.5 VERIFIED CARRIER CHECK AND MANUAL PORTAL REVIEW
        ═════════════════════════════════════════════════════════════════════════ -->
   <div class="carrier-web-fetch-bar">
     <div class="cwf-header">
       <div class="cwf-title-group">
         <span class="cwf-tag">CARRIER STATUS</span>
-        <h3 class="cwf-title">Direct Public Portal Scraper &amp; Status Synchronizer</h3>
+        <h3 class="cwf-title">Carrier tracking &amp; status review</h3>
         <p class="cwf-sub">
-          Verifies shipment checkpoints through the configured carrier integration. Public carrier pages that require CAPTCHA or JavaScript are opened for manual verification.
+          Checks Delhivery through the configured API. Other carriers provide a portal link for manual review; opening a portal does not update your order.
         </p>
       </div>
       <div class="cwf-sources-badge">
@@ -168,7 +168,7 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
         <input
           type="text"
-          placeholder="Paste Order ID (#ORD-...) or Courier Tracking AWB (e.g. DLHV... / BD... / TRK-UB...)..."
+          aria-label="Full order ID or tracking AWB" maxlength="100" placeholder="Paste the full order ID or courier-issued AWB"
           [ngModel]="carrierSyncQuery()"
           (ngModelChange)="carrierSyncQuery.set($event)"
           (keydown.enter)="fetchFromWebsite()"
@@ -176,13 +176,13 @@
       </div>
 
       <div class="cwf-portal-select-wrap">
-        <select [ngModel]="selectedCarrierPortal()" (ngModelChange)="selectedCarrierPortal.set($event)" class="cwf-select">
-          <option value="auto">Auto-detect carrier</option>
+        <select aria-label="Carrier for tracking lookup" [disabled]="isFetchingWebsite()" [ngModel]="selectedCarrierPortal()" (ngModelChange)="selectedCarrierPortal.set($event)" class="cwf-select">
+          <option value="auto">Use saved carrier / detect prefix</option>
           <option value="Shiprocket">Shiprocket Portal</option>
-          <option value="Delhivery Express">Delhivery Web Portal</option>
+          <option value="Delhivery Express">Delhivery API</option>
           <option value="BlueDart Express">BlueDart Web Portal</option>
           <option value="DTDC Air">DTDC Web Portal</option>
-          <option value="Urban Express Logistics">Urban Express Gateway</option>
+          <option value="Urban Express Logistics">Urban Express (manual)</option>
         </select>
       </div>
 
@@ -194,13 +194,22 @@
       >
         @if (isFetchingWebsite()) {
           <span class="cwf-spinner"></span>
-          <span>Scraping Website...</span>
+          <span>Checking carrier…</span>
         } @else {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          <span>Fetch Website Status &amp; Auto-Update</span>
+          <span>Check tracking status</span>
         }
       </button>
     </div>
+    @if (carrierResult()) { <p class="cwf-sub" role="status">{{ carrierResult() }}</p> }
+    @if (carrierReview(); as review) {
+      <div class="cwf-sub" role="status">
+        <strong>{{ review.carrier }}</strong> · AWB: {{ review.awb }}.
+        @if (review.portalUrl) { <a [href]="review.portalUrl" target="_blank" rel="noopener noreferrer">Open official tracking portal ↗</a> }
+        @else { <span>Internal delivery: verify with your delivery team and record the fulfilment status manually.</span> }
+        <span> No automatic update was applied.</span>
+      </div>
+    }
   </div>
 
   <!-- ═════════════════════════════════════════════════════════════════════════
@@ -618,7 +627,7 @@
                     class="icon-btn web-fetch-btn"
                     [disabled]="isFetchingWebsite()"
                     (click)="fetchSingleOrderWebsite(order, $event)"
-                    title="Scrape and fetch live status directly from carrier public portal"
+                    title="Check carrier tracking or get a manual-review link"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
                   </button>
@@ -1270,7 +1279,7 @@
               </span>
             </div>
             <h2 class="modal-id">{{ tm.websiteData.carrier }} Tracking</h2>
-            <span class="modal-date">AWB / Consignment: <strong>{{ tm.websiteData.awb }}</strong> • Linked to Order <strong>#{{ tm.order.id.slice(0, 12) }}</strong></span>
+            <span class="modal-date">AWB / Consignment: <strong>{{ tm.websiteData.awb }}</strong> @if (tm.order; as linked) { · Linked to order <strong>#{{ linked.id.slice(0, 12) }}</strong> } @else { · External consignment — no store order updated }</span>
           </div>
           <button class="close-btn" (click)="closeWebsiteTelemetryModal()">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1341,7 +1350,7 @@
               </div>
               <div class="meta-item">
                 <span class="meta-label">Customer</span>
-                <span class="meta-val">{{ tm.order.shipping_address.fullName || 'Customer' }} ({{ tm.order.shipping_address.phone || 'N/A' }})</span>
+                <span class="meta-val">{{ tm.order?.shipping_address?.fullName || 'Not available' }} {{ tm.order?.shipping_address?.phone || '' }}</span>
               </div>
             </div>
           }

@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import crypto from 'crypto';
-import { requireAuth, requireAdmin } from '../../core/auth.middleware.js';
+import { requireAuth, optionalAuth } from '../../core/auth.middleware.js';
 import { cancelOrderAndReleaseStock } from '../orders/stock-reservation.service.js';
 import { query, withTransaction } from '../../db/pool.js';
 import { fetchCarrierWebsiteTracking, detectCarrier } from '../orders/carrier-portal.service.js';
@@ -61,6 +61,23 @@ export async function generateAiReply(
        AND ($2::text IS NULL OR o.id::text = $2 OR LOWER(o.tracking_number) = LOWER($2))
        ORDER BY o.created_at DESC LIMIT 1`, [opts.userId, targetOrderId?.trim() || null]);
     matchedOrder = result.rows[0] || null;
+  }
+
+  // Load prior conversation turns for this inquiry so follow-up questions
+  // ("and for my beard?") keep context. Only the last 6 turns are replayed.
+  let conversationHistory: Array<{ sender: 'user' | 'ai' | 'admin'; text: string }> = [];
+  if (opts.inquiryId) {
+    try {
+      const histRes = await query('SELECT messages FROM support_inquiries WHERE id = $1 LIMIT 1', [opts.inquiryId]);
+      const raw = histRes.rows[0]?.messages;
+      if (Array.isArray(raw)) {
+        conversationHistory = raw
+          .filter((m: any) => m && typeof m.text === 'string' && m.text.trim() &&
+            (m.sender === 'user' || m.sender === 'ai' || m.sender === 'admin'))
+          .map((m: any) => ({ sender: m.sender, text: m.text }))
+          .slice(-6);
+      }
+    } catch { /* history is best-effort; never block the reply */ }
   }
 
   // ─── OPERATION 1: ORDER CANCELLATION ─────────────────────────────────────────
@@ -190,7 +207,8 @@ export async function generateAiReply(
       customerEmail: opts.userEmail,
       orderSummary,
       inStockProducts,
-      stylists: [],
+      stylists,
+      history: conversationHistory,
     });
 
     if (aiText && aiText.length > 10) {
@@ -1551,31 +1569,48 @@ export async function generateAiReply(
 }
 
 export async function supportRoutes(app: FastifyInstance) {
+  // ─── SHARED PRE-HANDLER (optional auth) ─────────────────────────────────────
+  // The floating AI concierge is a PUBLIC guest widget, so authentication is
+  // OPTIONAL here: signed-in users get their identity injected + ownership
+  // checks, while guests (no token) can still chat. Routes that must stay
+  // private (inquiries list/detail, admin ai-chat) call requireAuth explicitly.
   app.addHook('preHandler', async (request, reply) => {
-    await requireAuth(request, reply);
+    await optionalAuth(request, reply);
     if (reply.sent) return;
-    if (request.method === 'DELETE') { await requireAdmin(request, reply); return; }
     const body = request.body as any;
+
+    // Validate message payload length regardless of auth state.
     if (body) {
-      body.userEmail = request.user.email;
-      body.customerEmail = request.user.email;
-      body.userName = request.user.name;
-      body.customerName = request.user.name;
-      body.priority = 'medium';
       for (const field of ['message', 'initialMessage', 'subject']) {
         if (body[field] !== undefined && (typeof body[field] !== 'string' || body[field].length > 4000)) {
           return reply.code(400).send({ error: 'INVALID_MESSAGE' });
         }
       }
-      if (body.orderId) {
-        const owned = await query('SELECT id FROM orders WHERE id::text = $1 AND user_id = $2', [body.orderId, request.user.id]);
-        if (!owned.rows.length) return reply.code(404).send({ error: 'ORDER_NOT_FOUND' });
-      }
     }
-    const inquiryId = (request.params as any)?.id || body?.inquiryId;
-    if (inquiryId && request.user.role !== 'admin') {
-      const owned = await query('SELECT id FROM support_inquiries WHERE id = $1 AND LOWER(user_email) = LOWER($2)', [inquiryId, request.user.email]);
-      if (!owned.rows.length) return reply.code(404).send({ error: 'INQUIRY_NOT_FOUND' });
+
+    // Only authenticated users get identity injection + ownership verification.
+    if (request.user) {
+      if (body) {
+        body.userEmail = request.user.email;
+        body.customerEmail = request.user.email;
+        body.userName = request.user.name;
+        body.customerName = request.user.name;
+        body.priority = 'medium';
+        if (body.orderId) {
+          const owned = await query('SELECT id FROM orders WHERE id::text = $1 AND user_id = $2', [body.orderId, request.user.id]);
+          if (!owned.rows.length) return reply.code(404).send({ error: 'ORDER_NOT_FOUND' });
+        }
+      }
+      const inquiryId = (request.params as any)?.id || body?.inquiryId;
+      if (inquiryId && request.user.role !== 'admin') {
+        const owned = await query('SELECT id FROM support_inquiries WHERE id = $1 AND LOWER(user_email) = LOWER($2)', [inquiryId, request.user.email]);
+        if (!owned.rows.length) {
+          // GET hides existence (404); DELETE is explicitly forbidden (403).
+          return request.method === 'DELETE'
+            ? reply.code(403).send({ error: 'FORBIDDEN', message: 'You can only delete your own inquiries' })
+            : reply.code(404).send({ error: 'INQUIRY_NOT_FOUND' });
+        }
+      }
     }
   });
 
@@ -1599,7 +1634,7 @@ export async function supportRoutes(app: FastifyInstance) {
 
       // Hard timeout safety net — route ALWAYS responds within 9s
       const aiResultPromise = generateAiReply({
-        userId: request.user.id,
+        userId: request.user?.id,
         message: safeMsg,
         orderId,
         userName,
@@ -1762,6 +1797,10 @@ export async function supportRoutes(app: FastifyInstance) {
   });
 
   // ─── 2. GET SPECIFIC INQUIRY (FOR REAL-TIME POLLING OF ADMIN REPLIES) ─────
+  // PUBLIC (capability model): the guest widget polls by inquiryId and its error
+  // handler wipes the chat on failure, so guests must reach GET/DELETE. Access
+  // relies on the unguessable inquiryId (timestamp + random hex) issued only to
+  // the creator; authenticated requests still get an ownership check in the hook.
   app.get<{ Params: { id: string } }>('/support/inquiries/:id', async (request, reply) => {
     const { id } = request.params;
     try {
@@ -1777,6 +1816,8 @@ export async function supportRoutes(app: FastifyInstance) {
   });
 
   // ─── 3. DELETE INQUIRY (PERMANENTLY FROM POSTGRESQL) ──────────────────────
+  // PUBLIC capability model (same reasoning as GET above): guests can reset
+  // their own chat via the unguessable inquiryId.
   app.delete<{ Params: { id: string } }>('/support/inquiries/:id', async (request, reply) => {
     const { id } = request.params;
     try {
@@ -1805,6 +1846,9 @@ export async function supportRoutes(app: FastifyInstance) {
       customerEmail?: string;
     };
   }>('/support/ai-chat', { config: { rateLimit: { max: 15, timeWindow: '1 minute' } } }, async (request, reply) => {
+    // Private endpoint: customers only (regression-tested — see database.test.mjs).
+    await requireAuth(request, reply);
+    if (reply.sent) return;
     try {
       const { message, orderId, customerName, customerEmail, vendorName } = request.body || {};
       const aiResult = await generateAiReply({
@@ -1920,6 +1964,9 @@ export async function supportRoutes(app: FastifyInstance) {
 
   // ─── 5. CLIENT INQUIRIES LIST (BY EMAIL) ──────────────────────────────────
   app.get<{ Querystring: { email?: string } }>('/support/inquiries', { config: { rateLimit: { max: 15, timeWindow: '1 minute' } } }, async (request, reply) => {
+    // Private: lists inquiries scoped to the signed-in user (admin may pass ?email=).
+    await requireAuth(request, reply);
+    if (reply.sent) return;
     const email = request.user.role === 'admin' ? request.query.email : request.user.email;
     try {
       let sql = 'SELECT * FROM support_inquiries ';

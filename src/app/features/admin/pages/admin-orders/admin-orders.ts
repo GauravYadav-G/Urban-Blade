@@ -48,12 +48,14 @@ export class AdminOrders implements OnInit, OnDestroy {
 
   // Real-Time Delivery Partner Website Web Fetching
   readonly carrierSyncQuery = signal<string>('');
+  readonly carrierReview = signal<{ carrier: string; awb: string; portalUrl: string } | null>(null);
+  readonly carrierResult = signal('');
   readonly selectedCarrierPortal = signal<string>('auto');
   readonly isFetchingWebsite = signal<boolean>(false);
   readonly isReconciling = signal<boolean>(false);
   readonly isRefunding = signal<boolean>(false);
   readonly isCancelling = signal<boolean>(false);
-  readonly websiteTelemetryModal = signal<{ order: AdminOrder; websiteData: any } | null>(null);
+  readonly websiteTelemetryModal = signal<{ order: AdminOrder | null; websiteData: any } | null>(null);
 
   // Inspector Edits
   readonly tempCarrier = signal<string>('Urban Express Logistics');
@@ -92,7 +94,7 @@ export class AdminOrders implements OnInit, OnDestroy {
         if (selected) this.selectedOrder.set(orders.find(order => order.id === selected.id) || null);
         const telemetry = this.websiteTelemetryModal();
         if (telemetry) {
-          const order = orders.find(order => order.id === telemetry.order.id);
+          const order = orders.find(order => order.id === telemetry.order?.id);
           if (order?.tracking_data) this.websiteTelemetryModal.set({ order, websiteData: order.tracking_data });
         }
       });
@@ -319,7 +321,8 @@ export class AdminOrders implements OnInit, OnDestroy {
   // ─── BATCH OPERATIONS ─────────────────────────────────────────────────────
   bulkAdvanceSelected(): void {
     const ids = this.selectedOrderIds();
-    if (ids.length === 0) return;
+    if (ids.length === 0 || this.isFetchingWebsite()) return;
+    if (ids.length > 25) { this.toast.error('Select up to 25 orders per carrier check.'); return; }
 
     let advancedCount = 0;
     const orders = this.admin.orders().filter((o) => ids.includes(o.id));
@@ -341,7 +344,8 @@ export class AdminOrders implements OnInit, OnDestroy {
 
   bulkMarkDelivered(): void {
     const ids = this.selectedOrderIds();
-    if (ids.length === 0) return;
+    if (ids.length === 0 || this.isFetchingWebsite()) return;
+    if (ids.length > 25) { this.toast.error('Select up to 25 orders per carrier check.'); return; }
 
     let marked = 0;
     const orders = this.admin.orders().filter((o) => ids.includes(o.id));
@@ -358,7 +362,8 @@ export class AdminOrders implements OnInit, OnDestroy {
 
   bulkAssignTracking(): void {
     const ids = this.selectedOrderIds();
-    if (ids.length === 0) return;
+    if (ids.length === 0 || this.isFetchingWebsite()) return;
+    if (ids.length > 25) { this.toast.error('Select up to 25 orders per carrier check.'); return; }
 
     let assigned = 0;
     const orders = this.admin.orders().filter((o) => ids.includes(o.id));
@@ -385,13 +390,16 @@ export class AdminOrders implements OnInit, OnDestroy {
 
   bulkPrintShippingLabels(): void {
     const ids = this.selectedOrderIds();
-    if (ids.length === 0) return;
+    if (ids.length === 0 || this.isFetchingWebsite()) return;
+    if (ids.length > 25) { this.toast.error('Select up to 25 orders per carrier check.'); return; }
     const orders = this.admin.orders().filter((o) => ids.includes(o.id));
     this.shippingLabelModalOrders.set(orders);
   }
 
   // ─── REAL-TIME DELIVERY PARTNER WEBSITE WEB-FETCHING ──────────────────────
   fetchFromWebsite(explicitQuery?: string): void {
+    if (this.isFetchingWebsite()) return;
+    this.carrierReview.set(null); this.carrierResult.set('');
     const q = (explicitQuery || this.carrierSyncQuery()).trim();
     if (!q) {
       this.toast.error('Please enter an Order Number or Tracking AWB to fetch from carrier website.');
@@ -406,6 +414,7 @@ export class AdminOrders implements OnInit, OnDestroy {
         this.isFetchingWebsite.set(false);
         if (res.ok && res.websiteData) {
           const wd = res.websiteData;
+          this.carrierResult.set(res.reason || (res.applied ? 'Verified status applied.' : 'Tracking checked; order status unchanged.'));
           this.toast.success(
             `${wd.source === 'live_web_fetch' ? '🌐 Portal' : '🔗 Carrier API'} verification from ${wd.carrier}: ${wd.rawPortalStatus} (${wd.currentLocation || 'location unavailable'}). ${res.applied ? `Order status updated to ${wd.status?.toUpperCase()}.` : 'No automatic status transition was applied.'}`
           );
@@ -415,26 +424,7 @@ export class AdminOrders implements OnInit, OnDestroy {
               websiteData: wd,
             });
           } else {
-            const virtualOrder: AdminOrder = {
-              id: wd.awb,
-              tracking_number: wd.awb,
-              carrier: wd.carrier,
-              status: wd.status || 'processing',
-              subtotal: 0,
-              total_amount: 0,
-              discount_amount: 0,
-              currency: 'INR',
-              payment_method: 'Prepaid',
-              payment_status: 'captured',
-              shipping_address: { fullName: 'Consignment Recipient', city: wd.currentLocation || 'In Transit' } as any,
-              items: [],
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            } as any;
-            this.websiteTelemetryModal.set({
-              order: virtualOrder,
-              websiteData: wd,
-            });
+            this.websiteTelemetryModal.set({ order: null, websiteData: wd });
           }
           this.carrierSyncQuery.set('');
         } else {
@@ -444,6 +434,8 @@ export class AdminOrders implements OnInit, OnDestroy {
       error: (err) => {
         this.isFetchingWebsite.set(false);
         const message = err.error?.message || err.error?.error || 'Unable to connect to the carrier portal.';
+        this.carrierReview.set(err.error?.manualReview || null);
+        this.carrierResult.set(message);
         this.toast.error(message);
       },
     });
@@ -451,7 +443,9 @@ export class AdminOrders implements OnInit, OnDestroy {
 
   fetchSingleOrderWebsite(order: AdminOrder, event?: Event): void {
     event?.stopPropagation();
-    const queryKey = order.tracking_number || order.id;
+    if (this.isFetchingWebsite()) return;
+    this.carrierReview.set(null); this.carrierResult.set('');
+    const queryKey = order.id;
     this.isFetchingWebsite.set(true);
     this.admin.fetchCarrierWebsiteStatus(queryKey, order.carrier || 'auto').subscribe({
       next: (res) => {
@@ -469,7 +463,9 @@ export class AdminOrders implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.isFetchingWebsite.set(false);
+        this.carrierReview.set(err.error?.manualReview || null);
         const message = err.error?.message || err.error?.error || 'Carrier status could not be verified. Check the tracking number, carrier, and connection settings.';
+        this.carrierResult.set(message);
         this.toast.error(message);
       },
     });
@@ -477,13 +473,16 @@ export class AdminOrders implements OnInit, OnDestroy {
 
   bulkFetchWebsites(): void {
     const ids = this.selectedOrderIds();
-    if (ids.length === 0) return;
+    if (ids.length === 0 || this.isFetchingWebsite()) return;
+    if (ids.length > 25) { this.toast.error('Select up to 25 orders per carrier check.'); return; }
 
     this.isFetchingWebsite.set(true);
     this.admin.bulkFetchCarrierWebsites(ids).subscribe({
       next: (res) => {
         this.isFetchingWebsite.set(false);
-        this.toast.success(`🌐 Successfully fetched live website statuses for ${res.updatedCount} orders!`);
+        const failures = res.results.filter(result => !result.ok).map(result => `${result.id}: ${result.message || 'Tracking unavailable'}`).join(' ');
+        this.carrierResult.set(`${res.checkedCount} checked · ${res.updatedCount} updated · ${res.failedCount} require review. ${failures}`);
+        this.toast.info(this.carrierResult());
         this.clearSelection();
       },
       error: () => {
@@ -501,12 +500,16 @@ export class AdminOrders implements OnInit, OnDestroy {
     event?.stopPropagation();
     const awb = order.tracking_number || order.id;
     const carrier = (order.carrier || '').toLowerCase();
-    let url = `https://www.delhivery.com/track/package/${encodeURIComponent(awb)}`;
+    if (!order.tracking_number) { this.toast.error('Save the courier-issued AWB first.'); return; }
+    let url = '';
+    if (carrier.includes('shiprocket')) url = `https://shiprocket.co/tracking/${encodeURIComponent(awb)}`;
+    else if (carrier.includes('delhivery')) url = `https://www.delhivery.com/track/package/${encodeURIComponent(awb)}`;
     if (carrier.includes('bluedart')) {
       url = `https://www.bluedart.com/tracking`;
     } else if (carrier.includes('dtdc')) {
       url = `https://www.dtdc.com/track-your-shipment/`;
     }
+    if (!url) { this.toast.info('No official portal is configured for this carrier. Review the shipment manually.'); return; }
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
@@ -628,6 +631,7 @@ export class AdminOrders implements OnInit, OnDestroy {
   openWhatsApp(order: AdminOrder, event?: Event): void {
     event?.stopPropagation();
     const url = this.getWhatsAppUrl(order);
+    if (!url) { this.toast.info('No official portal is configured for this carrier. Review the shipment manually.'); return; }
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 

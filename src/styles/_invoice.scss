@@ -442,8 +442,8 @@
     color: #0f172a !important;
     border: none !important;
     box-shadow: none !important;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    break-inside: auto;
+    page-break-inside: auto;
   }
 
   #printable-area * {
@@ -452,7 +452,7 @@
 
   .inv-header,
   .inv-buyer,
-  .inv-table,
+  .inv-table tr,
   .inv-footer,
   .inv-audit-details {
     break-inside: avoid;

@@ -6,7 +6,7 @@ import { AccountService } from './account.service';
 import { CatalogService } from './catalog.service';
 import { ToastService } from './toast.service';
 import type { Product } from '@core/models/product.model';
-import type { VendorAccount } from '@core/models/vendor.model';
+import type { VendorAccount, RazorpayUpiValidationResult } from '@core/models/vendor.model';
 import type { SupportInquiry, AdminTask, AiChatResponse } from '@core/models/support.model';
 
 export interface AdminMetrics {
@@ -462,9 +462,9 @@ export class AdminService {
       );
   }
 
-  bulkFetchCarrierWebsites(orderIds: string[], carrier?: string): Observable<{ ok: boolean; updatedCount: number; results: any[] }> {
+  bulkFetchCarrierWebsites(orderIds: string[], carrier?: string): Observable<{ ok: boolean; updatedCount: number; checkedCount: number; failedCount: number; results: any[] }> {
     return this.http
-      .post<{ ok: boolean; updatedCount: number; results: any[] }>(
+      .post<{ ok: boolean; updatedCount: number; checkedCount: number; failedCount: number; results: any[] }>(
         `${API_BASE}/orders/bulk-fetch-carrier-websites`,
         { orderIds, carrier }
       )
@@ -1091,6 +1091,23 @@ export class AdminService {
   }
 
   // ─── MULTI-VENDOR METHODS ─────────────────────────────────────────────────
+  loadVendorDirectory(): Observable<{ data: VendorAccount[] }> {
+    return this.http.get<{ data: VendorAccount[] }>(`${API_BASE}/vendors`).pipe(
+      tap(result => this.vendors.set(result.data || []))
+    );
+  }
+
+  saveVendorProfile(id: string | null, payload: Partial<VendorAccount>): Observable<{ vendor: VendorAccount }> {
+    const request = id
+      ? this.http.put<{ vendor: VendorAccount }>(`${API_BASE}/vendors/${encodeURIComponent(id)}`, payload)
+      : this.http.post<{ vendor: VendorAccount }>(`${API_BASE}/vendors`, payload);
+    return request.pipe(tap(({ vendor }) => {
+      this.vendors.update(list => id
+        ? list.map(item => item.id === id ? { ...item, ...vendor } : item)
+        : [vendor, ...list]);
+    }));
+  }
+
   refreshVendors(notify = false): void {
     this.http.get<{ data: VendorAccount[] }>(`${API_BASE}/vendors`).pipe(takeUntil(this.sessionEnded)).subscribe({
       next: (res) => {
@@ -1507,6 +1524,39 @@ export class AdminService {
     return this.http.post(`${API_BASE}/finance/process-payout`, { vendorId, amount, reference, notes }).pipe(
       tap(() => {
         this.toast.success(`External payment of ₹${amount.toLocaleString()} recorded.`);
+      })
+    );
+  }
+
+  validateVendorUpi(id: string, upi?: string): Observable<{ ok: boolean; validation: RazorpayUpiValidationResult; message: string }> {
+    return this.http.post<{ ok: boolean; validation: RazorpayUpiValidationResult; message: string }>(
+      `${API_BASE}/vendors/${id}/validate-upi`,
+      { upi }
+    );
+  }
+
+  verifyVendorPayout(
+    id: string,
+    verified: boolean,
+    reference?: string,
+    details?: { verifiedBeneficiaryName?: string; upi?: string; method?: string }
+  ): Observable<{ ok: boolean; vendor?: VendorAccount; message?: string }> {
+    return this.http.post<{ ok: boolean; vendor?: VendorAccount; message?: string }>(
+      `${API_BASE}/vendors/${id}/verify-payout`,
+      {
+        verified,
+        reference,
+        verifiedBeneficiaryName: details?.verifiedBeneficiaryName,
+        upi: details?.upi,
+        method: details?.method,
+      }
+    ).pipe(
+      tap((res) => {
+        if (res.vendor) {
+          this.vendors.update((list) => list.map((v) => (v.id === id ? res.vendor! : v)));
+          this.saveVendors(this.vendors());
+        }
+        this.toast.success(res.message || (verified ? 'Vendor payout credentials verified.' : 'Verification status revoked.'));
       })
     );
   }

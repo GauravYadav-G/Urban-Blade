@@ -1,446 +1,80 @@
-<div class="vendors-page">
-  <!-- Header Bar -->
-  <header class="vendors-header">
-    <div class="header-titles">
-      <div class="badge-tag">
-        <span class="pulse-dot"></span> MULTI-VENDOR COMMERCE HUB
-      </div>
-      <h2>Vendor Business Management & RBAC Portal</h2>
-      <p class="subtitle">
-        Onboard independent vendors, monitor brand sales and commission revenues, manage payout accounts, and review vendor portal views.
-      </p>
-    </div>
-    <div class="header-actions">
-      <button type="button" class="btn-primary-onboard" (click)="openCreateModal()">
-        <span class="btn-icon">+</span>
-        <span>Onboard New Vendor</span>
-      </button>
-    </div>
+<div class="vendor-hub">
+  <header class="page-heading">
+    <div><span class="eyebrow">URBAN BLADE / PARTNERS</span><h1>Vendor hub<span class="title-dot">.</span></h1><p>Your partners, their accounts, and the next step for every payout.</p></div>
+    <div class="header-actions"><a routerLink="/admin/finance" class="button secondary">View settlements <span aria-hidden="true">↗</span></a><button class="button primary" (click)="openEditor()" [disabled]="loading() || !!loadError()"><span aria-hidden="true">+</span> Add vendor</button></div>
   </header>
 
-  <!-- High-Level Multi-Vendor KPI Cards -->
-  <section class="kpi-grid">
-    <div class="kpi-card">
-      <div class="kpi-icon vendors-icon">🏢</div>
-      <div class="kpi-info">
-        <span class="kpi-label">Active Vendors</span>
-        <span class="kpi-val">{{ activeVendorCount() }} / {{ admin.vendors().length }}</span>
-        <span class="kpi-meta text-emerald">● All brand partners registered</span>
-      </div>
-    </div>
-
-    <div class="kpi-card">
-      <div class="kpi-icon sales-icon">💰</div>
-      <div class="kpi-info">
-        <span class="kpi-label">Gross Vendor GMV</span>
-        <span class="kpi-val">₹{{ totalSales() | number:'1.0-0' }}</span>
-        <span class="kpi-meta text-cyan">From marketplace fulfillment</span>
-      </div>
-    </div>
-
-    <div class="kpi-card">
-      <div class="kpi-icon commission-icon">⚡</div>
-      <div class="kpi-info">
-        <span class="kpi-label">Commission estimate</span>
-        <span class="kpi-val">₹{{ totalCommission() | number:'1.0-0' }}</span>
-        <span class="kpi-meta text-amber">Current rates, before discounts; see Finance for payable balances</span>
-      </div>
-    </div>
-
-    <div class="kpi-card">
-      <div class="kpi-icon products-icon">📦</div>
-      <div class="kpi-info">
-        <span class="kpi-label">Catalog Products</span>
-        <span class="kpi-val">{{ totalVendorProducts() }} SKU Units</span>
-        <span class="kpi-meta text-blue">Managed across vendors</span>
-      </div>
-    </div>
+  <section class="overview" aria-label="Vendor overview">
+    <div class="overview-intro"><span class="eyebrow">PARTNER NETWORK</span><strong>{{ loading() ? '—' : vendors().length }}</strong><span>registered vendors</span></div>
+    <div class="overview-stat"><span>Active accounts</span><strong>{{ loading() ? '—' : activeCount() }}</strong><small>Enabled for vendor access</small></div>
+    <div class="overview-stat"><span>Payout accounts verified</span><strong>{{ loading() ? '—' : verifiedCount() }}</strong><small>Saved verification on record</small></div>
+    <button class="overview-stat attention" (click)="search.set(''); status.set('all'); readinessFilter.set('attention')"><span>Setup needs attention <span aria-hidden="true">↗</span></span><strong>{{ loading() ? '—' : attentionCount() }}</strong><small>Missing details or verification</small></button>
   </section>
 
-  <!-- Filter & Search Controls -->
-  <section class="controls-card">
-    <div class="search-input-wrap">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="8"></circle>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-      </svg>
-      <input
-        type="text"
-        placeholder="Search vendors by business name, email, representative, or mobile..."
-        [value]="searchQuery()"
-        (input)="searchQuery.set($any($event.target).value)"
-      />
-      @if (searchQuery()) {
-        <button type="button" class="btn-clear" (click)="searchQuery.set('')">✕</button>
-      }
+  @if (loadError()) { <div class="notice error" role="alert">{{ loadError() }} <button (click)="refresh()">Retry</button></div> }
+  <section class="directory" aria-labelledby="directory-title">
+    <div class="directory-heading"><div><h2 id="directory-title">Partner directory</h2><p>Manage access and verify where your vendors receive funds.</p></div><button class="button secondary" (click)="refresh()" [disabled]="loading()">{{ loading() ? 'Refreshing…' : 'Refresh' }}</button></div>
+    <div class="toolbar">
+      <div class="tabs" aria-label="Verification filter">
+        @for (option of filterOptions; track option.value) { <button [class.selected]="readinessFilter()===option.value" [attr.aria-pressed]="readinessFilter()===option.value" (click)="readinessFilter.set(option.value)">{{ option.label }}</button> }
+      </div>
+      <div class="search-row"><label class="search"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input aria-label="Search vendors" placeholder="Search name, email or contact" [ngModel]="search()" (ngModelChange)="search.set($event)" /></label><select aria-label="Account status" [ngModel]="status()" (ngModelChange)="status.set($event)"><option value="all">All account statuses</option><option value="active">Active</option><option value="suspended">Suspended</option><option value="pending">Pending</option></select></div>
     </div>
-
-    <div class="status-filter-pills">
-      <button 
-        type="button" 
-        class="filter-pill" 
-        [class.active]="selectedStatusFilter() === 'all'"
-        (click)="selectedStatusFilter.set('all')"
-      >
-        All Vendors ({{ admin.vendors().length }})
-      </button>
-      <button 
-        type="button" 
-        class="filter-pill" 
-        [class.active]="selectedStatusFilter() === 'active'"
-        (click)="selectedStatusFilter.set('active')"
-      >
-        <span class="dot active"></span> Active ({{ activeVendorCount() }})
-      </button>
-      <button 
-        type="button" 
-        class="filter-pill" 
-        [class.active]="selectedStatusFilter() === 'suspended'"
-        (click)="selectedStatusFilter.set('suspended')"
-      >
-        <span class="dot suspended"></span> Suspended ({{ admin.vendors().length - activeVendorCount() }})
-      </button>
-    </div>
+    @if (loading()) { <div class="empty" role="status"><span class="loader"></span><h3>Loading your partners</h3><p>Checking the latest account records.</p></div> }
+    @else {
+      <div class="table-scroll"><table><thead><tr><th>Vendor / contact</th><th>Account</th><th>Catalog / commission</th><th>Payout destination</th><th>Verification</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>
+        @for (vendor of filtered(); track vendor.id) {
+          <tr><td><div class="identity"><span class="avatar" aria-hidden="true">{{ vendor.name.slice(0,2).toUpperCase() }}</span><div><strong>{{ vendor.name }}</strong><small>{{ vendor.email }}</small><small>{{ vendor.contact_person || 'No contact' }}{{ vendor.phone ? ' · '+vendor.phone : '' }}</small></div></div></td>
+          <td><span class="status" [class.active]="vendor.status==='active'">{{ vendor.status | titlecase }}</span></td>
+          <td><strong>{{ vendor.product_count || 0 }} products</strong><small>{{ vendor.commission_rate }}% commission</small></td>
+          <td><span class="destination">{{ destination(vendor) }}</span><small>{{ vendor.payout_account?.upi ? 'UPI' : vendor.payout_account?.bank || 'Add a payout account' }}</small></td>
+          <td><span class="status" [class.verified]="readiness(vendor)==='verified'" [class.review]="readiness(vendor)==='review'">{{ readinessLabel(vendor) }}</span>@if (readiness(vendor)==='verified') { <small>{{ vendor.payout_account?.verifiedAt | date:'dd MMM yyyy' }}</small> }</td>
+          <td><div class="row-actions"><button class="button secondary compact" (click)="openVerification(vendor)" [disabled]="!!loadError()" [attr.aria-label]="'Review verification for '+vendor.name">Review</button><button class="text-button" (click)="openEditor(vendor)" [disabled]="!!loadError()" [attr.aria-label]="'Edit '+vendor.name">Edit</button></div></td></tr>
+        } @empty { <tr><td colspan="6"><div class="empty"><span class="empty-symbol" aria-hidden="true">◇</span><h3>{{ vendors().length ? 'No matching vendors' : 'Your partner network starts here' }}</h3><p>{{ vendors().length ? 'Try a different search or reset your filters.' : 'Add your first vendor, then review their payout details.' }}</p>@if (vendors().length) { <button class="button secondary" (click)="clearFilters()">Clear filters</button> } @else { <button class="button primary" (click)="openEditor()" [disabled]="!!loadError()">Add first vendor</button> }</div></td></tr> }
+      </tbody></table></div>
+      <footer class="directory-footer"><span>{{ filtered().length }} of {{ vendors().length }} vendors</span><span>Verification confirms the payout account. Balances are available in Finance.</span></footer>
+    }
   </section>
-
-  <!-- Vendor Accounts Table & Registry -->
-  <div class="vendor-table-card">
-    <div class="table-responsive">
-      <table class="vendor-table">
-        <thead>
-          <tr>
-            <th>Vendor Business & ID</th>
-            <th>Representative & Contact</th>
-            <th>Login Email</th>
-            <th>Commission Rate</th>
-            <th>Fulfillment & GMV</th>
-            <th>Payout Details</th>
-            <th>Status</th>
-            <th class="text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (vendor of filteredVendors(); track vendor.id) {
-            <tr class="vendor-row">
-              <td>
-                <div class="vendor-identity">
-                  <div class="vendor-avatar">
-                    {{ vendor.name.slice(0, 2).toUpperCase() }}
-                  </div>
-                  <div class="vendor-meta">
-                    <span class="vendor-name">{{ vendor.name }}</span>
-                    <span class="vendor-id-badge">{{ vendor.id }}</span>
-                  </div>
-                </div>
-              </td>
-              <td>
-                <div class="contact-meta">
-                  <span class="contact-name">{{ vendor.contact_person }}</span>
-                  <span class="contact-phone">📞 {{ vendor.phone }}</span>
-                </div>
-              </td>
-              <td>
-                <span class="email-code">{{ vendor.email }}</span>
-              </td>
-              <td>
-                <span class="commission-badge">{{ vendor.commission_rate }}% fee</span>
-              </td>
-              <td>
-                <div class="sales-meta">
-                  <span class="sales-val">₹{{ (vendor.total_sales || 0) | number:'1.0-0' }}</span>
-                  <span class="sub-meta">{{ vendor.product_count || 0 }} products · {{ vendor.order_count || 0 }} orders</span>
-                </div>
-              </td>
-              <td>
-                <div class="payout-meta">
-                  @if (vendor.payout_account; as pa) {
-                    <span class="bank-line">{{ pa.bank }} · {{ pa.accountNo }}</span>
-                    <span class="upi-line">{{ pa.upi || pa.ifsc }}</span>
-                  } @else {
-                    <span class="bank-line text-muted">Direct RTGS</span>
-                  }
-                </div>
-              </td>
-              <td>
-                <span class="status-pill {{ vendor.status }}">
-                  <span class="status-dot"></span>
-                  {{ vendor.status | titlecase }}
-                </span>
-              </td>
-              <td class="text-right">
-                <div class="row-actions">
-                  <button 
-                    type="button" 
-                    class="btn-impersonate" 
-                    (click)="impersonateVendor(vendor)"
-                    title="1-Click Login / Preview Portal as {{ vendor.name }}"
-                  >
-                    <span>Login as Vendor</span>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                      <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                  </button>
-
-                  <button 
-                    type="button" 
-                    class="btn-icon-action" 
-                    (click)="openEditModal(vendor)"
-                    title="Edit Vendor Details & Commission"
-                  >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M12 20h9"></path>
-                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-                    </svg>
-                  </button>
-
-                  <button 
-                    type="button" 
-                    class="btn-icon-action toggle" 
-                    (click)="toggleStatus(vendor)"
-                    [title]="vendor.status === 'active' ? 'Suspend vendor account' : 'Reactivate vendor account'"
-                  >
-                    @if (vendor.status === 'active') {
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
-                      </svg>
-                    } @else {
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                      </svg>
-                    }
-                  </button>
-                </div>
-              </td>
-            </tr>
-          } @empty {
-            <tr>
-              <td colspan="8" class="empty-state">
-                <div class="empty-box">
-                  <span class="empty-icon">🏢</span>
-                  <h4>No vendors match criteria</h4>
-                  <p>Try clearing your search query or onboard a new partner vendor.</p>
-                </div>
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Onboard New Vendor Modal -->
-  @if (isCreateModalOpen()) {
-    <div class="modal-backdrop" (click)="closeCreateModal()">
-      <div class="modal-card" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <div>
-            <h3>Onboard New Vendor Account</h3>
-            <p class="modal-subtitle">Register a brand partner to allow them to manage catalog products and line-item dispatches.</p>
-          </div>
-          <button type="button" class="close-btn" (click)="closeCreateModal()">✕</button>
-        </div>
-
-        <form [formGroup]="createForm" (ngSubmit)="submitCreateVendor()" class="modal-form">
-          <div class="form-grid">
-            <div class="form-group full">
-              <label>Business / Brand Name *</label>
-              <input 
-                type="text" 
-                formControlName="name" 
-                placeholder="e.g. Apex Razor Co."
-                [class.is-invalid]="createForm.controls.name.invalid && createForm.controls.name.touched"
-              />
-              @if (createForm.controls.name.invalid && createForm.controls.name.touched) {
-                <span class="field-error-text">Business name is required (min 2 characters).</span>
-              }
-            </div>
-
-            <div class="form-group">
-              <label>Vendor Login Email *</label>
-              <input 
-                type="email" 
-                formControlName="email" 
-                placeholder="e.g. sales@apexrazors.in"
-                [class.is-invalid]="createForm.controls.email.invalid && createForm.controls.email.touched"
-              />
-              @if (createForm.controls.email.invalid && createForm.controls.email.touched) {
-                <span class="field-error-text">Enter a valid email address.</span>
-              }
-            </div>
-
-            <div class="form-group">
-              <label>Initial Login Password * <span class="field-hint">(min. 10 characters)</span></label>
-              <input 
-                type="text" 
-                formControlName="password" 
-                placeholder="Min. 10 characters"
-                [class.is-invalid]="createForm.controls.password.invalid && createForm.controls.password.touched"
-              />
-              @if (createForm.controls.password.invalid && createForm.controls.password.touched) {
-                <span class="field-error-text">Password must be at least 10 characters long.</span>
-              }
-            </div>
-
-            <div class="form-group">
-              <label>Representative / Contact Person *</label>
-              <input 
-                type="text" 
-                formControlName="contact_person" 
-                placeholder="Full Name"
-                [class.is-invalid]="createForm.controls.contact_person.invalid && createForm.controls.contact_person.touched"
-              />
-              @if (createForm.controls.contact_person.invalid && createForm.controls.contact_person.touched) {
-                <span class="field-error-text">Contact representative name is required.</span>
-              }
-            </div>
-
-            <div class="form-group">
-              <label>Phone Number * <span class="field-hint">(10 digits)</span></label>
-              <input 
-                type="text" 
-                formControlName="phone" 
-                placeholder="e.g. 9876543210"
-                [class.is-invalid]="createForm.controls.phone.invalid && createForm.controls.phone.touched"
-              />
-              @if (createForm.controls.phone.invalid && createForm.controls.phone.touched) {
-                <span class="field-error-text">Enter a valid 10-digit mobile number.</span>
-              }
-            </div>
-
-            <div class="form-group">
-              <label>Commission estimate (%) *</label>
-              <input 
-                type="number" 
-                formControlName="commission_rate" 
-                min="0" 
-                max="50"
-                [class.is-invalid]="createForm.controls.commission_rate.invalid && createForm.controls.commission_rate.touched"
-              />
-              @if (createForm.controls.commission_rate.invalid && createForm.controls.commission_rate.touched) {
-                <span class="field-error-text">Commission must be between 0% and 50%.</span>
-              }
-            </div>
-
-            <div class="form-group">
-              <label>Settlement Bank <span class="field-hint">(Optional)</span></label>
-              <input type="text" formControlName="bank_name" placeholder="HDFC, ICICI, etc." />
-            </div>
-
-            <div class="form-group">
-              <label>Bank Account Number <span class="field-hint">(Optional)</span></label>
-              <input type="text" formControlName="account_no" placeholder="Account No" />
-            </div>
-
-            <div class="form-group">
-              <label>IFSC Code <span class="field-hint">(Optional)</span></label>
-              <input type="text" formControlName="ifsc" placeholder="HDFC0001234" />
-            </div>
-
-            <div class="form-group full">
-              <label>UPI ID <span class="field-hint">(Optional)</span></label>
-              <input type="text" formControlName="upi" placeholder="vendor@upi" />
-            </div>
-          </div>
-
-          <div class="modal-footer">
-            <button type="button" class="btn-secondary" (click)="closeCreateModal()">Cancel</button>
-            <button type="submit" class="btn-primary">Register Vendor Account</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  }
-
-  <!-- Edit Vendor Modal -->
-  @if (isEditModalOpen() && editingVendor(); as ev) {
-    <div class="modal-backdrop" (click)="closeEditModal()">
-      <div class="modal-card" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <div>
-            <h3>Edit {{ ev.name }}</h3>
-            <p class="modal-subtitle">Update commission terms, representative contacts, and payout account details.</p>
-          </div>
-          <button type="button" class="close-btn" (click)="closeEditModal()">✕</button>
-        </div>
-
-        <form [formGroup]="editForm" (ngSubmit)="submitEditVendor()" class="modal-form">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Representative Contact *</label>
-              <input 
-                type="text" 
-                formControlName="contact_person"
-                [class.is-invalid]="editForm.controls.contact_person.invalid && editForm.controls.contact_person.touched"
-              />
-              @if (editForm.controls.contact_person.invalid && editForm.controls.contact_person.touched) {
-                <span class="field-error-text">Contact representative name is required.</span>
-              }
-            </div>
-
-            <div class="form-group">
-              <label>Phone Number * <span class="field-hint">(10 digits)</span></label>
-              <input 
-                type="text" 
-                formControlName="phone"
-                [class.is-invalid]="editForm.controls.phone.invalid && editForm.controls.phone.touched"
-              />
-              @if (editForm.controls.phone.invalid && editForm.controls.phone.touched) {
-                <span class="field-error-text">Enter a valid 10-digit mobile number.</span>
-              }
-            </div>
-
-            <div class="form-group">
-              <label>Commission estimate (%) *</label>
-              <input 
-                type="number" 
-                formControlName="commission_rate" 
-                min="0" 
-                max="50"
-                [class.is-invalid]="editForm.controls.commission_rate.invalid && editForm.controls.commission_rate.touched"
-              />
-              @if (editForm.controls.commission_rate.invalid && editForm.controls.commission_rate.touched) {
-                <span class="field-error-text">Commission must be between 0% and 50%.</span>
-              }
-            </div>
-
-            <div class="form-group">
-              <label>Status *</label>
-              <select formControlName="status">
-                <option value="active">Active</option>
-                <option value="suspended">Suspended</option>
-                <option value="pending">Pending</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Bank Name <span class="field-hint">(Optional)</span></label>
-              <input type="text" formControlName="bank_name" />
-            </div>
-
-            <div class="form-group">
-              <label>Account Number <span class="field-hint">(Optional)</span></label>
-              <input type="text" formControlName="account_no" />
-            </div>
-
-            <div class="form-group">
-              <label>IFSC Code <span class="field-hint">(Optional)</span></label>
-              <input type="text" formControlName="ifsc" />
-            </div>
-
-            <div class="form-group">
-              <label>UPI ID <span class="field-hint">(Optional)</span></label>
-              <input type="text" formControlName="upi" />
-            </div>
-          </div>
-
-          <div class="modal-footer">
-            <button type="button" class="btn-secondary" (click)="closeEditModal()">Cancel</button>
-            <button type="submit" class="btn-primary">Save Changes</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  }
 </div>
+
+<dialog #editor class="hub-dialog editor-dialog" aria-labelledby="editor-title" (cancel)="saving() && $event.preventDefault()">
+  <form [formGroup]="form" (ngSubmit)="save()">
+    <header class="dialog-heading"><div><span class="eyebrow">PARTNER DETAILS</span><h2 id="editor-title">{{ editing() ? 'Edit vendor' : 'Add a new vendor' }}</h2><p>{{ editing() ? 'Keep contact and payout details up to date.' : 'Set up an account. Payout verification comes next.' }}</p></div><button type="button" class="close" aria-label="Close vendor editor" (click)="closeEditor()" [disabled]="saving()">×</button></header>
+    <div class="dialog-content">
+      @if (formError()) { <p class="notice error" role="alert">{{ formError() }}</p> }
+      <fieldset [disabled]="saving()"><legend>01 <span>Business &amp; access</span></legend><div class="form-grid">
+        <label>Business name<input formControlName="name" autocomplete="organization" required />@if(form.controls.name.touched && form.controls.name.invalid){<small class="field-error">Enter 2–150 characters.</small>}</label>
+        <label>Login email<input formControlName="email" type="email" autocomplete="email" required />@if(form.controls.email.touched && form.controls.email.invalid){<small class="field-error">Enter a valid email address.</small>}</label>
+        @if (!editing()) { <label class="full">Initial password<input formControlName="password" type="password" autocomplete="new-password" required /><small>10–72 characters. Share securely with the vendor.</small>@if(form.controls.password.touched && form.controls.password.invalid){<small class="field-error">Use a password of 10–72 characters.</small>}</label> }
+        <label>Contact person<input formControlName="contact_person" autocomplete="name" required />@if(form.controls.contact_person.touched && form.controls.contact_person.invalid){<small class="field-error">Enter the representative’s name.</small>}</label>
+        <label>Mobile number<input formControlName="phone" type="tel" autocomplete="tel" placeholder="9876543210" required />@if(form.controls.phone.touched && form.controls.phone.invalid){<small class="field-error">Enter a 10-digit Indian mobile number, optionally with +91.</small>}</label>
+        <label>Commission (%)<input formControlName="commission_rate" type="number" min="0" max="100" step="0.01" required />@if(form.controls.commission_rate.touched && form.controls.commission_rate.invalid){<small class="field-error">Enter a rate from 0 to 100.</small>}</label>
+        <label>Account access<select formControlName="status"><option value="active">Active</option><option value="suspended">Suspended</option>@if(editing()?.status==='pending'){<option value="pending">Pending</option>}</select></label>
+      </div></fieldset>
+      <fieldset [disabled]="saving()"><legend>02 <span>Payout destination</span></legend><p class="section-help">Optional at setup. UPI verification is available after saving. Bank-only accounts require a separate review before automated payouts.</p><div class="form-grid">
+        <label class="full">UPI address<input formControlName="upi" placeholder="business@bank" autocapitalize="none" spellcheck="false" />@if(form.controls.upi.touched && form.controls.upi.invalid){<small class="field-error">Enter a valid UPI address, such as business@bank.</small>}</label>
+        <label>Bank name<input formControlName="bank" /></label><label>Bank account number<input formControlName="accountNo" inputmode="numeric" autocomplete="off" /></label><label>IFSC code<input formControlName="ifsc" maxlength="11" placeholder="HDFC0000001" />@if(form.controls.ifsc.touched && form.controls.ifsc.invalid){<small class="field-error">Enter an 11-character IFSC code.</small>}</label>
+      </div><div class="notice">Changing the business name or payout destination clears its verification. Contact-only changes preserve it.</div></fieldset>
+    </div><footer class="dialog-footer"><button type="button" class="button secondary" (click)="closeEditor()" [disabled]="saving()">Cancel</button><button type="submit" class="button primary" [disabled]="saving()">{{ saving() ? 'Saving…' : editing() ? 'Save changes' : 'Create vendor' }}</button></footer>
+  </form>
+</dialog>
+
+<dialog #verification class="hub-dialog verification-dialog" aria-labelledby="verification-title" (cancel)="saving() && $event.preventDefault()">
+  @if (reviewing(); as vendor) {
+    <header class="dialog-heading"><div><span class="eyebrow">PAYOUT ACCOUNT REVIEW</span><h2 id="verification-title">{{ vendor.name }}</h2><p>Verify the destination before sending funds.</p></div><button class="close" aria-label="Close verification" (click)="closeVerification()" [disabled]="saving()">×</button></header>
+    <div class="dialog-content">
+      <ol class="steps" aria-label="Verification progress"><li class="done"><span>1</span> Saved details</li><li [class.done]="readiness(vendor)==='verified'"><span>2</span> Provider check</li><li [class.done]="readiness(vendor)==='verified'"><span>3</span> Verified</li></ol>
+      <div class="verification-summary"><span class="status" [class.verified]="readiness(vendor)==='verified'" [class.review]="readiness(vendor)==='review'">{{ readinessLabel(vendor) }}</span><h3>{{ destination(vendor) }}</h3><p>{{ vendor.payout_account?.upi ? 'Saved UPI destination' : 'Saved bank details' }}</p><button class="text-button" (click)="editDestination()" [disabled]="saving()">Edit account details</button></div>
+      @if (verificationError()) { <div class="notice error" role="alert">{{ verificationError() }}</div> }
+      @if (verificationComplete()) { <div class="notice success" role="status">Account verification saved. Review the vendor’s available balance in Finance before creating a payout.</div> }
+      @if (readiness(vendor)==='verified') {
+        <dl class="audit-details"><div><dt>Registered beneficiary</dt><dd>{{ vendor.payout_account?.verifiedBeneficiaryName || 'Not recorded' }}</dd></div><div><dt>Verified on</dt><dd>{{ vendor.payout_account?.verifiedAt | date:'medium' }}</dd></div><div><dt>Provider reference</dt><dd>{{ vendor.payout_account?.verificationReference }}</dd></div></dl>
+        <p class="section-help">Verification applies to these saved details. Revoke it if ownership is uncertain or the vendor requests a change.</p>
+      } @else if (vendor.payout_account?.upi) {
+        <h3 class="review-title">Before you verify</h3><p class="section-help">Razorpay must return an active account and a beneficiary name matching <strong>{{ vendor.name }}</strong>. An unavailable, pending, or mismatched result will not mark this account verified.</p>
+        <label class="confirmation"><input type="checkbox" [ngModel]="confirmed()" (ngModelChange)="confirmed.set($event)" [disabled]="saving()" /><span>I have reviewed the saved UPI address and business name.</span></label>
+      } @else { <div class="notice">{{ readiness(vendor)==='missing' ? 'Add a payout destination to continue. Save a UPI address to use online verification.' : 'Online verification here supports UPI. Bank details remain unverified; add a UPI address to use this workflow.' }}</div> }
+    </div>
+    <footer class="dialog-footer"><button class="button secondary" (click)="closeVerification()" [disabled]="saving()">Close</button>@if(readiness(vendor)==='verified'){<button class="button danger" (click)="verify(false)" [disabled]="saving()">{{ saving() ? 'Updating…' : 'Revoke verification' }}</button>}@else if(vendor.payout_account?.upi){<button class="button primary" (click)="verify()" [disabled]="saving() || !confirmed()">{{ saving() ? 'Checking with Razorpay…' : 'Verify saved account' }}</button>}@else{<button class="button primary" (click)="editDestination()">Add UPI details</button>}</footer>
+  }
+</dialog>

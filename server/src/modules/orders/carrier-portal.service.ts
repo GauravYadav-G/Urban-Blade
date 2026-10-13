@@ -17,6 +17,7 @@ export function detectCarrier(awb:string, preferred?:string):string {
   // AWB formats overlap between Indian carriers, so only use an unambiguous
   // carrier prefix. A bare numeric AWB must be selected explicitly.
   const normalized=awb.trim().toUpperCase();
+  if(normalized.startsWith('TRK-UB-'))return 'Urban Express Logistics';
   if(normalized.startsWith('DEL'))return 'Delhivery Express';
   if(normalized.startsWith('DTDC'))return 'DTDC Air';
   if(normalized.startsWith('BD'))return 'BlueDart Express';
@@ -31,8 +32,15 @@ export function getOfficialTrackingUrl(carrier:string,awb:string):string {
   if(name.includes('dtdc'))return 'https://www.dtdc.com/track-your-shipment/';
   return '';
 }
+export class CarrierPortalReviewError extends Error {
+  readonly portalUrl: string;
+  constructor(code: string, public readonly carrier: string, public readonly awb: string) {
+    super(code);
+    this.portalUrl = getOfficialTrackingUrl(carrier, awb);
+  }
+}
 export async function carrierCapabilities(){const connected=await getCarrierConnection(); return [
-  {name:'Shiprocket',mode:'live_web_fetch',description:'Real-time live portal web scraping & tracking sync available'},
+  {name:'Shiprocket',mode:'portal_only',description:'Review the official tracking portal; public HTML is not a verified source for automatic updates'},
   {name:'Delhivery Express',mode:connected.configured && connected.enabled?'api':'configuration_required',description:connected.configured && connected.enabled?'Authenticated tracking API available':'Configure DELHIVERY_API_TOKEN; the public page is JavaScript-rendered'},
   {name:'BlueDart Express',mode:'portal_only',description:'Official portal requires CAPTCHA; open it and verify the shipment manually'},
   {name:'DTDC Air',mode:'portal_only',description:'Official tracking portal must be opened manually; no stable public server endpoint is available'},
@@ -42,78 +50,9 @@ const shipmentSchema=z.object({AWB:z.union([z.string(),z.number()]).transform(St
 export async function fetchCarrierWebsiteTracking(awb:string,preference?:string):Promise<ScrapedCarrierData>{
   const carrier=detectCarrier(awb,preference);
   if(carrier==='Unknown')throw new Error('CARRIER_REQUIRED');
-  if(carrier==='Shiprocket'){
-    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),8000);
-    try {
-      const response=await fetch(`https://shiprocket.co/tracking/${encodeURIComponent(awb.trim())}`,{
-        signal:controller.signal,
-        headers:{
-          'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        }
-      });
-      if(!response.ok)throw new Error('CARRIER_STATUS_UNAVAILABLE');
-      const html=await response.text();
-      if(html.includes('Tracking details not found')||html.includes('Invalid AWB'))throw new Error('CARRIER_SHIPMENT_MISMATCH');
-      const courierMatch=html.match(/<span class="fs-17px SFProSemibold"><b>([^<]+)<\/b><\/span>/i);
-      const subCarrier=courierMatch?courierMatch[1].trim():'Shiprocket';
-      const rawStatusMatch=html.match(/<strong style="[^"]*font-size:\s*17px[^"]*">([^<]+)<\/strong>/i)
-        || html.match(/<span[^>]*class="status_[^"]*"[^>]*>([^<]+)<\/span>/i);
-      const rawPortalStatus=rawStatusMatch?rawStatusMatch[1].trim():'In Transit';
-      let status:ScrapedCarrierData['status']=null;
-      try {
-        status=mapRawStatusToInternal(rawPortalStatus);
-      } catch {
-        const lower=rawPortalStatus.toLowerCase();
-        if(lower.includes('processing')||lower.includes('pickup generated')||lower.includes('manifest'))status='processing';
-        else if(lower.includes('transit')||lower.includes('dispatched')||lower.includes('shipped'))status='shipped';
-        else if(lower.includes('delivered'))status='delivered';
-        else if(lower.includes('cancel'))status='cancelled';
-      }
-      const checkpoints:ScrapedCheckpoint[]=[];
-      const liMatches=html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi);
-      for(const match of liMatches){
-        const liContent=match[1];
-        const actMatch=liContent.match(/<b>Activity\s*:\s*<\/b>\s*<activity>([^<]+)<\/activity>/i);
-        const locMatch=liContent.match(/<b>Location\s*:\s*<\/b>\s*<activity>([^<]+)<\/activity>/i);
-        const dateMatch=liContent.match(/<span class=['"]date['"]>([^<]+)<\/span>/i);
-        const timeMatch=liContent.match(/<span class=['"]time['"]>([^<]+)<\/span>/i);
-        if(actMatch){
-          const activity=actMatch[1].trim();
-          const location=locMatch?locMatch[1].trim():'';
-          const dateStr=dateMatch?dateMatch[1].trim():'';
-          const timeStr=timeMatch?timeMatch[1].trim():'';
-          checkpoints.push({
-            stage:activity,
-            location:location==='NA'?'':location,
-            timestamp:`${dateStr} ${timeStr}`.trim()||new Date().toISOString(),
-            activity
-          });
-        }
-      }
-      const currentLocation=checkpoints.find(c=>c.location)?.location||'';
-      const lastScanTime=checkpoints[0]?.timestamp||new Date().toISOString();
-      return {
-        carrier:`Shiprocket (${subCarrier})`,
-        awb:awb.trim(),
-        portalUrl:getOfficialTrackingUrl('Shiprocket',awb),
-        status,
-        rawPortalStatus,
-        currentLocation,
-        lastScanTime,
-        expectedDelivery:'',
-        source:'live_web_fetch',
-        checkedAt:new Date().toISOString(),
-        checkpoints
-      };
-    }catch(error){
-      if(error instanceof Error && error.message.startsWith('CARRIER_'))throw error;
-      throw new Error('CARRIER_STATUS_UNAVAILABLE');
-    }finally{clearTimeout(timer);}
-  }
-  if(carrier!=='Delhivery Express')throw new Error('CARRIER_PORTAL_ONLY');
+  if(carrier!=='Delhivery Express')throw new CarrierPortalReviewError('CARRIER_PORTAL_ONLY', carrier, awb);
   const token=await getCarrierToken();
-  if(!token)throw new Error('CARRIER_NOT_CONFIGURED');
+  if(!token)throw new CarrierPortalReviewError('CARRIER_NOT_CONFIGURED', carrier, awb);
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),8000);
   try {
     const response=await fetch(`https://track.delhivery.com/api/v1/packages/json/?waybill=${encodeURIComponent(awb)}`,{signal:controller.signal,headers:{Authorization:`Token ${token}`,Accept:'application/json'}});
@@ -161,8 +100,9 @@ export async function syncOrderFromCarrierWebsite(identifier:string,preferred?:s
   if(matches.length>1)throw new Error('AMBIGUOUS_TRACKING_NUMBER');
   const original=matches[0];
   if(!original.tracking_number)throw new Error('TRACKING_NUMBER_REQUIRED');
-  const carrier=detectCarrier(original.tracking_number,original.carrier || preferred);
-  if(preferred && preferred!=='auto' && original.carrier && detectCarrier('',preferred)!==carrier)throw new Error('CARRIER_MISMATCH');
+  const savedCarrier=detectCarrier(original.tracking_number,original.carrier);
+  const carrier=savedCarrier==='Unknown' ? detectCarrier(original.tracking_number,preferred) : savedCarrier;
+  if(preferred && preferred!=='auto' && savedCarrier!=='Unknown' && original.carrier && detectCarrier('',preferred)!==carrier)throw new Error('CARRIER_MISMATCH');
   const websiteData=await fetchCarrierWebsiteTracking(original.tracking_number,carrier);
   return withTransaction(async client=>{
     const current=(await client.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE',[original.id])).rows[0];

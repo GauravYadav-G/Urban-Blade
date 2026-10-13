@@ -1,255 +1,143 @@
-import { Component, inject, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { RouterLink } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
 import { AdminService } from '@core/services/admin.service';
-import { AccountService } from '@core/services/account.service';
 import { ToastService } from '@core/services/toast.service';
-import type { VendorAccount, VendorPayoutAccount } from '@core/models/vendor.model';
+import type { VendorAccount } from '@core/models/vendor.model';
+
+type Readiness = 'verified' | 'review' | 'missing';
 
 @Component({
-  selector: 'app-admin-vendors',
-  standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule],
-  templateUrl: './admin-vendors.html',
-  styleUrl: './admin-vendors.scss',
+  selector: 'app-admin-vendors', standalone: true,
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink],
+  templateUrl: './admin-vendors.html', styleUrl: './admin-vendors.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AdminVendors {
+export class AdminVendors implements OnInit {
   readonly admin = inject(AdminService);
-  readonly account = inject(AccountService);
-  private readonly router = inject(Router);
-  private readonly fb = inject(FormBuilder);
   private readonly toast = inject(ToastService);
-
-  readonly searchQuery = signal<string>('');
-  readonly selectedStatusFilter = signal<string>('all');
-  readonly isCreateModalOpen = signal<boolean>(false);
-  readonly isEditModalOpen = signal<boolean>(false);
-  readonly editingVendor = signal<VendorAccount | null>(null);
-
-  // Validation helper for 10-digit Indian mobile numbers (allows +91, 0, spaces, dashes)
-  static readonly phoneValidator = (control: any) => {
-    if (!control.value) return { required: true };
-    const raw = String(control.value).trim().replace(/[\s\-()]/g, '');
-    const digits = raw.replace(/^(?:\+91|91|0)(?=[6-9]\d{9}$)/, '');
-    if (!/^[6-9]\d{9}$/.test(digits)) {
-      return { invalidPhone: true };
-    }
-    return null;
-  };
-
-  // Form for Onboarding Vendor
-  readonly createForm = this.fb.nonNullable.group({
-    name: ['', [Validators.required, Validators.minLength(2)]],
+  private readonly fb = inject(FormBuilder);
+  @ViewChild('editor') private editor!: ElementRef<HTMLDialogElement>;
+  @ViewChild('verification') private verification!: ElementRef<HTMLDialogElement>;
+  readonly search = signal('');
+  readonly status = signal('all');
+  readonly readinessFilter = signal('all');
+  readonly loading = signal(true);
+  readonly loadError = signal('');
+  readonly saving = signal(false);
+  readonly formError = signal('');
+  readonly editing = signal<VendorAccount | null>(null);
+  readonly reviewing = signal<VendorAccount | null>(null);
+  readonly verificationError = signal('');
+  readonly verificationComplete = signal(false);
+  readonly confirmed = signal(false);
+  readonly filterOptions = [
+    { value: 'all', label: 'All vendors' }, { value: 'attention', label: 'Needs attention' },
+    { value: 'verified', label: 'Verified' }, { value: 'missing', label: 'Missing details' },
+  ];
+  readonly form = this.fb.nonNullable.group({
+    name: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(150)]],
     email: ['', [Validators.required, Validators.email]],
-    password: ['', [Validators.required, Validators.minLength(10)]],
+    password: [''],
     contact_person: ['', [Validators.required, Validators.minLength(2)]],
-    phone: ['', [Validators.required, AdminVendors.phoneValidator]],
-    commission_rate: [12, [Validators.required, Validators.min(0), Validators.max(50)]],
-    bank_name: [''],
-    account_no: [''],
-    ifsc: [''],
-    upi: [''],
-  });
-
-  // Form for Editing Vendor
-  readonly editForm = this.fb.nonNullable.group({
-    contact_person: ['', [Validators.required, Validators.minLength(2)]],
-    phone: ['', [Validators.required, AdminVendors.phoneValidator]],
-    commission_rate: [12, [Validators.required, Validators.min(0), Validators.max(50)]],
+    phone: ['', [Validators.required, Validators.pattern(/^(?:\+91[ -]?)?[6-9]\d{9}$/)]],
+    commission_rate: [12, [Validators.required, Validators.min(0), Validators.max(100)]],
     status: ['active', Validators.required],
-    bank_name: [''],
-    account_no: [''],
-    ifsc: [''],
-    upi: [''],
+    bank: [''], accountNo: [''], ifsc: ['', Validators.pattern(/^$|^[A-Za-z]{4}0[A-Za-z0-9]{6}$/)],
+    upi: ['', Validators.pattern(/^$|^[a-zA-Z0-9._-]{2,256}@[a-zA-Z]{2,64}$/)],
   });
-
-  // Filtered Vendor List
-  readonly filteredVendors = computed(() => {
-    const list = this.admin.vendors();
-    const query = this.searchQuery().toLowerCase().trim();
-    const status = this.selectedStatusFilter();
-
-    return list.filter((v) => {
-      const matchSearch =
-        !query ||
-        v.name.toLowerCase().includes(query) ||
-        v.email.toLowerCase().includes(query) ||
-        v.contact_person.toLowerCase().includes(query) ||
-        v.phone.includes(query);
-      const matchStatus = status === 'all' || v.status === status;
-      return matchSearch && matchStatus;
-    });
+  readonly vendors = computed(() => this.admin.vendors() || []);
+  readonly activeCount = computed(() => this.vendors().filter(v => v.status === 'active').length);
+  readonly verifiedCount = computed(() => this.vendors().filter(v => this.readiness(v) === 'verified').length);
+  readonly attentionCount = computed(() => this.vendors().length - this.verifiedCount());
+  readonly filtered = computed(() => {
+    const query = this.search().trim().toLowerCase();
+    return this.vendors().filter(v =>
+      (!query || [v.name, v.email, v.contact_person, v.phone].some(value => (value || '').toLowerCase().includes(query))) &&
+      (this.status() === 'all' || v.status === this.status()) &&
+      (this.readinessFilter() === 'all' || (this.readinessFilter() === 'attention' ? this.readiness(v) !== 'verified' : this.readiness(v) === this.readinessFilter()))
+    );
   });
-
-  // Aggregated KPIs
-  readonly totalSales = computed(() =>
-    this.admin.vendors().reduce((sum, v) => sum + (v.total_sales || 0), 0)
-  );
-
-  readonly totalCommission = computed(() =>
-    this.admin.vendors().reduce(
-      (sum, v) => sum + (v.total_sales || 0) * ((v.commission_rate ?? 0) / 100),
-      0
-    )
-  );
-
-  readonly activeVendorCount = computed(
-    () => this.admin.vendors().filter((v) => v.status === 'active').length
-  );
-
-  readonly totalVendorProducts = computed(() =>
-    this.admin.vendors().reduce((sum, v) => sum + (v.product_count || 0), 0)
-  );
-
-  openCreateModal(): void {
-    this.createForm.reset({
-      name: '',
-      email: '',
-      password: '',
-      contact_person: '',
-      phone: '',
-      commission_rate: 12,
-      bank_name: '',
-      account_no: '',
-      ifsc: '',
-      upi: '',
-    });
-    this.isCreateModalOpen.set(true);
+  ngOnInit(): void { void this.refresh(); }
+  async refresh(): Promise<void> {
+    this.loading.set(true); this.loadError.set('');
+    try { await firstValueFrom(this.admin.loadVendorDirectory()); }
+    catch { this.loadError.set('Vendor records could not be refreshed. Retry before making changes.'); }
+    finally { this.loading.set(false); }
   }
-
-  closeCreateModal(): void {
-    this.isCreateModalOpen.set(false);
+  readiness(vendor: VendorAccount): Readiness {
+    const account = vendor.payout_account;
+    if (!account?.upi && !(account?.accountNo && account?.ifsc)) return 'missing';
+    return account?.verified && account.verificationReference && account.verifiedAt ? 'verified' : 'review';
   }
-
-  submitCreateVendor(): void {
-    if (this.createForm.invalid) {
-      this.createForm.markAllAsTouched();
-      const invalidFields: string[] = [];
-      const c = this.createForm.controls;
-      if (c.name.invalid) invalidFields.push('Business Name (min 2 characters)');
-      if (c.email.invalid) invalidFields.push('Valid Email Address');
-      if (c.password.invalid) invalidFields.push('Password (min 10 characters)');
-      if (c.contact_person.invalid) invalidFields.push('Representative Contact Person');
-      if (c.phone.invalid) invalidFields.push('10-digit Phone Number');
-      if (c.commission_rate.invalid) invalidFields.push('Commission Rate (0-50%)');
-      
-      this.toast.error(
-        invalidFields.length
-          ? `Please check: ${invalidFields.join(', ')}`
-          : 'Please fill in all required vendor business fields.'
-      );
-      return;
+  readinessLabel(vendor: VendorAccount): string {
+    return { verified: 'Verified', review: 'Needs verification', missing: 'Missing details' }[this.readiness(vendor)];
+  }
+  destination(vendor: VendorAccount): string {
+    const account = vendor.payout_account;
+    return account?.upi || (account?.accountNo ? `Account ending ${account.accountNo.slice(-4)}` : 'No account saved');
+  }
+  clearFilters(): void { this.search.set(''); this.status.set('all'); this.readinessFilter.set('all'); }
+  openEditor(vendor: VendorAccount | null = null): void {
+    this.editing.set(vendor); this.formError.set('');
+    const account = vendor?.payout_account;
+    this.form.reset({ name: vendor?.name || '', email: vendor?.email || '', password: '',
+      contact_person: vendor?.contact_person || '', phone: vendor?.phone || '',
+      commission_rate: Number(vendor?.commission_rate ?? 12), status: vendor?.status || 'active',
+      bank: account?.bank || '', accountNo: account?.accountNo || '', ifsc: account?.ifsc || '', upi: account?.upi || '' });
+    this.form.controls.password.setValidators(vendor ? [] : [Validators.required, Validators.minLength(10), Validators.maxLength(72)]);
+    this.form.controls.password.updateValueAndValidity();
+    this.editor.nativeElement.showModal();
+  }
+  closeEditor(): void { if (!this.saving()) this.editor.nativeElement.close(); }
+  async save(): Promise<void> {
+    if (this.saving()) return;
+    this.form.markAllAsTouched();
+    if (this.form.invalid) { this.formError.set('Check the highlighted fields before saving.'); return; }
+    const value = this.form.getRawValue();
+    if ((value.accountNo || value.ifsc) && !(value.accountNo && value.ifsc)) {
+      this.formError.set('Provide both the bank account number and IFSC, or leave both blank.'); return;
     }
-
-    const val = this.createForm.getRawValue();
-    // Normalize phone number to clean 10 digits
-    const rawPhone = String(val.phone).trim().replace(/[\s\-()]/g, '');
-    const cleanPhone = rawPhone.replace(/^(?:\+91|91|0)(?=[6-9]\d{9}$)/, '');
-
-    const hasPayoutDetails = Boolean(val.bank_name || val.account_no || val.ifsc || val.upi);
-    const payoutAccount: VendorPayoutAccount | undefined = hasPayoutDetails
-      ? {
-          bank: val.bank_name.trim(),
-          accountNo: val.account_no.trim(),
-          ifsc: val.ifsc.trim().toUpperCase(),
-          upi: val.upi ? val.upi.trim() : undefined,
-        }
-      : undefined;
-
-    this.admin.addVendor({
-      name: val.name.trim(),
-      email: val.email.trim().toLowerCase(),
-      password: val.password,
-      contact_person: val.contact_person.trim(),
-      phone: cleanPhone,
-      commission_rate: Number(val.commission_rate),
-      payout_account: payoutAccount,
-    });
-
-    this.isCreateModalOpen.set(false);
+    this.saving.set(true); this.formError.set('');
+    const vendor = this.editing();
+    try {
+      await firstValueFrom(this.admin.saveVendorProfile(vendor?.id || null, {
+        name: value.name.trim(), email: value.email.trim().toLowerCase(),
+        ...(!vendor ? { password: value.password } : {}),
+        contact_person: value.contact_person.trim(), phone: value.phone.replace(/^\+91[ -]?/, ''),
+        commission_rate: Number(value.commission_rate), status: value.status as VendorAccount['status'],
+        payout_account: { bank: value.bank.trim(), accountNo: value.accountNo.trim(),
+          ifsc: value.ifsc.trim().toUpperCase(), upi: value.upi.trim().toLowerCase() },
+      }));
+      this.editor.nativeElement.close();
+      this.toast.success(vendor ? 'Vendor details saved.' : 'Vendor account created. Review payout details next.');
+    } catch (error) { this.formError.set(this.message(error, 'Changes were not saved. Please retry.')); }
+    finally { this.saving.set(false); }
   }
-
-  openEditModal(vendor: VendorAccount): void {
-    this.editingVendor.set(vendor);
-    this.editForm.patchValue({
-      contact_person: vendor.contact_person,
-      phone: vendor.phone,
-      commission_rate: vendor.commission_rate,
-      status: vendor.status,
-      bank_name: vendor.payout_account?.bank || '',
-      account_no: vendor.payout_account?.accountNo || '',
-      ifsc: vendor.payout_account?.ifsc || '',
-      upi: vendor.payout_account?.upi || '',
-    });
-    this.isEditModalOpen.set(true);
+  openVerification(vendor: VendorAccount): void {
+    this.reviewing.set(vendor); this.confirmed.set(false);
+    this.verificationError.set(''); this.verificationComplete.set(false);
+    this.verification.nativeElement.showModal();
   }
-
-  closeEditModal(): void {
-    this.isEditModalOpen.set(false);
-    this.editingVendor.set(null);
+  closeVerification(): void { if (!this.saving()) this.verification.nativeElement.close(); }
+  editDestination(): void {
+    const vendor = this.reviewing();
+    this.closeVerification(); if (vendor) this.openEditor(vendor);
   }
-
-  submitEditVendor(): void {
-    const v = this.editingVendor();
-    if (!v) return;
-    if (this.editForm.invalid) {
-      this.editForm.markAllAsTouched();
-      const invalidFields: string[] = [];
-      const c = this.editForm.controls;
-      if (c.contact_person.invalid) invalidFields.push('Representative Contact');
-      if (c.phone.invalid) invalidFields.push('10-digit Phone Number');
-      if (c.commission_rate.invalid) invalidFields.push('Commission Rate (0-50%)');
-      
-      this.toast.error(
-        invalidFields.length
-          ? `Please check: ${invalidFields.join(', ')}`
-          : 'Please verify vendor details before saving.'
-      );
-      return;
-    }
-
-    const val = this.editForm.getRawValue();
-    const rawPhone = String(val.phone).trim().replace(/[\s\-()]/g, '');
-    const cleanPhone = rawPhone.replace(/^(?:\+91|91|0)(?=[6-9]\d{9}$)/, '');
-
-    const hasPayoutDetails = Boolean(val.bank_name || val.account_no || val.ifsc || val.upi);
-    const payoutAccount: VendorPayoutAccount | undefined = hasPayoutDetails
-      ? {
-          bank: val.bank_name.trim(),
-          accountNo: val.account_no.trim(),
-          ifsc: val.ifsc.trim().toUpperCase(),
-          upi: val.upi ? val.upi.trim() : undefined,
-        }
-      : undefined;
-
-    this.admin.updateVendor(v.id, {
-      contact_person: val.contact_person.trim(),
-      phone: cleanPhone,
-      commission_rate: Number(val.commission_rate),
-      status: val.status as VendorAccount['status'],
-      payout_account: payoutAccount,
-    });
-
-    this.isEditModalOpen.set(false);
-    this.editingVendor.set(null);
+  async verify(verified = true): Promise<void> {
+    const vendor = this.reviewing();
+    if (!vendor || this.saving() || (verified && (!this.confirmed() || !vendor.payout_account?.upi))) return;
+    this.saving.set(true); this.verificationError.set('');
+    try {
+      const result = await firstValueFrom(this.admin.verifyVendorPayout(vendor.id, verified));
+      if (!result.vendor) throw new Error('No account returned');
+      this.reviewing.set(result.vendor); this.verificationComplete.set(verified); this.confirmed.set(false);
+    } catch (error) { this.verificationError.set(this.message(error, 'Verification could not be completed. No verification was recorded.')); }
+    finally { this.saving.set(false); }
   }
-
-  toggleStatus(vendor: VendorAccount): void {
-    this.admin.toggleVendorStatus(vendor.id);
-  }
-
-  /**
-   * Impersonate / Preview as Vendor in 1 Click
-   */
-  impersonateVendor(vendor: VendorAccount): void {
-    void this.account.switchVendorPreview(vendor.name, vendor.id).then((switched) => {
-      if (!switched) {
-        this.toast.error('Vendor preview could not be started.');
-        return;
-      }
-      this.toast.info(`Switched to ${vendor.name} Portal View. Scoped access applied.`);
-      void this.router.navigate(['/admin/dashboard']);
-    });
+  private message(error: unknown, fallback: string): string {
+    return (error as { error?: { message?: string } })?.error?.message || fallback;
   }
 }

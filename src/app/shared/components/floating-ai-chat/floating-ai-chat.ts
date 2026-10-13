@@ -54,12 +54,15 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
   private readonly sanitizer = inject(DomSanitizer);
 
   readonly isOpen = signal<boolean>(false);
+  readonly isExpanded = signal<boolean>(false);
   readonly inquiryId = signal<string | null>(null);
   readonly isGenerating = signal<boolean>(false);
   readonly inputText = signal<string>('');
   inputValue = ''; // Plain property for reliable ngModel two-way binding
   readonly unreadAdminCount = signal<number>(0);
   readonly addedProductIds = signal<Set<string>>(new Set<string>());
+  readonly copiedTrackingId = signal<string | null>(null);
+  readonly soundEnabled = signal<boolean>(true);
 
   // Interactive In-Chat Salon Booking State
   readonly activeBookingForm = signal<{ [msgId: string]: BookingFormState }>({});
@@ -82,14 +85,14 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
   readonly messages = signal<ChatMessage[]>(this.getInitialWelcomeMessages());
 
   readonly quickChips: ChatActionChip[] = [
-    { label: '✂️ Reserve Chair', query: 'Book appointment' },
-    { label: '💈 Haircut Rates', query: 'What are your haircut prices?' },
-    { label: '📦 Track Order', query: 'Where is my order?' },
-    { label: '📍 Studio Location', query: 'Where is your studio located?' },
-    { label: '🌿 Hair Fall Care', query: 'What should I do for hair fall?' },
-    { label: '🧔 Beard Density', query: 'How to fix a patchy beard?' },
-    { label: '🚚 Shipping Policy', query: 'What are the shipping charges?' },
-    { label: '🛡️ 7-Day Guarantee', query: 'What is the return and warranty policy?' },
+    { label: 'Reserve Chair', query: 'Book appointment' },
+    { label: 'Haircut Rates', query: 'What are your haircut prices?' },
+    { label: 'Track Order', query: 'Where is my order?' },
+    { label: 'Studio Location', query: 'Where is your studio located?' },
+    { label: 'Hair Fall Care', query: 'What should I do for hair fall?' },
+    { label: 'Beard Styling', query: 'How to fix a patchy beard?' },
+    { label: 'Shipping Policy', query: 'What are the shipping charges?' },
+    { label: '7-Day Guarantee', query: 'What is the return and warranty policy?' },
   ];
 
   private pollInterval: any = null;
@@ -103,12 +106,12 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
         text: `Hi there! How can I help you today? You can book a salon chair, track an order, or ask any questions about our products.`,
         timestamp: new Date().toISOString(),
         actionChips: [
-          { label: '✂️ Reserve Barber Chair', query: 'Book appointment' },
-          { label: '💈 Haircut Menu & Rates', query: 'What are your haircut prices?' },
-          { label: '📦 Live Order Tracking', query: 'Where is my order?' },
-          { label: '📍 Studio Location & Hours', query: 'Where is your studio located?' },
-          { label: '🌿 Hair Fall Protocol', query: 'What do I do for hair fall?' },
-          { label: '🧔 Patchy Beard Guide', query: 'How to fix a patchy beard?' },
+          { label: 'Reserve Barber Chair', query: 'Book appointment' },
+          { label: 'Haircut Rates', query: 'What are your haircut prices?' },
+          { label: 'Live Order Tracking', query: 'Where is my order?' },
+          { label: 'Studio Location & Hours', query: 'Where is your studio located?' },
+          { label: 'Hair Fall Protocol', query: 'What do I do for hair fall?' },
+          { label: 'Beard Grooming Guide', query: 'How to fix a patchy beard?' },
         ],
       },
     ];
@@ -178,6 +181,57 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
     }
   }
 
+  toggleExpand(): void {
+    this.isExpanded.update((v) => !v);
+    this.scrollToBottom('smooth');
+  }
+
+  toggleSound(): void {
+    this.soundEnabled.update((v) => !v);
+  }
+
+  copyTrackingNumber(trackingNum: string): void {
+    if (!trackingNum || typeof navigator === 'undefined') return;
+    navigator.clipboard?.writeText(trackingNum).then(() => {
+      this.copiedTrackingId.set(trackingNum);
+      setTimeout(() => {
+        if (this.copiedTrackingId() === trackingNum) {
+          this.copiedTrackingId.set(null);
+        }
+      }, 2200);
+    }).catch(() => {});
+  }
+
+  private playChime(type: 'send' | 'receive'): void {
+    if (!this.soundEnabled() || typeof window === 'undefined') return;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      const now = ctx.currentTime;
+      if (type === 'send') {
+        osc.frequency.setValueAtTime(520, now);
+        osc.frequency.exponentialRampToValueAtTime(780, now + 0.08);
+        gain.gain.setValueAtTime(0.025, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      } else {
+        osc.frequency.setValueAtTime(780, now);
+        osc.frequency.exponentialRampToValueAtTime(1040, now + 0.1);
+        gain.gain.setValueAtTime(0.035, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+        osc.start(now);
+        osc.stop(now + 0.15);
+      }
+    } catch {}
+  }
+
   scrollToBottom(behavior: ScrollBehavior = 'smooth'): void {
     if (typeof window === 'undefined') return;
     setTimeout(() => {
@@ -197,10 +251,12 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
 
     // Bold **text** -> <strong>text</strong>
     escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // Numbered step lines e.g. "1. Step description"
+    escaped = escaped.replace(/^(\d+[\.\)])\s*(.+)$/gm, '<li class="chat-step-li"><span class="step-num">$1</span> <span class="step-txt">$2</span></li>');
     // Bullet lines: • or * or - at start of line
     escaped = escaped.replace(/^[•\-\*]\s*(.+)$/gm, '<li class="chat-li">$1</li>');
     // Wrap groups of <li> in <ul class="chat-ul">
-    escaped = escaped.replace(/((?:<li class="chat-li">.*?<\/li>\s*)+)/gs, '<ul class="chat-ul">$1</ul>');
+    escaped = escaped.replace(/((?:<li class="(?:chat-li|chat-step-li)">.*?<\/li>\s*)+)/gs, '<ul class="chat-ul">$1</ul>');
     // Double newlines to paragraph break
     escaped = escaped.replace(/\n\n+/g, '<div class="chat-para-break"></div>');
     // Single newlines to <br> if not inside ul or break
@@ -292,6 +348,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
     };
 
     this.messages.update((list) => [...list, optimisticUserMsg]);
+    this.playChime('send');
     this.isGenerating.set(true);
     this.scrollToBottom('smooth');
 
@@ -311,6 +368,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (res) => {
           this.isGenerating.set(false);
+          this.playChime('receive');
           if (res.inquiryId) {
             this.inquiryId.set(res.inquiryId);
             localStorage.setItem('urban_active_inquiry_id', res.inquiryId);
@@ -323,54 +381,9 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
             this.broadcastChannel.postMessage({ type: 'USER_QUERY', inquiryId: res.inquiryId });
           }
         },
-        error: async () => {
-          try {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 4500);
-            const directRes = await fetch('https://text.pollinations.ai/', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                messages: [
-                  {
-                    role: 'system',
-                    content:
-                      'You are Urban AI concierge for Urban Blade luxury barbershop (Sector 63 Noida, 7 AM-11 PM daily). Answer under 70 words with master barber polish. If user greets, reply warmly without dumping products.',
-                  },
-                  { role: 'user', content: text },
-                ],
-                model: 'openai',
-              }),
-              signal: controller.signal,
-            });
-            clearTimeout(timer);
-
-            if (directRes.ok) {
-              const aiText = await directRes.text();
-              if (aiText && !aiText.includes('<!DOCTYPE html>') && !aiText.includes('Bad gateway') && !aiText.includes('Cloudflare')) {
-                this.isGenerating.set(false);
-                this.messages.update((list) => [
-                  ...list,
-                  {
-                    id: `ai-direct-${Date.now()}`,
-                    sender: 'ai',
-                    text: aiText.trim(),
-                    timestamp: new Date().toISOString(),
-                    actionChips: [
-                      { label: '✂️ Reserve Barber Chair', query: 'Book appointment' },
-                      { label: '💈 Haircut Menu & Rates', query: 'What are your haircut prices?' },
-                      { label: '📦 Live Order Tracking', query: 'Where is my order?' },
-                      { label: '✨ Shop Bestsellers', query: 'Show bestsellers' },
-                    ],
-                  },
-                ]);
-                this.scrollToBottom('smooth');
-                return;
-              }
-            }
-          } catch {}
-
+        error: () => {
           this.isGenerating.set(false);
+          this.playChime('receive');
           const tLower = text.toLowerCase();
           const isGreeting =
             tLower.startsWith('namaste') ||
@@ -429,9 +442,9 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
               text: smartFallback,
               timestamp: new Date().toISOString(),
               actionChips: [
-                { label: '✂️ Reserve Barber Chair', query: 'Book appointment' },
-                { label: '💈 Haircut Menu & Rates', query: 'What are your haircut prices?' },
-                { label: '📦 Live Order Tracking', query: 'Where is my order?' },
+                { label: 'Reserve Barber Chair', query: 'Book appointment' },
+                { label: 'Haircut Rates', query: 'What are your haircut prices?' },
+                { label: 'Live Order Tracking', query: 'Where is my order?' },
               ],
             },
           ]);
@@ -584,13 +597,12 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
       customerName: finalName,
       customerEmail: finalEmail,
       customerPhone: finalPhone,
-      stylistId: form.stylistId,
       serviceId: form.serviceId,
       serviceName: form.serviceName,
       bookingDate: form.dateStr,
       timeSlot: form.timeSlot,
       totalPrice: form.price,
-      notes: `Direct in-chat reservation via Urban AI Concierge · Barber: ${form.stylistName}`,
+      notes: form.serviceName,
     };
 
     this.http.post<{ id: string; status: string; message: string }>('/api/bookings', payload).subscribe({
@@ -601,8 +613,8 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
           bookingId: res.id,
           serviceName: form.serviceName,
           price: form.price,
-          stylistName: form.stylistName,
-          stylistAvatar: form.stylistAvatar,
+          stylistName: 'Assigned by Urban Blade',
+          stylistAvatar: '',
           dateStr: form.dateStr,
           timeSlot: form.timeSlot,
           customerName: finalName,
@@ -617,7 +629,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
         const receiptMsg: ChatMessage = {
           id: `bkg-confirm-${Date.now()}`,
           sender: 'ai',
-          text: `🎉 Appointment Confirmed!\n\nYour chair is reserved with Master Barber ${form.stylistName} for ${form.serviceName} on ${form.dateStr} at ${form.timeSlot}.\n\nBooking Reference: #${res.id.slice(0, 8).toUpperCase()}`,
+          text: `Appointment confirmed.\n\nYour chair is reserved for ${form.serviceName} on ${form.dateStr} at ${form.timeSlot}. The salon team will assign the best available specialist.\n\nBooking reference: #${res.id.slice(0, 8).toUpperCase()}`,
           timestamp: new Date().toISOString(),
           operation: {
             type: 'salon_booking_confirmed',
@@ -625,8 +637,8 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
               id: res.id,
               customerName: finalName,
               serviceName: form.serviceName,
-              stylistName: form.stylistName,
-              stylistAvatar: form.stylistAvatar,
+              stylistName: 'Assigned by Urban Blade',
+              stylistAvatar: '',
               bookingDate: form.dateStr,
               timeSlot: form.timeSlot,
               totalPrice: form.price,
@@ -635,9 +647,9 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
             },
           },
           actionChips: [
-            { label: '📍 View My Bookings', query: 'Show my account bookings' },
-            { label: '📦 Track My Order', query: 'Where is my order?' },
-            { label: '✨ Bestselling Grooming Products', query: 'Show bestsellers' },
+            { label: 'View My Bookings', query: 'Show my account bookings' },
+            { label: 'Track My Order', query: 'Where is my order?' },
+            { label: 'Recommended Products', query: 'Show bestsellers' },
           ],
         };
 
@@ -646,7 +658,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.isSubmittingBooking.update((map) => ({ ...map, [msgId]: false }));
-        const errMsg = err?.error?.message || 'The selected slot was just taken. Please choose another slot or stylist.';
+        const errMsg = err?.error?.message || 'This slot could not be reserved. Please choose another time and try again.';
         this.bookingError.update((map) => ({ ...map, [msgId]: errMsg }));
       },
     });

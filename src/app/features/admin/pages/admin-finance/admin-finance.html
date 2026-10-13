@@ -11,7 +11,7 @@
   @if(error()){<p class="audit-alert" role="alert">{{ error() }}</p>}
   @if(syncMessage()){<p class="audit-note" role="status">{{ syncMessage() }}</p>}
   @if(data();as audit){
-    <p class="audit-note">Database snapshot: {{ audit.asOf | date:'medium' }}. Gateway last checked: {{ audit.gateway.lastChecked ? (audit.gateway.lastChecked | date:'medium') : 'Not synced' }}. Figures cover the selected period; searching only filters the tables.</p>
+    <p class="audit-note">Database snapshot: {{ audit.asOf | date:'medium' }}. Gateway last checked: {{ audit.gateway.lastChecked ? (audit.gateway.lastChecked | date:'medium') : 'Not synced' }}. Order and gateway figures cover the selected period; searching only filters the tables.</p>
     <section class="ev-kpi-grid">
       <div class="ev-kpi-card"><span class="ev-kpi-label">Order payments collected</span><strong class="ev-kpi-number">{{ audit.local.captured | currency:'INR':'symbol':'1.2-2' }}</strong><p>Includes recorded offline collections. {{ audit.local.orders }} orders.</p></div>
       <div class="ev-kpi-card"><span class="ev-kpi-label">Order refunds completed</span><strong class="ev-kpi-number">{{ audit.local.refunded | currency:'INR':'symbol':'1.2-2' }}</strong><p>Pending refunds are not treated as paid back.</p></div>
@@ -44,13 +44,7 @@
         @if(tab()==='orders'){
           <table><thead><tr><th>Order / gateway reference</th><th>Local / gateway payment</th><th>Order amount</th><th>Gateway amount / refund</th><th>Fee (GST included)</th><th>Audit result</th><th>Action</th></tr></thead><tbody>
           @for(order of audit.orders;track order.id){<tr>
-            <td>
-              <button type="button" class="audit-reference-link" (click)="openOrderDetails(order)">{{ order.id }}</button>
-              @if(order.gateway_order_id){<button type="button" class="audit-reference-link audit-reference-sub" (click)="openOrderDetails(order)">{{ order.gateway_order_id }}</button>}
-              @if(order.transaction_id){<button type="button" class="audit-reference-link audit-reference-sub" (click)="openOrderDetails(order)">{{ order.transaction_id }}</button>}
-              @if(order.razorpay_payment_id){<button type="button" class="audit-reference-link audit-reference-sub" (click)="openOrderDetails(order)">{{ order.razorpay_payment_id }}</button>}
-              <small>{{ order.created_at | date:'medium' }}</small>
-            </td>
+            <td><a routerLink="/admin/orders">{{ order.id }}</a><small>{{ order.gateway_order_id || order.transaction_id || 'No external reference' }}</small><small>{{ order.razorpay_payment_id }}</small><small>{{ order.created_at | date:'medium' }}</small></td>
             <td>{{ order.payment_status }} / {{ order.gateway_status || 'Not checked' }}<small>Fulfilment: {{ order.status }}</small></td>
             <td>{{ order.total_amount | currency:'INR':'symbol':'1.2-2' }}</td>
             <td>{{ order.gateway_amount === null ? '—' : (order.gateway_amount | currency:'INR':'symbol':'1.2-2') }}<small>Refund: {{ order.gateway_refunded === null ? '—' : (order.gateway_refunded | currency:'INR':'symbol':'1.2-2') }}</small></td>
@@ -73,8 +67,30 @@
         }
         @if(tab()==='vendors'){
           <p>Current cumulative balances for delivered, collected merchandise; independent of the date filter.</p>
-          <table><thead><tr><th>Vendor</th><th>Eligible sales</th><th>Commission</th><th>Recorded payouts</th><th>Available balance</th><th>Action</th></tr></thead><tbody>
-          @for(vendor of audit.vendorSettlements;track vendor.id){<tr><td>{{ vendor.name }}</td><td>{{ vendor.gross_sales | currency:'INR':'symbol':'1.2-2' }}</td><td>{{ vendor.platform_cut | currency:'INR':'symbol':'1.2-2' }}</td><td>{{ vendor.paid_amount | currency:'INR':'symbol':'1.2-2' }}</td><td>{{ vendor.payable_amount | currency:'INR':'symbol':'1.2-2' }}</td><td><button [disabled]="+vendor.payable_amount<=0" (click)="openPayout(vendor)">Send RazorpayX payout</button></td></tr>}
+          <table><thead><tr><th>Vendor</th><th>Payout credentials</th><th>Eligible sales</th><th>Commission</th><th>Paid / in progress</th><th>Available balance</th><th>Action</th></tr></thead><tbody>
+          @for(vendor of audit.vendorSettlements;track vendor.id){<tr>
+            <td><strong>{{ vendor.name }}</strong><small>{{ vendor.id }}</small></td>
+            <td>
+              @if(vendor.payout_account; as pa){
+                <div><strong>{{ pa.bank }}</strong> · <code>{{ pa.accountNo }}</code></div>
+                <small>{{ pa.upi || pa.ifsc }}</small>
+                <div style="margin-top: 4px;">
+                  @if(pa.verified){
+                    <span class="payout-verif-badge verified" [title]="pa.verificationReference ? ('Verified: ' + pa.verificationReference) : 'Bank account verified'">Verified</span>
+                  }@else{
+                    <span class="payout-verif-badge unverified" title="Beneficiary account unverified">Unverified</span>
+                  }
+                </div>
+              }@else{
+                <span class="text-muted">No payout account saved</span>
+              }
+            </td>
+            <td>{{ vendor.gross_sales | currency:'INR':'symbol':'1.2-2' }}</td>
+            <td>{{ vendor.platform_cut | currency:'INR':'symbol':'1.2-2' }}</td>
+            <td>{{ vendor.paid_amount | currency:'INR':'symbol':'1.2-2' }}<small>In progress: {{ vendor.pending_amount | currency:'INR':'symbol':'1.2-2' }}</small></td>
+            <td>{{ vendor.payable_amount | currency:'INR':'symbol':'1.2-2' }}</td>
+            <td><button [disabled]="loading() || !!error() || vendor.status!=='active' || +vendor.payable_amount<=0" (click)="openPayout(vendor)">Settle balance</button></td>
+          </tr>}@empty{<tr><td colspan="7">No vendors yet. Add a vendor to begin tracking settlements.</td></tr>}
           </tbody></table>
         }
       </div>
@@ -84,22 +100,75 @@
     </section>
   }@else{<p role="status">{{ loading()?'Loading financial records…':'No financial snapshot available.' }}</p>}
   @if(payout();as vendor){
-    <div class="ev-modal-backdrop"><section class="audit-panel payout-record"><h2>Send payout to {{ vendor.name }}</h2><p>RazorpayX will transfer funds to the vendor's verified bank account or UPI. The reference is used for idempotency.</p><label>Amount<input type="number" min="0.01" step="0.01" [ngModel]="payoutAmount()" (ngModelChange)="payoutAmount.set(+$event)" /></label><label>Idempotency reference<input [ngModel]="payoutReference()" (ngModelChange)="payoutReference.set($event)" /></label><button [disabled]="saving()" (click)="savePayout()">Send RazorpayX payout</button><button [disabled]="saving()" (click)="payout.set(null)">Cancel</button></section></div>
-  }
-  @if(selectedOrder();as order){
-    <div class="ev-modal-backdrop" (click)="closeOrderDetails()">
-      <section class="audit-panel order-detail-record" role="dialog" aria-modal="true" aria-labelledby="finance-order-detail-title" (click)="$event.stopPropagation()">
-        <div class="order-detail-header"><div><span class="ev-kpi-label">ORDER DETAIL</span><h2 id="finance-order-detail-title">{{ order.id }}</h2></div><button type="button" aria-label="Close order details" (click)="closeOrderDetails()">Close</button></div>
-        <div class="order-detail-grid">
-          <div><span>Fulfilment</span><strong>{{ order.status | titlecase }}</strong></div>
-          <div><span>Payment</span><strong>{{ order.payment_status | titlecase }}</strong></div>
-          <div><span>Method</span><strong>{{ order.payment_method }}</strong></div>
-          <div><span>Order total</span><strong>{{ order.total_amount | currency:'INR':'symbol':'1.2-2' }}</strong></div>
-          <div><span>Gateway status</span><strong>{{ order.gateway_status || 'Not checked' }}</strong></div>
-          <div><span>Refunded</span><strong>{{ order.gateway_refunded === null ? '—' : (order.gateway_refunded | currency:'INR':'symbol':'1.2-2') }}</strong></div>
+    <div class="ev-modal-backdrop">
+      <section class="audit-panel payout-record" role="dialog" aria-modal="true" aria-labelledby="payout-title">
+        <h2 id="payout-title">Settle {{ vendor.name }}</h2>
+        <p>Review the destination, available balance and settlement method.</p>
+
+        <!-- Beneficiary Verification Summary Card -->
+        <div class="payout-account-summary">
+          <div class="summary-line">
+            <span>Beneficiary Account:</span>
+            <strong>{{ vendor.payout_account?.bank || 'UPI account' }} · {{ vendor.payout_account?.accountNo || '—' }}</strong>
+          </div>
+          <div class="summary-line">
+            <span>IFSC / UPI:</span>
+            <code>{{ vendor.payout_account?.upi || vendor.payout_account?.ifsc || '—' }}</code>
+          </div>
+          <div class="summary-line status-badge-line">
+            <span>Status:</span>
+            @if(vendor.payout_account?.verified){
+              <span class="payout-verif-badge verified">Verified Account</span>
+              @if(vendor.payout_account?.verificationReference){
+                <span class="payout-ref-pill">Razorpay: {{ vendor.payout_account?.verificationReference }}</span>
+              }
+            }@else{
+              <span class="payout-verif-badge unverified">Unverified Beneficiary</span>
+            }
+          </div>
         </div>
-        <div class="order-detail-references"><span>References</span><code>{{ order.razorpay_payment_id || order.transaction_id || order.gateway_order_id || 'No external reference' }}</code></div>
-        <p class="order-detail-note">This detail view is opened from the Finance audit and does not leave the current page.</p>
+
+        @if(payoutMode()==='razorpayx' && !vendor.payout_account?.verified){
+          <div class="audit-alert payout-unverified-alert">
+            <p><strong>Credentials Unverified:</strong> Automated RazorpayX payouts require verified beneficiary credentials to prevent misrouted funds.</p>
+            @if(!showInlineVerify()){
+              <button type="button" class="btn-inline-verify-trigger" (click)="showInlineVerify.set(true)">
+                Verify Beneficiary Credentials Now
+              </button>
+            }@else{
+              <div class="inline-verify-drawer">
+                <p class="inline-verify-desc">
+                  Validate <strong>{{ vendor.name }}</strong>'s UPI address (<code>{{ vendor.payout_account?.upi || 'Direct RTGS' }}</code>) with Razorpay before scheduling payout.
+                </p>
+                <div class="inline-verify-actions">
+                  <button type="button" class="btn-verify-confirm" [disabled]="isVerifyingVendor()" (click)="verifyCurrentPayoutVendor(true)">
+                    {{ isVerifyingVendor() ? 'Validating via Razorpay…' : 'Validate & Verify via Razorpay' }}
+                  </button>
+                  <button type="button" (click)="showInlineVerify.set(false)">Cancel</button>
+                </div>
+              </div>
+            }
+          </div>
+        }
+
+        <label>Settlement method
+          <select [disabled]="saving()" [ngModel]="payoutMode()" (ngModelChange)="payoutMode.set($event)">
+            <option value="manual">Record a completed bank transfer</option>
+            <option value="razorpayx">Send through RazorpayX</option>
+          </select>
+        </label>
+        <p>{{ payoutMode()==='manual' ? 'Record only after the external transfer has completed. This action does not send money.' : 'Creates a transfer request. Pending transfers reserve the balance until the provider confirms completion. Keep the same reference when retrying.' }}</p>
+        <p>Available: <strong>{{ vendor.payable_amount | currency:'INR':'symbol':'1.2-2' }}</strong></p>
+        <label>Amount (INR)
+          <input [disabled]="saving()" [max]="vendor.payable_amount" type="number" min="0.01" step="0.01" [ngModel]="payoutAmount()" (ngModelChange)="payoutAmount.set(+$event)" />
+        </label>
+        <label>{{ payoutMode()==='manual' ? 'Completed transfer reference / UTR' : 'Unique payout reference' }}
+          <input maxlength="40" [disabled]="saving()" [ngModel]="payoutReference()" (ngModelChange)="payoutReference.set($event)" />
+        </label>
+        <div class="payout-actions-bar">
+          <button [disabled]="saving() || (payoutMode()==='razorpayx' && !vendor.payout_account?.verified)" (click)="savePayout()">{{ saving() ? 'Saving…' : payoutMode()==='manual' ? 'Record completed transfer' : 'Send RazorpayX payout' }}</button>
+          <button [disabled]="saving()" (click)="payout.set(null)">Cancel</button>
+        </div>
       </section>
     </div>
   }

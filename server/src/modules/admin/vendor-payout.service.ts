@@ -7,6 +7,7 @@ export type VendorPayoutAccount = {
   upi?: string;
   verified?: boolean;
   verificationReference?: string;
+  verifiedBeneficiaryName?: string;
 };
 
 export type PayoutTransfer = {
@@ -45,7 +46,7 @@ function getFundAccount(account: VendorPayoutAccount): { account_type: 'bank_acc
     return {
       account_type: 'bank_account',
       bank_account: {
-        name: account.bank?.trim() || 'Vendor',
+        name: account.verifiedBeneficiaryName?.trim() || '',
         ifsc: account.ifsc.trim().toUpperCase(),
         account_number: account.accountNo.trim(),
       },
@@ -58,6 +59,8 @@ export async function createRazorpayXPayout(input: {
   amount: number;
   reference: string;
   narration: string;
+  vendorId: string;
+  vendorName: string;
   account: VendorPayoutAccount;
 }): Promise<PayoutTransfer> {
   if (!input.account.verified) {
@@ -79,7 +82,7 @@ export async function createRazorpayXPayout(input: {
       },
       body: JSON.stringify({
         account_number: config.accountNumber,
-        fund_account: fundAccount,
+        fund_account: { ...fundAccount, contact: { name: input.vendorName.slice(0, 50), type: 'vendor', reference_id: input.vendorId } },
         amount: Math.round(input.amount * 100),
         currency: 'INR',
         mode: input.account.upi?.trim() ? 'UPI' : 'IMPS',

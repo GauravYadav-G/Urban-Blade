@@ -9,13 +9,14 @@ import { invalidateCatalog, getOrSetCache } from '../../redis/cache.service.js';
 import { checkDbHealth } from '../../db/pool.js';
 import { checkRedisHealth } from '../../redis/client.js';
 import { getEventLoopLag, getMemoryUsage } from '../../core/circuit-breaker.js';
-import { syncOrderFromCarrierWebsite, carrierCapabilities, trackingAutomatic } from '../orders/carrier-portal.service.js';
+import { syncOrderFromCarrierWebsite, carrierCapabilities, trackingAutomatic, CarrierPortalReviewError } from '../orders/carrier-portal.service.js';
 import { paymentGateway, settleCapturedPayment } from '../orders/payment-settlement.service.js';
 import { initiateOrderRefund } from '../orders/refund.service.js';
 import { reserveStock, commitStockReservation, cancelOrderAndReleaseStock } from '../orders/stock-reservation.service.js';
 import { generateAiReply } from '../support/support.routes.js';
 import { requireAdmin, requireStaff } from '../../core/auth.middleware.js';
 import { PayoutProviderError, createRazorpayXPayout, type VendorPayoutAccount } from './vendor-payout.service.js';
+import { validateVendorUpiWithRazorpay } from './razorpay-validation.service.js';
 
 export async function adminRoutes(app: FastifyInstance) {
   // ─── AUTHENTICATION & RBAC (OWASP TOP 10 ACCESS CONTROL GUARD) ───────────
@@ -867,7 +868,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const parsed = carrierRequest.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: 'INVALID_LOOKUP', message: 'Enter the full order ID or saved AWB.' });
     try { return { ok: true, ...await syncOrderFromCarrierWebsite(parsed.data.orderIdOrNumber, parsed.data.carrier) }; }
-    catch (error) { const code = error instanceof Error ? error.message : 'CARRIER_STATUS_UNAVAILABLE'; return reply.code(code === 'ORDER_NOT_FOUND' ? 404 : 409).send({ error: code, message: carrierErrors[code] || 'Tracking could not be verified. No fulfilment update was applied.' }); }
+    catch (error) { const code = error instanceof Error ? error.message : 'CARRIER_STATUS_UNAVAILABLE'; return reply.code(code === 'ORDER_NOT_FOUND' ? 404 : 409).send({ error: code, message: carrierErrors[code] || 'Tracking could not be verified. No fulfilment update was applied.', ...(error instanceof CarrierPortalReviewError ? { manualReview: { carrier: error.carrier, awb: error.awb, portalUrl: error.portalUrl } } : {}) }); }
   });
   app.post('/admin/orders/bulk-fetch-carrier-websites', async (request, reply) => {
     const parsed = z.object({ orderIds: z.array(z.string().uuid()).min(1).max(25), carrier: z.string().max(100).optional() }).strict().safeParse(request.body);
@@ -1194,13 +1195,22 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   });
 
+  const payoutAccountFieldSchema = z.object({
+    bank: z.string().trim().max(100).optional(),
+    accountNo: z.string().trim().max(50).optional(),
+    ifsc: z.string().trim().max(20).optional(),
+    upi: z.string().trim().max(100).optional(),
+
+  }).strip();
+
   const vendorSchema = z.object({
     name: z.string().trim().min(2).max(150), email: z.string().trim().email().max(255).transform(value => value.toLowerCase()),
     password: z.string().min(10).refine(value => Buffer.byteLength(value) <= 72).optional(),
     contactPerson: z.string().trim().max(150).optional(), contact_person: z.string().trim().max(150).optional(),
     phone: z.string().trim().max(50).optional(), commissionRate: z.number().min(0).max(100).optional(), commission_rate: z.number().min(0).max(100).optional(),
     status: z.enum(['active', 'suspended']).optional(),
-    payoutAccount: z.record(z.string().max(200)).optional(), payout_account: z.record(z.string().max(200)).optional(),
+    payoutAccount: payoutAccountFieldSchema.optional(),
+    payout_account: payoutAccountFieldSchema.optional(),
   });
 
   // ─── 7. MULTI-VENDOR BUSINESS MANAGEMENT (ADMIN-ONLY) ─────────────────────
@@ -1272,7 +1282,7 @@ export async function adminRoutes(app: FastifyInstance) {
         INSERT INTO vendors (
           id, name, slug, email, password, contact_person, phone, commission_rate, status, payout_account
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, 'active', $9::jsonb
+          $1, $2, $3, $4, $5, $6, $7, $8, $10, $9::jsonb
         )
         RETURNING *;
         `,
@@ -1285,7 +1295,8 @@ export async function adminRoutes(app: FastifyInstance) {
           (v as any).contactPerson || (v as any).contact_person || 'Vendor Operations Representative',
           v.phone || '',
           (v as any).commissionRate ?? (v as any).commission_rate ?? 12,
-          JSON.stringify((v as any).payoutAccount || (v as any).payout_account || {}),
+          JSON.stringify({ ...((v as any).payoutAccount || (v as any).payout_account || {}), verified: false }),
+          v.status || 'active',
         ]
       );
       return reply.status(201).send({ ok: true, vendor: { ...res.rows[0], password: undefined } });
@@ -1317,7 +1328,15 @@ export async function adminRoutes(app: FastifyInstance) {
     try {
       const payout = v.payoutAccount || v.payout_account;
       const res = await withTransaction(async client => {
-        const old = (await client.query('SELECT name, email FROM vendors WHERE id = $1 FOR UPDATE', [id])).rows[0];
+        const old = (await client.query('SELECT name, email, payout_account FROM vendors WHERE id = $1 FOR UPDATE', [id])).rows[0];
+        const currentAccount = old?.payout_account || {};
+        const sameDestination = payout && ['bank', 'accountNo', 'ifsc', 'upi'].every(
+          key => String(currentAccount[key] || '').trim().toLowerCase() === String(payout[key as keyof typeof payout] || '').trim().toLowerCase()
+        );
+        const sameName = !v.name || v.name === old?.name;
+        const nextAccount = sameDestination && sameName ? currentAccount
+          : { ...(payout || currentAccount), verified: false, verificationReference: null,
+              verifiedBeneficiaryName: null, verifiedAt: null, verifiedBy: null, verificationMethod: null };
         const result = await client.query(
           `
         UPDATE vendors
@@ -1340,7 +1359,7 @@ export async function adminRoutes(app: FastifyInstance) {
             v.phone || null,
             v.commissionRate ?? v.commission_rate ?? null,
             v.status || null,
-            payout ? JSON.stringify(payout) : null,
+            payout || !sameName ? JSON.stringify(nextAccount) : null,
             id,
           ]
         );
@@ -1355,6 +1374,96 @@ export async function adminRoutes(app: FastifyInstance) {
     } catch (err: any) {
       return reply.status(500).send({ error: 'FAILED_TO_UPDATE_VENDOR', message: err.message });
     }
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { upi?: string };
+  }>('/admin/vendors/:id/validate-upi', { preHandler: [requireAdmin] }, async (request, reply) => {
+    const { id } = request.params;
+    const vendor = (await query('SELECT id, name, payout_account FROM vendors WHERE id = $1', [id])).rows[0];
+    if (!vendor) return reply.code(404).send({ error: 'VENDOR_NOT_FOUND' });
+    const targetUpi = (request.body?.upi || (vendor.payout_account as any)?.upi || '').trim();
+    if (!targetUpi) {
+      return reply.code(400).send({
+        error: 'MISSING_UPI_ID',
+        message: 'No UPI VPA provided. Please specify a UPI ID to validate with Razorpay.',
+      });
+    }
+
+    const validation = await validateVendorUpiWithRazorpay(targetUpi, vendor.name, vendor.id);
+    if (!validation.valid) {
+      return reply.code(400).send({
+        error: validation.error || 'INVALID_UPI',
+        message: validation.message || 'UPI VPA could not be verified by Razorpay.',
+        validation,
+      });
+    }
+
+    return reply.send({
+      ok: true,
+      validation,
+      message: `Razorpay successfully verified UPI for ${validation.registeredBeneficiaryName}.`,
+    });
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: {
+      verified: boolean;
+      reference?: string;
+      verifiedBeneficiaryName?: string;
+      upi?: string;
+      method?: string;
+    };
+  }>('/admin/vendors/:id/verify-payout', { preHandler: [requireAdmin] }, async (request, reply) => {
+    const { id } = request.params;
+    const body = z.object({
+      verified: z.boolean(),
+      reference: z.string().trim().max(100).optional(),
+      verifiedBeneficiaryName: z.string().trim().max(150).optional(),
+      upi: z.string().trim().max(100).optional(),
+      method: z.string().trim().max(50).optional(),
+    }).safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: 'INVALID_VERIFICATION_PAYLOAD' });
+    const vendor = (await query('SELECT id, name, payout_account FROM vendors WHERE id = $1', [id])).rows[0];
+    if (!vendor) return reply.code(404).send({ error: 'VENDOR_NOT_FOUND' });
+    const current = (vendor.payout_account || {}) as Record<string, unknown>;
+
+    let reference = body.data.reference;
+    let beneficiaryName = body.data.verifiedBeneficiaryName || (current.verifiedBeneficiaryName as string);
+    const targetUpi = (body.data.upi || (current.upi as string) || '').trim();
+
+    if (body.data.verified) {
+      if (!targetUpi || targetUpi !== current.upi) return reply.code(400).send({ error: 'SAVE_ACCOUNT_FIRST', message: 'Save the UPI address before verifying it.' });
+      const val = await validateVendorUpiWithRazorpay(targetUpi, vendor.name, vendor.id);
+      if (!val.valid || val.isSimulated || !val.nameMatch) return reply.code(409).send({ error: 'VERIFICATION_NOT_CONFIRMED', message: val.message || 'Live beneficiary verification was not confirmed.' });
+      reference = val.validationReference;
+      beneficiaryName = val.registeredBeneficiaryName;
+    }
+
+    const updated = {
+      ...current,
+      ...(targetUpi ? { upi: targetUpi } : {}),
+      verified: body.data.verified,
+      verificationReference: body.data.verified ? reference : null,
+      verifiedBeneficiaryName: body.data.verified ? (beneficiaryName || vendor.name.toUpperCase()) : null,
+      verificationMethod: body.data.verified ? 'razorpay_upi' : null,
+      verifiedAt: body.data.verified ? new Date().toISOString() : null,
+      verifiedBy: body.data.verified ? request.user.id : null,
+    };
+    const res = await query(
+      'UPDATE vendors SET payout_account = $1::jsonb, updated_at = NOW() WHERE id = $2 AND payout_account = $3::jsonb RETURNING id, name, slug, email, contact_person, phone, commission_rate, status, payout_account, created_at, updated_at',
+      [JSON.stringify(updated), id, JSON.stringify(current)]
+    );
+    if (!res.rowCount) return reply.code(409).send({ message: 'Account details changed. Reload and verify again.' });
+    return reply.send({
+      ok: true,
+      vendor: res.rows[0],
+      message: body.data.verified
+        ? `Vendor payout credentials verified via Razorpay (${reference}).`
+        : 'Vendor verification revoked.',
+    });
   });
 
   // Keep legacy clients on the same user identity and refresh-token flow.
@@ -1671,33 +1780,46 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post<{
     Body: { vendorId: string; amount: number; reference: string; notes?: string };
   }>('/admin/finance/process-payout', { preHandler: [requireAdmin] }, async (request, reply) => {
-    const parsed = z.object({ vendorId: z.string().trim().min(1).max(120), amount: z.number().finite().positive().multipleOf(0.01), reference: z.string().trim().min(3).max(150), notes: z.string().trim().max(1000).optional() }).strict().safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_PAYOUT', message: 'Provide a vendor, positive amount, and the completed bank transfer reference.' });
-    const { vendorId, amount, reference, notes } = parsed.data;
+    const parsed = z.object({ vendorId: z.string().trim().min(1).max(120), amount: z.number().finite().positive().multipleOf(0.01), reference: z.string().trim().min(3).max(150), notes: z.string().trim().max(1000).optional(), mode: z.enum(['manual', 'razorpayx']).default('manual') }).strict().safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_PAYOUT', message: 'Provide a vendor, positive amount with at most two decimals, and a unique settlement reference.' });
+    const { vendorId, amount, reference, notes, mode } = parsed.data;
     try {
       const payout = await withTransaction(async client => {
         const vendor = (await client.query("SELECT id, name, payout_account FROM vendors WHERE id = $1 AND status = 'active' FOR UPDATE", [vendorId])).rows[0];
         if (!vendor) throw new Error('VENDOR_NOT_FOUND');
         const existing = (await client.query('SELECT * FROM vendor_payouts WHERE reference = $1', [reference])).rows[0];
         if (existing) {
-          if (existing.vendor_id !== vendorId || Number(existing.amount) !== amount) throw new Error('PAYOUT_REFERENCE_CONFLICT');
-          return existing;
+          if (existing.vendor_id !== vendorId || Number(existing.amount) !== amount || existing.provider !== mode) throw new Error('PAYOUT_REFERENCE_CONFLICT');
+          return { payout: existing, disbursed: existing.provider === 'razorpayx' && existing.provider_status === 'processed' };
         }
         const balances = await vendorBalances(client);
         const balance = balances.rows.find(row => row.id === vendorId);
         if (!balance || amount > Number(balance.payable_amount)) throw new Error('PAYOUT_EXCEEDS_BALANCE');
-        const transfer = await createRazorpayXPayout({
-          amount,
-          reference,
-          narration: `Urban Blade payout ${vendor.name}`,
-          account: (vendor.payout_account || {}) as VendorPayoutAccount,
-        });
-        return (await client.query(`INSERT INTO vendor_payouts(
+
+        const hasRazorpayX = mode === 'razorpayx';
+        let transfer: { provider: string; transferId: string; status: string; disbursed: boolean };
+        if (hasRazorpayX) {
+          const rzp = await createRazorpayXPayout({
+            amount,
+            reference,
+            narration: `Urban Blade payout ${vendor.name}`,
+            vendorId,
+            vendorName: vendor.name,
+            account: (vendor.payout_account || {}) as VendorPayoutAccount,
+          });
+          transfer = { provider: rzp.provider, transferId: rzp.transferId, status: rzp.status, disbursed: rzp.status === 'processed' };
+        } else {
+          transfer = { provider: 'manual', transferId: reference, status: 'manual_recorded', disbursed: false };
+        }
+
+        const processedAt = (transfer.status === 'processed' || transfer.status === 'manual_recorded') ? new Date() : null;
+        const payoutRow = (await client.query(`INSERT INTO vendor_payouts(
             vendor_id, amount, reference, notes, recorded_by, provider, provider_transfer_id, provider_status, processed_at
-          ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $8 = 'processed' THEN NOW() ELSE NULL END)
-          RETURNING *`, [vendorId, amount, reference, notes || '', request.user.id, transfer.provider, transfer.transferId, transfer.status])).rows[0];
+          ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          RETURNING *`, [vendorId, amount, reference, notes || '', request.user.id, transfer.provider, transfer.transferId, transfer.status, processedAt])).rows[0];
+        return { payout: payoutRow, disbursed: transfer.disbursed };
       });
-      return { ok: true, recorded: true, disbursed: true, payout, message: `RazorpayX payout created with status ${payout.provider_status}.` };
+      return { ok: true, recorded: true, disbursed: payout.disbursed, payout: payout.payout, message: payout.payout.provider === 'razorpayx' ? `RazorpayX payout status: ${payout.payout.provider_status}.` : 'External payment recorded. This application did not transfer funds.' };
     } catch (error) {
       request.log.warn({ error }, 'Payout record rejected');
       const code = error instanceof PayoutProviderError ? error.code : String((error as Error)?.message || 'PAYOUT_RECORD_REJECTED');

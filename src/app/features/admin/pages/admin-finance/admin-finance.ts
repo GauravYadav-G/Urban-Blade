@@ -4,11 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom, Subject, takeUntil } from 'rxjs';
 import { FinanceAuditService, FinanceAudit, AuditOrder, VendorBalance } from '@core/services/finance-audit.service';
+import { AdminService } from '@core/services/admin.service';
 import { ToastService } from '@core/services/toast.service';
 
 @Component({selector:'app-admin-finance',standalone:true,imports:[CommonModule,FormsModule,RouterLink],templateUrl:'./admin-finance.html',styleUrls:['./admin-finance.scss'],changeDetection:ChangeDetectionStrategy.OnPush})
 export class AdminFinance implements OnInit,OnDestroy {
   private readonly api=inject(FinanceAuditService);
+  private readonly admin=inject(AdminService);
   private readonly toast=inject(ToastService);
   private readonly destroyed=new Subject<void>();
   private timer:ReturnType<typeof setInterval>|undefined;
@@ -28,7 +30,10 @@ export class AdminFinance implements OnInit,OnDestroy {
   readonly payoutAmount=signal(0);
   readonly payoutReference=signal('');
   readonly saving=signal(false);
-  readonly selectedOrder=signal<AuditOrder|null>(null);
+  readonly payoutMode=signal<'manual'|'razorpayx'>('manual');
+  readonly isVerifyingVendor=signal(false);
+  readonly inlineVerifyRef=signal('');
+  readonly showInlineVerify=signal(false);
 
   ngOnInit(){void this.refresh();this.timer=setInterval(()=>{if(!this.syncing()&&!this.loading()&&!document.hidden) void this.refresh();},30000);}
   ngOnDestroy(){this.alive=false;this.destroyed.next();this.destroyed.complete();if(this.timer)clearInterval(this.timer);}
@@ -68,14 +73,37 @@ export class AdminFinance implements OnInit,OnDestroy {
     catch(error){if(this.alive)this.toast.error(this.message(error,'Inventory repair was rejected.'));}
     finally{if(this.alive)this.checking.set(null);}
   }
-  openPayout(vendor:VendorBalance){this.payout.set(vendor);this.payoutAmount.set(Number(vendor.payable_amount));this.payoutReference.set('');}
-  openOrderDetails(order:AuditOrder){this.selectedOrder.set(order);}
-  closeOrderDetails(){this.selectedOrder.set(null);}
+  openPayout(vendor: VendorBalance) {
+    this.payout.set(vendor);
+    this.payoutAmount.set(Number(vendor.payable_amount));
+    this.payoutReference.set('');
+    this.payoutMode.set('manual');
+    this.showInlineVerify.set(false);
+    this.inlineVerifyRef.set('');
+  }
+  async verifyCurrentPayoutVendor(status: boolean) {
+    const v = this.payout();
+    if (!v || this.isVerifyingVendor()) return;
+    this.isVerifyingVendor.set(true);
+    try {
+      const res = await firstValueFrom(this.admin.verifyVendorPayout(v.id, status));
+      if (res?.vendor?.payout_account) {
+        this.payout.update((curr) => curr ? { ...curr, payout_account: res.vendor!.payout_account } : null);
+      }
+      await this.refresh();
+      this.showInlineVerify.set(false);
+      this.toast.success(status ? 'Vendor UPI verified with Razorpay.' : 'Verification revoked.');
+    } catch (err: any) {
+      this.toast.error(err?.error?.message || 'Verification update failed.');
+    } finally {
+      this.isVerifyingVendor.set(false);
+    }
+  }
   async savePayout(){
     const vendor=this.payout();if(!vendor||this.saving())return;
-    if(!Number.isFinite(this.payoutAmount())||this.payoutAmount()<=0||this.payoutReference().trim().length<3){this.toast.error('Enter the paid amount and completed bank transfer reference.');return;}
+    if(!Number.isFinite(this.payoutAmount())||this.payoutAmount()<=0||this.payoutAmount()>Number(vendor.payable_amount)||Math.abs(this.payoutAmount()*100-Math.round(this.payoutAmount()*100))>0.00001||this.payoutReference().trim().length<3){this.toast.error('Enter an amount within the available balance (up to two decimals) and a reference of at least 3 characters.');return;}
     this.saving.set(true);
-    try{await firstValueFrom(this.api.recordPayout(vendor.id,this.payoutAmount(),this.payoutReference().trim()).pipe(takeUntil(this.destroyed)));this.payout.set(null);this.toast.success('RazorpayX payout created.');await this.refresh();}
+    try{const result=await firstValueFrom(this.api.recordPayout(vendor.id,this.payoutAmount(),this.payoutReference().trim(),this.payoutMode()).pipe(takeUntil(this.destroyed)));this.payout.set(null);this.toast.success(result.message);await this.refresh();}
     catch(error){if(this.alive)this.toast.error(this.message(error,'Payout record could not be saved.'));}
     finally{if(this.alive)this.saving.set(false);}
   }

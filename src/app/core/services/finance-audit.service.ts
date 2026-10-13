@@ -13,7 +13,25 @@ export interface GatewayAttempt {
   id:string; gateway_order_id:string|null; status:string; amount_paise:number; refunded_paise:number;
   fee_paise:number|null; tax_paise:number|null; provider_created_at:string; checked_at:string; matched:boolean;
 }
-export interface VendorBalance { id:string; name:string; gross_sales:number; platform_cut:number; paid_amount:number; payable_amount:number; commission_rate:number; }
+export interface VendorBalance {
+  id: string;
+  name: string;
+  gross_sales: number;
+  platform_cut: number;
+  paid_amount: number;
+  pending_amount: number;
+  status: string;
+  payable_amount: number;
+  commission_rate: number;
+  payout_account?: {
+    bank?: string;
+    accountNo?: string;
+    ifsc?: string;
+    upi?: string;
+    verified?: boolean;
+    verificationReference?: string;
+  };
+}
 export interface FinanceAudit {
   ok:boolean; asOf:string; days:number; offset:number; total:number;
   local:{captured:number;refunded:number;net:number;awaiting:number;inventoryReview:number;orders:number};
@@ -29,5 +47,5 @@ export class FinanceAuditService {
   sync(from:number,to:number,offset:number){return this.http.post<{ok:boolean;imported:number;nextOffset:number|null;issues:Array<{paymentId:string;error:string}>}>('/api/admin/finance/sync-gateway',{from,to,offset});}
   reconcile(id:string){return this.http.post<{message:string}>(`/api/admin/orders/${id}/reconcile-payment`,{});}
   repair(id:string){return this.http.post(`/api/admin/orders/${id}/repair-inventory`,{});}
-  recordPayout(vendorId:string,amount:number,reference:string){return this.http.post('/api/admin/finance/process-payout',{vendorId,amount,reference});}
+  recordPayout(vendorId:string,amount:number,reference:string,mode:'manual'|'razorpayx'){return this.http.post<{message:string}>('/api/admin/finance/process-payout',{vendorId,amount,reference,mode});}
 }

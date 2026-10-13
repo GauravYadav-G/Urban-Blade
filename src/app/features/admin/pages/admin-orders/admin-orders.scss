@@ -3785,7 +3785,7 @@
 }
 
 @media print {
-  .orders-view > *:not(.print-backdrop) {
+  .orders-view > *:not(.print-backdrop):not(app-order-invoice) {
     display: none !important;
   }
   .print-backdrop {
