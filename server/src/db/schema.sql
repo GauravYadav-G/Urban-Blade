@@ -58,6 +58,22 @@ CREATE TABLE IF NOT EXISTS addresses (
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Account address book metadata, preserved across devices and browser sessions.
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS house VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS landmark VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS location JSONB;
+ALTER TABLE addresses ALTER COLUMN street1 TYPE TEXT;
+CREATE INDEX IF NOT EXISTS idx_addresses_user_id ON addresses(user_id);
+-- Repair duplicate defaults from older clients before enforcing the invariant.
+WITH ranked AS (
+  SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at, id) AS position
+  FROM addresses WHERE is_default = true
+)
+UPDATE addresses SET is_default = false FROM ranked
+WHERE addresses.id = ranked.id AND ranked.position > 1;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_addresses_one_default
+ON addresses(user_id) WHERE is_default = true;
+
 -- ─── PRODUCTS & SERVICES ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

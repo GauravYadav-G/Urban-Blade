@@ -1,0 +1,41 @@
+// Shared customer chat foundations.
+@mixin bubble {
+  padding: 14px 16px;
+  border: 1px solid #e6e8eb;
+  border-radius: 14px;
+  background: #fff;
+  color: #293241;
+  font-size: 13px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  box-shadow: 0 2px 5px rgba(11, 15, 25, .025);
+  &.user { background: #0b0f19; color: #fff; border-color: #0b0f19; border-bottom-right-radius: 4px; }
+  &.ai, &.admin { border-bottom-left-radius: 4px; }
+}
+@mixin chip {
+  border: 1px solid #e4e7eb;
+  border-radius: 7px;
+  padding: 9px 12px;
+  background: #fff;
+  color: #536071;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .18s, border-color .18s;
+  &:hover:not(:disabled) { background: #faf7f0; border-color: #d9c59e; color: #0b0f19; }
+}
+@mixin error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid #eedbd6;
+  background: #fdf7f5;
+  color: #914239;
+  font-size: 11px;
+  line-height: 1.7;
+  button { border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
+}

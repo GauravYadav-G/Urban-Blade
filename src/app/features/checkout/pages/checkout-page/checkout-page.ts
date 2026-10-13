@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, viewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -8,8 +8,9 @@ import { AccountService } from '@core/services/account.service';
 import { AddressService } from '@core/services/address.service';
 import { SiteSettingsService } from '@core/services/site-settings.service';
 import { PaymentService, PaymentReceipt, OrderQuote, RazorpayOrderResponse } from '@core/services/payment.service';
+import { PrintDocumentService } from '@core/services/print-document.service';
 import { InrPipe } from '@shared/pipes/inr-pipe';
-import type { SavedAddress } from '@core/models/address.model';
+import { formatStreetAddress, type SavedAddress } from '@core/models/address.model';
 
 @Component({ selector: 'app-checkout-page', standalone: true,
   imports: [CommonModule, ReactiveFormsModule, RouterLink, InrPipe],
@@ -28,6 +29,7 @@ export class CheckoutPage implements OnInit {
   readonly receipt = signal<PaymentReceipt | null>(null);
   readonly coupon = signal('');
   readonly couponInput = signal('');
+  readonly selectedAddressId = signal<string | null>(null);
   readonly pending = signal<RazorpayOrderResponse | null>(null);
   readonly total = computed(() => this.quote()?.totalAmount ?? this.cart.subtotal());
   readonly form = this.fb.nonNullable.group({
@@ -37,18 +39,25 @@ export class CheckoutPage implements OnInit {
     city: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(100)]],
     state: ['', [Validators.required, Validators.maxLength(100)]],
     postalCode: ['', [Validators.required, Validators.pattern(/^[1-9][0-9]{5}$/)]],
-    save: [false], method: ['razorpay' as 'razorpay' | 'cod'],
+    save: [true], method: ['razorpay' as 'razorpay' | 'cod'],
   });
   async ngOnInit(): Promise<void> {
+    await this.addresses.load(true);
     const address = this.addresses.addresses().find(a => a.isDefault) || this.addresses.addresses()[0];
-    if (address) this.selectAddress(address);
+    if (address && !this.form.dirty) this.selectAddress(address);
     this.pending.set(this.payment.restorePendingOrder());
     if (this.pending()) await this.checkPayment();
     else if (this.cart.lines().length) await this.refreshQuote();
   }
   selectAddress(a: SavedAddress): void {
+    this.selectedAddressId.set(a.id);
     this.form.patchValue({ name: a.fullName, phone: a.mobile.replace(/\D/g, '').slice(-10),
-      street: [a.house, a.street, a.landmark].filter(Boolean).join(', '), city: a.city, state: a.state, postalCode: a.pinCode });
+      street: formatStreetAddress(a), city: a.city, state: a.state, postalCode: a.pinCode });
+  }
+  async retryAddresses(): Promise<void> {
+    await this.addresses.load(true);
+    const address = this.addresses.addresses().find(item => item.isDefault) ?? this.addresses.addresses()[0];
+    if (address && !this.form.dirty) this.selectAddress(address);
   }
   invalid(field: 'name' | 'phone' | 'street' | 'city' | 'state' | 'postalCode'): boolean {
     const c = this.form.controls[field]; return c.touched && c.invalid;
@@ -93,7 +102,11 @@ export class CheckoutPage implements OnInit {
     const shippingAddress = { fullName: v.name.trim(), phone: v.phone, street: v.street.trim(), city: v.city.trim(), state: v.state.trim(), postalCode: v.postalCode, email: this.account.user()?.email };
     const payload = { items: this.items(), shippingAddress, couponCode: this.coupon() || undefined, expectedTotal: this.quote()!.totalAmount };
     try {
-      if (v.save) this.addresses.save({ fullName: v.name, mobile: v.phone, house: '', street: v.street, landmark: '', city: v.city, state: v.state, pinCode: v.postalCode, location: null, isDefault: !this.addresses.addresses().length });
+      const selected = this.addresses.addresses().find(address => address.id === this.selectedAddressId());
+      const unchanged = selected && selected.fullName === v.name && selected.mobile === v.phone
+        && formatStreetAddress(selected) === v.street
+        && selected.city === v.city && selected.state === v.state && selected.pinCode === v.postalCode;
+      if (v.save && !unchanged) await this.addresses.save({ fullName: v.name, mobile: v.phone, house: '', street: v.street, landmark: '', city: v.city, state: v.state, pinCode: v.postalCode, location: null, isDefault: !this.addresses.addresses().length });
       if (v.method === 'cod') this.complete(await firstValueFrom(this.payment.placeCodOrder(payload)));
       else {
         const order = await firstValueFrom(this.payment.createRazorpayOrder(payload));
@@ -136,5 +149,12 @@ export class CheckoutPage implements OnInit {
     this.receipt.set(r); this.pending.set(null); this.payment.clearPendingOrder();
     this.busy.set(false); this.error.set(''); this.message.set(''); this.cart.clear();
   }
-  printReceipt(): void { window.print(); }
+  private readonly printer = inject(PrintDocumentService);
+  private readonly receiptDocument = viewChild<ElementRef<HTMLElement>>('receiptDocument');
+  async printReceipt(): Promise<void> {
+    const paper = this.receiptDocument();
+    if (!paper) return;
+    try { await this.printer.print(paper.nativeElement, `Receipt_${this.receipt()?.receiptNumber ?? 'Urban_Blade'}`); }
+    catch { this.error.set('Receipt print preview could not be opened. Please retry.'); }
+  }
 }

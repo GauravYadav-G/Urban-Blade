@@ -1226,7 +1226,7 @@
               <label>Select Catalog Item</label>
               <select [ngModel]="manualProductId()" (ngModelChange)="manualProductId.set($event)">
                 @for (prod of admin.products(); track prod.id) {
-                  <option [value]="prod.id">{{ prod.name }} (₹{{ prod.price }}) - Stock: {{ prod.stock_quantity ?? 100 }}</option>
+                  <option [value]="prod.id">{{ prod.name }} (₹{{ prod.price }}) - Available: {{ prod.availableQuantity ?? prod.stock_quantity ?? 0 }}</option>
                 }
               </select>
             </div>
@@ -1254,9 +1254,9 @@
 
         <div class="modal-actions">
           <button type="button" class="btn-cancel" (click)="closeCreateModal()">Cancel</button>
-          <button type="button" class="btn-confirm" (click)="saveManualOrder()">
+          <button type="button" class="btn-confirm" (click)="saveManualOrder()" [disabled]="isSavingManualOrder()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Record Order</span>
+            <span>{{ isSavingManualOrder() ? 'Saving order…' : 'Record Order' }}</span>
           </button>
         </div>
       </div>

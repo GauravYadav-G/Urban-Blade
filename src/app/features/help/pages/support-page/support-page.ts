@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -90,15 +90,19 @@ export class SupportPage implements OnInit {
       text: `Hi there! How can I help you today? You can track an order, book a salon chair, or ask any question about grooming products.`,
       timestamp: new Date().toISOString(),
       actionChips: [
-        { label: '📦 Track My Order', query: 'Where is my order?' },
-        { label: '💈 Haircut Prices & Menu', query: 'What are your haircut prices?' },
-        { label: '📍 Studio Location & Timings', query: 'Where is your studio located?' },
-        { label: '🌿 Hair Fall & Density Protocol', query: 'What should I do for hair fall?' },
-        { label: '🧔 Beard Growth Blueprint', query: 'How to fix a patchy beard?' }
+        { label: 'Track my order', query: 'Where is my order?' },
+        { label: 'Services & prices', query: 'What are your haircut prices?' },
+        { label: 'Studio details', query: 'Where is your studio located?' },
+        { label: 'Hair care advice', query: 'What should I do for hair fall?' },
+        { label: 'Beard care advice', query: 'How to fix a patchy beard?' }
       ]
     },
   ]);
 
+  readonly chatError = signal('');
+  readonly ticketError = signal('');
+  @ViewChild('chatViewport') private viewport?: ElementRef<HTMLDivElement>;
+  private failedMessage: { id: string; text: string } | null = null;
   readonly userInput = signal<string>('');
   readonly isGenerating = signal<boolean>(false);
 
@@ -118,58 +122,19 @@ export class SupportPage implements OnInit {
   });
 
   readonly quickPrompts = [
-    { label: '📦 Track Parcel / Order', query: 'Where is my order?' },
-    { label: '💈 Haircut Rates & Services', query: 'What are your haircut prices?' },
-    { label: '📍 Studio Location & Hours', query: 'Where is your studio located?' },
-    { label: '🧴 Hair Fall Advice', query: 'What should I do for hair fall?' },
-    { label: '🧔 Patchy Beard Growth', query: 'How to fix a patchy beard?' },
-    { label: '✂️ Reserve Barber Chair', query: 'Book appointment' },
-    { label: '🛡️ 7-Day Guarantee Policy', query: 'What is the return and warranty policy?' },
+    { label: 'Track an order', query: 'Where is my order?' },
+    { label: 'Services & prices', query: 'What are your haircut prices?' },
+    { label: 'Studio details', query: 'Where is your studio located?' },
+    { label: 'Hair care advice', query: 'What should I do for hair fall?' },
+    { label: 'Beard care advice', query: 'How to fix a patchy beard?' },
+    { label: 'Book a visit', query: 'Book appointment' },
+    { label: 'Returns & exchanges', query: 'What is the return and warranty policy?' },
   ];
 
   readonly topics = [
-    {
-      title: 'Hair Care & Serums',
-      body: 'Wrong shampoo, leaking hair oil, missing restorative serum, or colour shade inquiry. We replace unused items damaged in transit.',
-      route: '/shop',
-      query: { cat: 'hair' },
-      link: 'Shop Hair Care',
-    },
-    {
-      title: 'Beard & Moustache',
-      body: 'Cedarwood beard oils, waxes, precision comb sets, and titanium trimmers. Defective or leaking bottles replaced with zero hassle.',
-      route: '/shop',
-      query: { cat: 'beard' },
-      link: 'Shop Beard Care',
-    },
-    {
-      title: 'Skin & Facial Therapy',
-      body: 'Charcoal face wash, volcanic scrubs, de-tan therapy packs, and anti-aging hydration creams. Certified dermatologically approved.',
-      route: '/shop',
-      query: { cat: 'skin' },
-      link: 'Shop Skin Range',
-    },
-    {
-      title: 'Pro Electrical Tools',
-      body: 'Titanium precision trimmers, ionic tourmaline dryers, and hot lather machines with 1-year comprehensive brand warranty.',
-      route: '/shop',
-      query: { cat: 'tools' },
-      link: 'Shop Electricals',
-    },
-    {
-      title: 'Doorstep Courier Dispatch',
-      body: 'Real-time Delhivery Air & Bluedart courier tracking, OTP delivery protocol, and express courier logistics.',
-      route: '/account',
-      query: {},
-      link: 'Track in Dashboard',
-    },
-    {
-      title: 'Salon Floor Appointments',
-      body: 'Reschedule your visit, add royal shave services, or request custom wedding styling consultations.',
-      route: '/book',
-      query: {},
-      link: 'Book Stylist',
-    },
+    { title: 'Your orders', body: 'Find your purchases, delivery details and tax invoices in one place.', route: '/account', query: {}, link: 'Open my account' },
+    { title: 'Studio appointments', body: 'Explore our services and choose a time for your next visit.', route: '/book', query: {}, link: 'Book a visit' },
+    { title: 'Grooming essentials', body: 'Discover hair, beard and skin care for your everyday routine.', route: '/shop', query: {}, link: 'Explore the collection' },
   ];
 
   ngOnInit(): void {
@@ -198,6 +163,8 @@ export class SupportPage implements OnInit {
   sendChatMessage(customText?: string): void {
     const text = (customText || this.userInput()).trim();
     if (!text || this.isGenerating()) return;
+    this.chatError.set('');
+    this.failedMessage = null;
 
     const userMsg: ChatBubble = {
       id: `msg-${Date.now()}`,
@@ -212,6 +179,7 @@ export class SupportPage implements OnInit {
     }
 
     this.isGenerating.set(true);
+    this.scrollChat();
 
     this.http
       .post<{ 
@@ -227,6 +195,7 @@ export class SupportPage implements OnInit {
       .subscribe({
         next: (res) => {
           this.isGenerating.set(false);
+          this.scrollChat();
           const reply = res?.reply || "I've logged your request. Our support specialists are available on live chat or telephone.";
           this.chatMessages.update((msgs) => [
             ...msgs,
@@ -242,17 +211,30 @@ export class SupportPage implements OnInit {
         },
         error: () => {
           this.isGenerating.set(false);
-          this.chatMessages.update((msgs) => [
-            ...msgs,
-            {
-              id: `ai-${Date.now()}`,
-              sender: 'ai',
-              text: "Our AI logistics network is currently handling high volume. You can reach our executive desk directly at +91 90156 18265.",
-              timestamp: new Date().toISOString(),
-            },
-          ]);
+          this.failedMessage = { id: userMsg.id, text };
+          this.chatError.set('Your message could not be sent. Please try again or contact our studio team.');
         },
       });
+  }
+
+  retryChatMessage(): void {
+    const failed = this.failedMessage;
+    if (!failed || this.isGenerating()) return;
+    this.chatMessages.update(messages => messages.filter(message => message.id !== failed.id));
+    this.sendChatMessage(failed.text);
+  }
+
+  onChatKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault(); this.sendChatMessage();
+    }
+  }
+
+  private scrollChat(): void {
+    setTimeout(() => {
+      const element = this.viewport?.nativeElement;
+      if (element) element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' });
+    }, 0);
   }
 
   addToCart(product: any): void {
@@ -521,6 +503,7 @@ export class SupportPage implements OnInit {
   openTicketModal(): void {
     this.ticketModalOpen.set(true);
     this.ticketSuccessMessage.set('');
+    this.ticketError.set('');
   }
 
   closeTicketModal(): void {
@@ -529,6 +512,8 @@ export class SupportPage implements OnInit {
   }
 
   submitTicket(): void {
+    if (this.isSubmittingTicket()) return;
+    this.ticketError.set('');
     if (this.ticketForm.invalid) {
       this.ticketForm.markAllAsTouched();
       return;
@@ -550,10 +535,7 @@ export class SupportPage implements OnInit {
         },
         error: () => {
           this.isSubmittingTicket.set(false);
-          this.ticketSuccessMessage.set('Ticket submitted to priority queue.');
-          setTimeout(() => {
-            this.closeTicketModal();
-          }, 2500);
+          this.ticketError.set('Your request was not submitted. Your details are still here; please try again.');
         },
       });
   }

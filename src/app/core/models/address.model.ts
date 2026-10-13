@@ -19,3 +19,11 @@ export interface SavedAddress {
 }
 
 export type AddressDraft = Omit<SavedAddress, 'id'>;
+
+export function formatStreetAddress(address: Pick<SavedAddress, 'house' | 'street' | 'landmark'>): string {
+  return [address.house, address.street, address.landmark].map(part => part.trim()).filter(Boolean).join(', ');
+}
+
+export function formatFullAddress(address: SavedAddress): string {
+  return [formatStreetAddress(address), address.city, `${address.state} ${address.pinCode}`].filter(Boolean).join(', ');
+}

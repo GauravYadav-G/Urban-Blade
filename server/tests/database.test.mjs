@@ -24,6 +24,17 @@ await query("INSERT INTO users(id,email,name,password_hash,role) VALUES($1,'buye
 await query("INSERT INTO products(id,slug,name,description,price,category,kind,vendor,audience,image_url,stock_quantity,in_stock) VALUES($1,'test-serum','Test Serum','Test',500,'hair','retail','Urban Blade Lab','unisex','/images/placeholder.svg',10,true)",[product]);
 const headers=who=>({authorization:'Bearer '+app.jwt.sign({id:who,email:who===admin?'admin@example.com':'buyer@example.com',name:'Test',role:who===admin?'admin':'customer'})});
 let checked=0;
+assert.equal((await app.inject({method:'GET',url:'/api/support/ai-status'})).statusCode,401);
+assert.equal((await app.inject({method:'GET',url:'/api/support/ai-status',headers:headers(customer)})).statusCode,403);
+const diagnostic=await app.inject({method:'GET',url:'/api/support/ai-status',headers:headers(admin)});
+assert.equal(diagnostic.statusCode,200);
+assert.equal(diagnostic.json().provider,'nvidia');
+assert.ok(!diagnostic.body.includes('API_KEY'));
+for(const message of ['', 'x'.repeat(4001), 42]) {
+  assert.equal((await app.inject({method:'POST',url:'/api/support/live-chat/message',payload:{message}})).statusCode,400);
+}
+checked+=8;
+
 async function req(method,url,payload,who=customer,key){const r=await app.inject({method,url,payload,headers:{...headers(who),...(key?{'x-idempotency-key':key}:{})}});return r;}
 const cors=await app.inject({method:'OPTIONS',url:'/api/auth/register',headers:{origin:'https://urban-blade.vercel.app','access-control-request-method':'POST','access-control-request-headers':'content-type,authorization,x-idempotency-key'}});assert.equal(cors.statusCode,204);assert.equal(cors.headers['access-control-allow-origin'],'https://urban-blade.vercel.app');checked++;
 for(const url of ['/api/support/inquiries','/api/bookings?email=buyer@example.com']){assert.equal((await app.inject({method:'GET',url})).statusCode,401);checked++;}
@@ -32,6 +43,8 @@ const items=[{productId:product,quantity:1}];
 const quote=await req('POST','/api/orders/quote',{items,couponCode:'TEST10'});assert.equal(quote.json().totalAmount,549);checked++;
 const payload={items,couponCode:'TEST10',expectedTotal:549,shippingAddress:{fullName:'Buyer Test',phone:'9999999999',street:'123 Test Street',city:'Delhi',state:'Delhi',postalCode:'110001'}};
 const order=await req('POST','/api/orders/cod-order',payload,customer,'cod-production-test');assert.equal(order.statusCode,201,order.body);assert.equal(order.json().paymentId,'');checked++;
+const invoiceOrders=await req('GET','/api/orders');assert.equal(invoiceOrders.statusCode,200,invoiceOrders.body);
+const invoiceOrder=invoiceOrders.json().find(o=>o.id===order.json().orderId);assert.ok(invoiceOrder);assert.equal(Number(invoiceOrder.shipping_fee),order.json().shippingFee);assert.equal(Number(invoiceOrder.tax_amount),order.json().taxAmount);assert.equal(Number(invoiceOrder.tax_rate_percent),order.json().taxRatePercent);assert.equal(invoiceOrder.tax_inclusive,order.json().taxInclusive);checked++;
 const retry=await req('POST','/api/orders/cod-order',payload,customer,'cod-production-test');assert.equal(retry.json().orderId,order.json().orderId);assert.equal((await query('SELECT COUNT(*)::int n FROM orders')).rows[0].n,1);checked++;
 assert.equal((await query('SELECT stock_quantity,stock_reserved FROM products')).rows[0].stock_quantity,9);assert.equal((await query('SELECT status FROM stock_reservations')).rows[0].status,'committed');checked++;
 const cancellation=await req('PUT',`/api/admin/orders/${order.json().orderId}/status`,{status:'cancelled'},admin);assert.equal(cancellation.statusCode,200,cancellation.body);assert.equal((await query('SELECT stock_quantity FROM products')).rows[0].stock_quantity,10);checked++;

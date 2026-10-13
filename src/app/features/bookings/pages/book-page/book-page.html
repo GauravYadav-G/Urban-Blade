@@ -1,233 +1,74 @@
 <div class="book-page-shell">
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       HERO HEADER (CENTERED)
-       ═══════════════════════════════════════════════════════════════════════ -->
   <header class="book-hero">
-    <div class="kicker-pill">
-      <span class="sparkle">✦</span>
-      <span>APPOINTMENT BOOKING</span>
-    </div>
-    <h1>Book an Appointment</h1>
-    <p class="lede">
-      Choose your service, then book a salon appointment or a visit at your home.
-    </p>
+    <div><a routerLink="/" class="back-link">← Urban Blade</a><span class="eyebrow">APPOINTMENTS</span><h1>Book your next visit.</h1><p>At the studio or in the comfort of home. Choose what works for you.</p></div>
+    <div class="hero-mark" aria-hidden="true"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8.2 8.2 12.5 12.5M8.2 15.8 20.7 3.3M14 12l-2-2"/></svg></div>
   </header>
-
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       TWO-COLUMN BALANCED BOOKING LAYOUT
-       ═══════════════════════════════════════════════════════════════════════ -->
   <div class="book-grid">
-    <!-- Left Column: Venue & Concierge Details -->
-    <aside class="venue-card card">
-      <div class="venue-header">
-        <div class="venue-emblem">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M6 3h12l4 6-10 13L2 9z"></path>
-            <path d="M11 3L8 9l4 13 4-13-3-6"></path>
-          </svg>
-        </div>
-        <div>
-          <span class="venue-kicker">SALON DETAILS</span>
-          <h3>Urban Blade Grooming Studio</h3>
-        </div>
-      </div>
-
-      <div class="venue-details-list">
-        <div class="venue-detail-item">
-          <div class="vdi-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-              <circle cx="12" cy="10" r="3"></circle>
-            </svg>
-          </div>
-          <div class="vdi-text">
-            <strong>Studio Location</strong>
-            <p>{{ settings().business.address }}</p>
-          </div>
-        </div>
-
-        <div class="venue-detail-item">
-          <div class="vdi-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <polyline points="12 6 12 12 16 14"></polyline>
-            </svg>
-          </div>
-          <div class="vdi-text">
-            <strong>Operating Hours</strong>
-            <p>{{ settings().business.hours }}</p>
-          </div>
-        </div>
-
-        <div class="venue-detail-item">
-          <div class="vdi-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
-            </svg>
-          </div>
-          <div class="vdi-text">
-            <strong>Concierge Direct Desk</strong>
-            <p>{{ settings().business.phoneDisplay }}</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="venue-perks">
-        <h4>Booking information</h4>
-        <ul>
-          <li>Select either a salon visit or home service.</li>
-          <li>Choose your preferred date and time.</li>
-          <li>For home visits, provide the complete service address.</li>
-          <li>No advance payment is required to submit a booking.</li>
-        </ul>
-      </div>
-
-      <div class="urgent-call-box">
-        <span>Need a same-day appointment?</span>
-        <a [href]="'tel:' + settings().business.phoneTel" class="btn-call-desk">
-          Call Studio Desk: {{ settings().business.phoneDisplay }}
-        </a>
-      </div>
-    </aside>
-
-    <!-- Right Column: Booking Form or Confirmation -->
     <main class="booking-main">
       @if (submitted) {
-        <section class="card success-card">
-          <div class="success-icon-wrap">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
-          </div>
-
-          <h2>Appointment saved</h2>
-          <p class="success-sub">
-            Thank you, <strong>{{ lastBooking?.customer_name }}</strong>. Your reservation request for
-            <strong>{{ lastBooking?.notes }}</strong> has been registered in our studio queue.
-          </p>
-
-          <div class="booking-summary-pill">
-            <div class="bsp-item">
-              <span class="bsp-label">Date</span>
-              <strong>{{ lastBooking?.booking_date }}</strong>
-            </div>
-            <div class="bsp-item">
-              <span class="bsp-label">Slot</span>
-              <strong>{{ lastBooking?.time_slot }}</strong>
-            </div>
-            <div class="bsp-item">
-              <span class="bsp-label">Visit</span>
-              <strong>{{ lastBooking?.visit_type === 'home' ? 'Home visit' : 'Salon visit' }}</strong>
-            </div>
-          </div>
-
-          <p class="confirmation-hint">
-            Your booking reference is <strong>{{ lastBooking?.id }}</strong>. Contact the studio if you need to change your visit.
-          </p>
-
-          <div class="success-actions">
-            <a routerLink="/account" [queryParams]="{ tab: 'bookings' }" class="btn-primary">
-              View In Client Portal
-            </a>
-            <button type="button" class="btn-secondary" (click)="reset()">
-              Book Another Service
-            </button>
-          </div>
+        <section class="card success-card" role="status">
+          <div class="success-icon" aria-hidden="true">✓</div><span class="eyebrow">YOU'RE BOOKED IN</span><h2>See you soon, {{ lastBooking?.customer_name }}.</h2><p>Your {{ lastBooking?.notes }} appointment has been saved.</p>
+          <dl class="confirmation-details"><div><dt>Service</dt><dd>{{ lastBooking?.notes }}</dd></div><div><dt>Date & time</dt><dd>{{ lastBooking?.booking_date | date:'mediumDate' }} · {{ lastBooking?.time_slot }}</dd></div><div><dt>Visit</dt><dd>{{ lastBooking?.visit_type === 'home' ? 'Home service' : 'At the studio' }}</dd></div><div><dt>Location</dt><dd>{{ lastBooking?.visit_type === 'home' ? lastBooking?.service_address : settings().business.address }}</dd></div><div><dt>Reference</dt><dd class="reference">{{ lastBooking?.id }}</dd></div></dl>
+          <p class="confirmation-note">Need to change your visit? Contact the studio with your booking reference.</p>
+          <div class="success-actions"><a routerLink="/account" [queryParams]="{ tab: 'bookings' }" class="btn-primary">View appointments ↗</a><button type="button" class="btn-secondary" (click)="reset()">Book another visit</button></div>
         </section>
       } @else {
-        <section class="card form-card">
-          <div class="form-header">
-            <h2>Appointment details</h2>
-            <p>Select the service, location, date, and time that work for you.</p>
-          </div>
-
-          @if(error()){<p class="field-error" role="alert">{{ error() }}</p>}
-          <p class="assignment-note">Choose a salon visit or home service. Our team handles staff assignment. For home service, your assigned stylist will appear in your booking details.</p>
-          <form [formGroup]="form" (ngSubmit)="submit()" class="booking-form">
-            <div class="form-group">
-              <label for="client-name">Full Name *</label>
-              <input
-                id="client-name"
-                type="text"
-                formControlName="name"
-                placeholder="e.g. Rahul Sharma"
-              />
-              @if (form.controls.name.invalid && form.controls.name.touched) {
-                <span class="field-error">Please enter your full name.</span>
-              }
-            </div>
-
-            <div class="form-group">
-              <label for="client-phone">Mobile Phone (10 digits) *</label>
-              <input
-                id="client-phone"
-                type="tel"
-                formControlName="phone"
-                placeholder="e.g. 9876543210"
-                maxlength="10"
-              />
-              @if (form.controls.phone.invalid && form.controls.phone.touched) {
-                <span class="field-error">Enter a valid 10-digit mobile number.</span>
-              }
-            </div>
-
-            <div class="form-group">
-              <label for="service-select">Select Salon Service *</label>
-              <select id="service-select" formControlName="service"><option value="" disabled>Select a service</option>
-                @for (svc of services(); track svc.id) {
-                  <option [value]="svc.name">{{ svc.name }} — ₹{{ svc.price }}</option>
-                }
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label for="service-date">Preferred Date *</label>
-              <input
-                id="service-date"
-                type="date"
-                formControlName="date" [min]="minDate"
-              />
-              @if (form.controls.date.invalid && form.controls.date.touched) {
-                <span class="field-error">Please select your preferred visit date.</span>
-              }
-            </div>
-
-            <div class="form-group">
-              <label for="service-time">Preferred Time *</label>
-              <input id="service-time" type="time" formControlName="time" />
-            </div>
-
-            <div class="form-group">
-              <label for="visit-type">Service Location *</label>
-              <select id="visit-type" formControlName="visitType">
-                <option value="salon">Visit the salon</option>
-                <option value="home">Service at my home</option>
-              </select>
-            </div>
-
-            @if (form.controls.visitType.value === 'home') {
-              <div class="form-group">
-                <label for="service-address">Complete Home Address *</label>
-                <textarea id="service-address" rows="3" formControlName="address" placeholder="House, street, locality, city and postal code"></textarea>
-                @if (form.controls.address.invalid && form.controls.address.touched) {
-                  <span class="field-error">Please enter the complete service address.</span>
+        <form [formGroup]="form" (ngSubmit)="submit()" class="booking-form">
+          <fieldset [disabled]="saving()">
+            <legend class="sr-only">Appointment details</legend>
+            <section class="card booking-section">
+              <div class="section-heading"><span class="section-number">01</span><div><h2>Choose your service</h2><p>A fresh cut, a new colour, or a little care.</p></div></div>
+              @if (catalog.loading() && !services().length) { <p class="loading-note" role="status">Loading services…</p> }
+              @if (catalog.loadError()) { <div class="error-notice" role="alert">{{ catalog.loadError() }}<button type="button" class="btn-secondary" (click)="catalog.refreshCatalog()" [disabled]="catalog.loading()">Retry</button></div> }
+              <div class="service-options" role="group" aria-label="Available services">
+                @for (service of services(); track service.id) {
+                  <label class="service-option" [class.selected]="details().service === service.id">
+                    <input type="radio" formControlName="service" [value]="service.id" />
+                    <span class="service-copy"><strong>{{ service.name }}</strong><span>{{ service.description }}</span></span><span class="service-price">{{ service.price | inr }}</span>
+                  </label>
+                } @empty {
+                  @if (!catalog.loading() && !catalog.loadError()) { <p class="empty-note">There are no bookable services right now. Please contact the studio.</p> }
                 }
               </div>
-            }
-
-            <div class="form-footer">
-              <button [disabled]="saving() || services().length === 0" type="submit" class="btn-submit" [disabled]="form.invalid">
-                <span>Confirm Booking Request</span>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                  <polyline points="12 5 19 12 12 19"></polyline>
-                </svg>
-              </button>
-              <span class="form-privacy-note">No payment is required to submit this appointment request.</span>
-            </div>
-          </form>
-        </section>
+              @if (form.controls.service.invalid && form.controls.service.touched) { <span class="field-error">Please choose an available service.</span> }
+            </section>
+            <section class="card booking-section">
+              <div class="section-heading"><span class="section-number">02</span><div><h2>Plan your visit</h2><p>Your place, your preferred date and time.</p></div></div>
+              <div class="visit-options" role="group" aria-label="Visit location">
+                <label class="visit-option" [class.selected]="details().visitType === 'salon'"><input type="radio" formControlName="visitType" value="salon"/><span><strong>At the studio</strong><span>Visit Urban Blade</span></span><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 10h18v11H3zM2 10l3-7h14l3 7M9 21v-7h6v7"/></svg></label>
+                <label class="visit-option" [class.selected]="details().visitType === 'home'"><input type="radio" formControlName="visitType" value="home"/><span><strong>At your home</strong><span>We come to you</span></span><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m3 10 9-7 9 7v11H3zM9 21v-7h6v7"/></svg></label>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label for="service-date">Preferred date</label><input id="service-date" type="date" formControlName="date" [min]="minDate" required [attr.aria-invalid]="form.controls.date.touched && form.controls.date.invalid"/>@if (form.controls.date.invalid && form.controls.date.touched) { <span class="field-error">Choose today or a future date.</span> }</div>
+                <div class="form-group"><label for="service-time">Preferred time <span>IST</span></label><input id="service-time" type="time" formControlName="time" required [attr.aria-invalid]="form.controls.time.touched && form.controls.time.invalid"/>@if (form.controls.time.invalid && form.controls.time.touched) { <span class="field-error">Choose a future appointment time.</span> }</div>
+              </div>
+              @if (details().visitType === 'home') {
+                <div class="form-group home-address"><label for="service-address">Service address</label>
+                  @if (addresses.loading()) { <p class="loading-note" role="status">Loading saved addresses…</p> }
+                  @if (addresses.error()) { <div class="error-notice" role="alert">{{ addresses.error() }}<button type="button" class="btn-secondary" (click)="addresses.load(true)">Retry</button></div> }
+                  @if (addresses.addresses().length) { <div class="saved-address-options">@for (address of addresses.addresses(); track address.id) { <button type="button" (click)="useAddress(address)">{{ address.fullName }} · {{ address.city }}</button> }</div> }
+                  <textarea id="service-address" formControlName="address" rows="3" maxlength="500" autocomplete="street-address" placeholder="Flat or house, street, locality, city, and PIN code" [attr.aria-invalid]="form.controls.address.touched && form.controls.address.invalid"></textarea>
+                  @if (form.controls.address.invalid && form.controls.address.touched) { <span class="field-error">Enter a complete home address (8–500 characters).</span> }
+                </div>
+              }
+              <div class="assignment-note"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg><p>Our team assigns your stylist. Their details will appear in your appointment once assigned.</p></div>
+            </section>
+            <section class="card booking-section">
+              <div class="section-heading"><span class="section-number">03</span><div><h2>Your details</h2><p>So we can keep in touch about your visit.</p></div></div>
+              <div class="form-row"><div class="form-group"><label for="client-name">Full name</label><input id="client-name" type="text" formControlName="name" autocomplete="name" maxlength="100" placeholder="Your full name" required [attr.aria-invalid]="form.controls.name.touched && form.controls.name.invalid"/>@if (form.controls.name.invalid && form.controls.name.touched) { <span class="field-error">Enter your full name (at least 2 characters).</span> }</div><div class="form-group"><label for="client-phone">Mobile number</label><div class="phone-field"><span>+91</span><input id="client-phone" type="tel" formControlName="phone" autocomplete="tel-national" inputmode="numeric" maxlength="10" placeholder="10-digit mobile" required [attr.aria-invalid]="form.controls.phone.touched && form.controls.phone.invalid"/></div>@if (form.controls.phone.invalid && form.controls.phone.touched) { <span class="field-error">Enter a valid Indian mobile number.</span> }</div></div>
+            </section>
+            @if (error()) { <div class="error-notice" role="alert">{{ error() }}</div> }
+            <div class="form-footer"><p>No payment is taken when booking.</p><button type="submit" class="btn-primary" [disabled]="saving() || !services().length">{{ saving() ? 'Saving your appointment…' : 'Confirm appointment' }} <span aria-hidden="true">↗</span></button></div>
+          </fieldset>
+        </form>
       }
     </main>
+    <aside class="booking-sidebar" aria-label="Appointment summary and studio details">
+      @if (!submitted) {
+        <section class="card summary-card"><div class="summary-title"><span class="eyebrow">YOUR VISIT</span><h2>Appointment summary</h2></div><div class="summary-service"><span class="summary-service-icon" aria-hidden="true">UB</span><div><strong>{{ selectedService()?.name || 'Choose your service' }}</strong><span>{{ details().visitType === 'home' ? 'At your home' : 'Urban Blade Studio' }}</span></div></div><dl class="summary-details"><div><dt>Date</dt><dd>{{ details().date ? (details().date | date:'mediumDate') : 'Choose a date' }}</dd></div><div><dt>Time</dt><dd>{{ details().time || 'Choose a time' }}@if (details().time) { <span> IST</span> }</dd></div></dl><div class="summary-total"><span>Service price</span><strong>{{ selectedService() ? (selectedService()!.price | inr) : '—' }}</strong></div><p class="summary-note">Your details are confirmed when the appointment is saved.</p></section>
+      }
+      <section class="card studio-card"><div class="studio-visual"><img src="/images/heroes/booking-salon.png" alt="" width="1200" height="900" loading="lazy"/></div><div class="studio-copy"><span class="eyebrow">A SPACE TO UNWIND</span><h3>Urban Blade Studio</h3><div class="studio-detail"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 0 1 18 0"/><circle cx="12" cy="10" r="3"/></svg><p>{{ settings().business.address }}</p></div><div class="studio-detail"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><p>{{ settings().business.hours }}</p></div><a [href]="'tel:' + settings().business.phoneTel" class="studio-phone">{{ settings().business.phoneDisplay }} <span aria-hidden="true">↗</span></a></div></section>
+      <div class="booking-help"><strong>A question before you book?</strong><p>Our studio team can help with service choices or changes to your visit.</p><a routerLink="/support">Talk to our team ↗</a></div>
+    </aside>
   </div>
 </div>

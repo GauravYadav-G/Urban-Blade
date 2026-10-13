@@ -1,10 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import crypto from 'crypto';
-import { requireAuth, optionalAuth } from '../../core/auth.middleware.js';
+import { z } from 'zod';
+import { requireAuth, optionalAuth, requireAdmin } from '../../core/auth.middleware.js';
 import { cancelOrderAndReleaseStock } from '../orders/stock-reservation.service.js';
 import { query, withTransaction } from '../../db/pool.js';
 import { fetchCarrierWebsiteTracking, detectCarrier } from '../orders/carrier-portal.service.js';
-import { askOnlineAi } from '../../core/online-ai.service.js';
+import { getSiteSettings } from '../commerce/commerce.service.js';
+import { askOnlineAi, getAiProviderStatus } from '../../core/online-ai.service.js';
 
 export interface AiReplyOptions {
   message: string;
@@ -41,6 +43,15 @@ export async function generateAiReply(
   let confidence = 0.96;
   let operation: any = null;
   let actionChips: Array<{ label: string; query: string; icon?: string }> = [];
+
+  const settings = await getSiteSettings();
+  const savedBusiness = settings.business || {};
+  const business = {
+    name: savedBusiness.name || 'Urban Blade',
+    address: savedBusiness.address || 'L-245, Sec-12, Pratap Vihar, Ghaziabad, 201009',
+    hours: savedBusiness.hours || 'Mon–Sun: 7 AM – 11 PM',
+    phone: savedBusiness.phoneDisplay || '+91 90156 18265',
+  };
 
   // 1. Identify Target Order if specified or in context
   let targetOrderId = opts.orderId;
@@ -203,6 +214,7 @@ export async function generateAiReply(
     }
 
     const aiText = await askOnlineAi(safeMsg, {
+      business,
       customerName: opts.userName,
       customerEmail: opts.userEmail,
       orderSummary,
@@ -334,8 +346,8 @@ export async function generateAiReply(
         operation = {
           type: 'salon_booking',
           booking: {
-            venue: 'Urban Blade Flagship Studio, Sector 63, Noida (near Sector 62 Metro)',
-            hours: 'Monday – Sunday: 7:00 AM – 11:00 PM',
+            venue: business.address,
+            hours: business.hours,
             hotline: '+91 90156 18265',
             services,
             stylists: [],
@@ -564,8 +576,8 @@ export async function generateAiReply(
       type: 'salon_booking',
       booking: {
         services,
-        venue: 'Urban Blade Flagship Studio, Plot C-12, Sector 63, Noida (near Sector 62 Metro)',
-        hours: 'Monday – Sunday: 7:00 AM – 11:00 PM',
+        venue: business.address,
+        hours: business.hours,
         hotline: '+91 90156 18265'
       }
     };
@@ -601,20 +613,13 @@ export async function generateAiReply(
     sentiment = 'positive';
     confidence = 0.99;
 
-    replyText = `📍 Urban Blade Flagship Studio Location & Access:\n\n` +
-      `• Address: Plot C-12, Sector 63, Noida (Ghaziabad / UP NCR corridor)\n` +
-      `• Nearest Metro: 5 minutes from Noida Sector 62 Metro Station / Noida Electronic City (Blue Line)\n` +
-      `• Landmark: Adjacent to Fortis Hospital crossing & Sector 63 Main Commercial Hub\n` +
-      `• Valet Parking: Complimentary on-site valet parking for all salon clients\n` +
-      `• Studio Amenities: Specialty roast espresso bar, leather reclining barber chairs, and private VIP grooming suites\n` +
-      `• Priority Studio Hotline: +91 90156 18265\n\n` +
-      `Would you like to reserve a chair with our Master Barbers?`;
+    replyText = `${business.name} studio details:\n\nAddress: ${business.address}\nHours: ${business.hours}\nPhone: ${business.phone}\n\nWould you like to book a visit?`;
 
     operation = {
       type: 'salon_booking',
       booking: {
-        venue: 'Urban Blade Flagship Studio, Plot C-12, Sector 63, Noida',
-        hours: 'Monday – Sunday: 7:00 AM – 11:00 PM',
+        venue: business.address,
+        hours: business.hours,
         hotline: '+91 90156 18265'
       }
     };
@@ -656,7 +661,7 @@ export async function generateAiReply(
     operation = {
       type: 'salon_booking',
       booking: {
-        venue: 'Urban Blade Flagship Studio, Sector 63, Noida',
+        venue: business.address,
         hours: 'Monday – Sunday: 7:00 AM – 11:00 PM (7 Days)',
         hotline: '+91 90156 18265'
       }
@@ -1385,8 +1390,8 @@ export async function generateAiReply(
       booking: {
         stylists: [],
         services,
-        venue: 'Urban Blade Flagship Studio, Plot C-12, Sector 63, Noida (Sector 62 Metro)',
-        hours: 'Monday – Sunday: 7:00 AM – 11:00 PM',
+        venue: business.address,
+        hours: business.hours,
         hotline: '+91 90156 18265',
         preselectedServiceId: matchedService ? matchedService.id : (services[0]?.id || undefined),
 
@@ -1614,6 +1619,8 @@ export async function supportRoutes(app: FastifyInstance) {
     }
   });
 
+  app.get('/support/ai-status', { preHandler: requireAdmin }, async () => getAiProviderStatus());
+
   // ─── 1. REAL-TIME OMNICHANNEL LIVE CHAT (SYNCED WITH ADMIN PANEL) ──────────
   app.post<{
     Body: {
@@ -1625,7 +1632,15 @@ export async function supportRoutes(app: FastifyInstance) {
     };
   }>('/support/live-chat/message', { config: { rateLimit: { max: 15, timeWindow: '1 minute' } } }, async (request, reply) => {
     try {
-      const { inquiryId, userName, userEmail, message, orderId } = request.body || {};
+      const parsed = z.object({
+        message: z.string().trim().min(1).max(4000),
+        inquiryId: z.string().max(200).optional(),
+        userName: z.string().max(200).optional(),
+        userEmail: z.string().email().max(320).optional(),
+        orderId: z.string().max(200).optional(),
+      }).safeParse(request.body);
+      if (!parsed.success) return reply.status(400).send({ error: 'INVALID_MESSAGE', message: 'Enter a message of 1–4000 characters and valid contact details.' });
+      const { inquiryId, userName, userEmail, message, orderId } = parsed.data;
       const safeMsg = (message || '').trim();
 
       if (!safeMsg) {
@@ -1641,11 +1656,12 @@ export async function supportRoutes(app: FastifyInstance) {
         userEmail,
         inquiryId
       });
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('AI_TIMEOUT')), 9000)
-      );
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('AI_TIMEOUT')), 9000);
+      });
 
-      let aiResult: any;
+      let aiResult: AiReplyResult;
       try {
         aiResult = await Promise.race([aiResultPromise, timeoutPromise]);
       } catch {
@@ -1667,8 +1683,9 @@ export async function supportRoutes(app: FastifyInstance) {
             { label: '✨ Shop Bestsellers', query: 'Show bestsellers' },
           ],
         };
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
-
 
       const userMsgObj = {
         id: `m-user-${Date.now()}`,

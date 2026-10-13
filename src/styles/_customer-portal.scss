@@ -1,0 +1,47 @@
+// Shared foundations for customer account and appointment pages.
+@mixin page {
+  display: block;
+  background: #f7f8fa;
+  color: #0b0f19;
+  font-family: inherit;
+}
+@mixin surface($radius: 12px) {
+  background: #fff;
+  border: 1px solid #e4e7eb;
+  border-radius: $radius;
+}
+@mixin field {
+  width: 100%;
+  min-height: 44px;
+  padding: 12px 14px;
+  border: 1px solid #dce0e5;
+  border-radius: 6px;
+  background: #fff;
+  color: #0b0f19;
+  font: inherit;
+  font-size: 13px;
+  transition: border-color .18s;
+  &::placeholder { color: #939ba6; }
+  &:focus { border-color: #9aa2ae; }
+  &:disabled { color: #64748b; background: #fafbfc; }
+}
+@mixin primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 12px 18px;
+  border: 1px solid #0b0f19;
+  border-radius: 6px;
+  background: #0b0f19;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background .18s;
+  &:hover:not(:disabled) { background: #313947; }
+}
+@mixin focus-ring { outline: 2px solid #b45309; outline-offset: 4px; }

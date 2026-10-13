@@ -1,42 +1,14 @@
 @let inv = order();
 <div class="receipt-overlay" (click)="close.emit()">
   <section class="receipt-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-title" (click)="$event.stopPropagation()">
-    <div class="receipt-toolbar">
-      <div><span class="receipt-eyebrow">YOUR ORDER DOCUMENT</span><strong>Invoice &amp; purchase summary</strong></div>
-      <div class="receipt-actions"><button type="button" class="receipt-print" (click)="print()">Print / Save PDF</button><button type="button" class="receipt-close" (click)="close.emit()" aria-label="Close invoice">×</button></div>
-    </div>
-    <article id="printable-area" class="receipt-paper">
-      <div class="receipt-brand-row">
-        <div class="receipt-brand"><span class="receipt-monogram" aria-hidden="true">UB<span>•</span></span><div><h2>{{ site.settings().business.name }}</h2><p>{{ site.settings().business.tagline }}</p></div></div>
-        <span class="receipt-edition">ORDER RECEIPT<br /><strong>Original copy</strong></span>
-      </div>
-      <div class="receipt-hero">
-        <div><span class="receipt-eyebrow">CRAFTED FOR YOUR EVERYDAY</span><h1 id="receipt-title">Your purchase,<br /><span>all in the details.</span></h1><p>Thank you for choosing {{ site.settings().business.name }}.</p></div>
-        <div class="receipt-reference"><span>Tax invoice / cash memorandum</span><strong>{{ invoiceNumber() }}</strong><time>{{ inv.created_at | date:'dd MMM yyyy · hh:mm a' }}</time><span class="receipt-payment" [class.received]="inv.payment_status==='captured'">{{ paymentLabel() }}</span></div>
-      </div>
-      <div class="receipt-addresses">
-        <div><span class="receipt-eyebrow">FROM</span><h3>{{ site.settings().business.name }}</h3><p>{{ site.settings().business.address }}</p><p>{{ site.settings().business.email }}<br />{{ site.settings().business.phoneDisplay }}</p></div>
-        <div><span class="receipt-eyebrow">BILLED &amp; SHIPPED TO</span><h3>{{ inv.shipping_address?.fullName || 'Customer' }}</h3><p>{{ inv.shipping_address?.street || 'Address not supplied' }}<br />{{ inv.shipping_address?.city }}{{ inv.shipping_address?.state ? ', ' + inv.shipping_address?.state : '' }} {{ inv.shipping_address?.postalCode || inv.shipping_address?.pinCode }}</p><p>{{ inv.shipping_address?.phone }}<br />{{ inv.shipping_address?.email }}</p></div>
-      </div>
-      <div class="receipt-items">
-        <table aria-label="Purchased items"><thead><tr><th>Item</th><th>Description</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>
-          @for (line of inv.items; track $index) { <tr><td>{{ $index + 1 | number:'2.0-0' }}</td><td><strong>{{ line.product_name }}</strong></td><td>{{ line.quantity }}</td><td>{{ line.unit_price | inr:2 }}</td><td>{{ line.unit_price * line.quantity | inr:2 }}</td></tr> }
-          @empty { <tr><td colspan="5">Item details are unavailable for this order.</td></tr> }
-        </tbody></table>
-      </div>
-      <div class="receipt-bottom">
-        <div class="receipt-note"><span class="receipt-eyebrow">A LITTLE CARE GOES A LONG WAY</span><h3>Good grooming.<br />Great days ahead.</h3><p>Keep this invoice for your records. For help with your order, contact our team with your invoice number.</p><p class="receipt-tax-note">{{ savedTax() === null ? 'A tax breakdown was not recorded for this order. The original order total is shown.' : 'Tax and totals reflect the values saved with your order.' }}</p></div>
-        <div class="receipt-totals">
-          @if (inv.subtotal != null) { <div><span>Items subtotal</span><span>{{ inv.subtotal | inr:2 }}</span></div> }
-          @if (inv.discount_amount) { <div><span>Discount {{ inv.coupon_code }}</span><span>−{{ inv.discount_amount | inr:2 }}</span></div> }
-          @if (inv.shipping_fee != null) { <div><span>Delivery</span><span>{{ inv.shipping_fee === 0 ? 'Complimentary' : (inv.shipping_fee | inr:2) }}</span></div> }
-          @if (savedTax() !== null) { <div><span>Tax{{ inv.tax_inclusive ? ' (included)' : '' }}{{ taxRate() !== null ? ' · '+taxRate()+'%' : '' }}</span><span>{{ savedTax() | inr:2 }}</span></div> }
-          <div class="receipt-grand-total"><span>Grand total<small>INR · Indian rupees</small></span><strong>{{ inv.total_amount | inr:2 }}</strong></div>
-          <p>{{ inv.payment_method }} · {{ paymentLabel() }}</p>
-        </div>
-      </div>
-      <div class="receipt-audit"><div><span>Order reference</span><strong>{{ inv.id }}</strong></div>@if(inv.transaction_id){<div><span>Payment reference</span><strong>{{ inv.transaction_id }}</strong></div>}@if(inv.gateway_order_id){<div><span>Gateway order</span><strong>{{ inv.gateway_order_id }}</strong></div>}@if(inv.carrier || inv.tracking_number){<div><span>Delivery partner / AWB</span><strong>{{ inv.carrier }}{{ inv.tracking_number ? ' · '+inv.tracking_number : '' }}</strong></div>}</div>
-      <div class="receipt-footer"><span>{{ site.settings().business.name }} <b>•</b> Grooming, considered.</span><small>Computer-generated document</small></div>
+    <div class="receipt-toolbar"><strong id="receipt-title">Tax invoice</strong><div><button type="button" (click)="print()">Print / Save PDF</button><button type="button" (click)="close.emit()" aria-label="Close invoice">×</button></div></div>
+    <article #invoiceDocument class="receipt" aria-label="Tax invoice">
+      <header class="receipt-header"><div><span class="brand">{{ site.settings().business.name }}<span>GROOMING, REFINED.</span></span><p>{{ site.settings().business.address }}</p></div><div class="receipt-heading"><p>TAX INVOICE</p><strong>{{ invoiceNumber() }}</strong><p>{{ inv.created_at | date:'medium' }}</p></div></header>
+      <div class="receipt-status"><span [class.paid]="inv.payment_status === 'captured' || inv.payment_status === 'paid'">{{ paymentLabel() }}</span><strong>{{ inv.total_amount | inr:2 }}</strong></div>
+      <div class="receipt-details"><section><h2>Deliver to</h2><strong>{{ inv.shipping_address?.fullName || 'Customer' }}</strong><p>{{ inv.shipping_address?.street }}<br>{{ inv.shipping_address?.city }}, {{ inv.shipping_address?.state }} {{ inv.shipping_address?.postalCode || inv.shipping_address?.pinCode }}<br>{{ inv.shipping_address?.phone }}</p></section><section><h2>Payment details</h2><strong>{{ inv.payment_method }}</strong><p>Order: {{ inv.id }}</p>@if (inv.transaction_id) { <p>Payment: {{ inv.transaction_id }}</p> }@if (inv.gateway_order_id) { <p>Gateway order: {{ inv.gateway_order_id }}</p> }</section></div>
+      <div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>@for (line of inv.items; track $index) { <tr><td>{{ line.product_name }}</td><td>{{ line.quantity }}</td><td>{{ line.unit_price | inr:2 }}</td><td>{{ line.unit_price * line.quantity | inr:2 }}</td></tr> } @empty { <tr><td colspan="4">Item details are unavailable for this order.</td></tr> }</tbody></table></div>
+      <dl class="receipt-totals">@if (inv.subtotal != null) { <div><dt>Subtotal</dt><dd>{{ inv.subtotal | inr:2 }}</dd></div> }@if (inv.discount_amount) { <div><dt>Discount {{ inv.coupon_code }}</dt><dd>−{{ inv.discount_amount | inr:2 }}</dd></div> }@if (inv.shipping_fee != null) { <div><dt>Delivery</dt><dd>{{ inv.shipping_fee === 0 ? 'Complimentary' : (inv.shipping_fee | inr:2) }}</dd></div> }@if (savedTax() !== null) { <div><dt>Tax {{ taxRate() }}% {{ inv.tax_inclusive ? '(included)' : '' }}</dt><dd>{{ savedTax() | inr:2 }}</dd></div> }<div class="total"><dt>Total</dt><dd>{{ inv.total_amount | inr:2 }}</dd></div></dl>
+      <footer class="receipt-footer"><p>Keep this invoice for your records.</p><p>Need help? {{ site.settings().business.email }} · {{ site.settings().business.phoneDisplay }}</p>@if (savedTax() === null) { <p>A tax breakdown was not recorded for this order.</p> }</footer>
     </article>
   </section>
 </div>

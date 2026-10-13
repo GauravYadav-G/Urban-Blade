@@ -10,6 +10,7 @@
       role="dialog" 
       aria-modal="false" 
       aria-labelledby="urban-ai-title" 
+      [attr.aria-busy]="isGenerating()"
       (click)="$event.stopPropagation()"
     >
       <!-- Pop-up Top Bar (Subtle Monochromatic Header) -->
@@ -24,10 +25,11 @@
           </div>
 
           <div class="agent-copy">
+            <span class="agent-eyebrow">URBAN BLADE · CLIENT CARE</span>
             <h4 id="urban-ai-title" class="agent-name">Ask Urban Blade</h4>
             <div class="agent-status-bar">
               <span class="status-indicator"></span>
-              <span class="status-text">Online · 24/7 Desk</span>
+              <span class="status-text">{{ connectionState() === 'reconnecting' ? 'Reconnecting…' : 'AI concierge & studio support' }}</span>
             </div>
           </div>
         </div>
@@ -87,7 +89,7 @@
             class="header-btn btn-clear-chat" 
             (click)="clearChat()" 
             title="Reset conversation" 
-            aria-label="Reset conversation"
+            aria-label="Reset conversation" [disabled]="isGenerating() || resettingChat()"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
@@ -115,6 +117,7 @@
       </header>
 
       <!-- Quick Action Prompt Bar -->
+      @if (messages().length > 1) {
       <div class="popup-chips-bar" role="toolbar" aria-label="Suggestions">
         @for (chip of quickChips; track chip.label) {
           <button type="button" class="p-chip" (click)="onChipClick(chip)">
@@ -123,10 +126,14 @@
         }
       </div>
 
+      }
       <!-- Messages Thread Viewport -->
       <div class="popup-messages-area" #messagesViewport role="log" aria-live="polite" aria-relevant="additions text">
+        @if (messages().length === 1 && messages()[0].id === 'init') {
+          <div class="concierge-welcome"><span class="welcome-monogram" aria-hidden="true">UB<span>·</span></span><span class="welcome-eyebrow">A LITTLE HELP, PERSONALLY</span><h2>How can we help?</h2><p>A hand with your order, your next visit, or the right grooming essentials.</p><div class="welcome-actions">@for (chip of quickChips.slice(0, 4); track chip.label) { <button type="button" (click)="onChipClick(chip)"><span>{{ chip.label }}</span><span aria-hidden="true">↗</span></button> }</div><span class="welcome-note">Or start with a question below.</span></div>
+        }
         @for (msg of messages(); track msg.id) {
-          <div class="p-msg-row {{ msg.sender }}">
+          <div class="p-msg-row {{ msg.sender }}" [class.welcome-message]="msg.id === 'init'">
             <div class="p-bubble {{ msg.sender }}">
               <div class="p-bubble-header">
                 @if (msg.sender === 'ai') {
@@ -548,7 +555,7 @@
           <div class="p-msg-row ai">
             <div class="p-bubble ai typing" role="status" aria-label="Preparing response">
               <div class="ai-typing-glow">
-                <span class="typing-label">Typing</span>
+                <span class="typing-label">Preparing your reply</span>
                 <div class="dots" aria-hidden="true">
                   <span></span><span></span><span></span>
                 </div>
@@ -558,19 +565,11 @@
         }
       </div>
 
+      @if (chatError()) { <div class="chat-error-notice" role="alert"><span>{{ chatError() }}</span>@if (canRetryMessage()) { <button type="button" (click)="retryMessage()" [disabled]="isGenerating()">Try again</button> }</div> }
       <!-- Footer Input Area -->
       <footer class="popup-footer">
         <div class="input-capsule">
-          <input 
-            type="text" 
-            [(ngModel)]="inputValue"
-            name="chatInput"
-            aria-label="Ask a question"
-            placeholder="Ask about rates, styling, orders, or book..." 
-            [disabled]="isGenerating()"
-            autocomplete="off"
-            (keydown.enter)="sendMessage()"
-          />
+          <textarea #chatComposer [(ngModel)]="inputValue" name="chatInput" rows="2" maxlength="4000" aria-label="Message Urban Blade" placeholder="How can we help you today?" autocomplete="off" (keydown)="onComposerKeydown($event)"></textarea>
           <button 
             type="button" 
             class="btn-send-popup" 
@@ -587,7 +586,7 @@
         </div>
 
         <div class="p-footer-badge">
-          <span>Private Session · Ask Urban Blade</span>
+          <span>AI assistance · Our studio team can help further</span>
         </div>
       </footer>
     </section>
@@ -598,6 +597,7 @@
        ═══════════════════════════════════════════════════════════════════════════ -->
   <button 
     type="button" 
+    #chatLauncher
     class="floating-chat-trigger" 
     [class.is-open]="isOpen()"
     (click)="toggleOpen()" 

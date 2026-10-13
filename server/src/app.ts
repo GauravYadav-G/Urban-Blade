@@ -18,6 +18,7 @@ import { startAbandonedCheckoutReaper } from './modules/orders/abandoned-checkou
 
 // Route modules
 import { healthRoutes } from './modules/health/health.routes.js';
+import { addressesRoutes } from './modules/account/addresses.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { productsRoutes } from './modules/products/products.routes.js';
 import { cartRoutes } from './modules/cart/cart.routes.js';
@@ -117,6 +118,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(commerceRoutes, { prefix: '/api' });
   await app.register(healthRoutes, { prefix: '/api' });
   await app.register(authRoutes, { prefix: '/api' });
+  await app.register(addressesRoutes, { prefix: '/api' });
   await app.register(productsRoutes, { prefix: '/api' });
   await app.register(cartRoutes, { prefix: '/api' });
   await app.register(bookingsRoutes, { prefix: '/api' });

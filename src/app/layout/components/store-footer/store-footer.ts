@@ -29,8 +29,8 @@ export class StoreFooter {
     {
       title: 'Help',
       links: [
-        { label: 'Help', route: '/help' },
-        { label: 'Customer service', route: '/support' },
+        { label: 'Help Centre', route: '/help' },
+        { label: 'Support Chat', route: '/support' },
         { label: 'Terms and conditions', route: '/terms' },
         { label: 'Privacy policy', route: '/privacy' },
       ],

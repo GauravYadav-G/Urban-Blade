@@ -3,19 +3,31 @@
   <header class="support-hero">
     <div class="kicker-pill">
       <span class="sparkle">✦</span>
-      <span>24/7 CLIENT CARE & INTELLIGENCE</span>
+      <span>URBAN BLADE · CLIENT CARE</span>
     </div>
-    <h1>Urban Blade Client Support & AI Concierge</h1>
+    <h1>A little help.<br />A better experience.</h1>
     <p class="hero-lede">
-      Instant delivery tracking, personalized hair & beard grooming protocols, salon appointments, and 7-day guarantee resolutions powered by the Urban AI Concierge.
+      From your first order to your next studio visit, we’re here to make things effortless.
     </p>
   </header>
 
   <!-- ═════════════════════════════════════════════════════════════════════════
        INTERACTIVE AI CONCIERGE & CHATBOT SECTION
        ═════════════════════════════════════════════════════════════════════════ -->
+  <div class="support-workspace">
+  <aside class="support-sidebar" aria-label="Support options">
+    <span class="section-eyebrow">HERE FOR YOU</span>
+    <h2>Let’s take<br />care of it.</h2>
+    <p>Ask a quick question, find your order, or speak with the people behind Urban Blade.</p>
+    <div class="care-links">
+      <a routerLink="/account"><span>Orders & account<small>Your purchases, bookings and details</small></span><span aria-hidden="true">↗</span></a>
+      <a routerLink="/book"><span>Plan your next visit<small>Explore services and reserve a time</small></span><span aria-hidden="true">↗</span></a>
+      <button type="button" (click)="openTicketModal()"><span>Contact our team<small>Send us the details of your request</small></span><span aria-hidden="true">↗</span></button>
+    </div>
+    <div class="studio-note"><span class="section-eyebrow">PREFER A CONVERSATION?</span><a [href]="'tel:' + salon.phoneTel">{{ salon.phoneDisplay }}</a><a class="care-email" [href]="'mailto:' + salon.email">{{ salon.email }}</a><p>{{ salon.address }} · {{ salon.pin }}</p></div>
+  </aside>
   <div class="ai-support-container">
-    <div class="chat-console-card">
+    <div class="chat-console-card" [class.is-welcome]="chatMessages().length === 1" [attr.aria-busy]="isGenerating()">
       <!-- Chat Header -->
       <div class="console-header">
         <div class="agent-identity">
@@ -25,22 +37,25 @@
             </svg>
           </div>
           <div>
-            <h3>Urban Blade Support</h3>
+            <h3>Ask Urban Blade</h3>
             <span class="agent-status">
               <span class="live-dot"></span>
-              <span>Online</span>
+              <span>AI assistance & studio support</span>
             </span>
           </div>
         </div>
 
         <button type="button" class="btn-raise-ticket" (click)="openTicketModal()">
-          <span>🎫 Raise Priority Ticket</span>
+          <span>Contact our team</span>
         </button>
       </div>
 
+      @if (chatMessages().length === 1) {
+        <div class="chat-welcome"><span class="welcome-mark" aria-hidden="true">UB<span>·</span></span><h2>Good questions.<br />Thoughtful answers.</h2><p>Help with an order, a grooming recommendation, or your next appointment. Start below.</p></div>
+      }
       <!-- Quick Action Prompts Bar -->
       <div class="quick-prompts-bar">
-        <span class="qp-label">Fast Questions:</span>
+        <span class="qp-label">START WITH</span>
         <div class="qp-chips">
           @for (qp of quickPrompts; track qp.label) {
             <button type="button" class="qp-chip" (click)="sendChatMessage(qp.query)">
@@ -51,9 +66,9 @@
       </div>
 
       <!-- Chat Messages Thread -->
-      <div class="messages-viewport">
+      <div class="messages-viewport" #chatViewport role="log" aria-live="polite" aria-relevant="additions text">
         @for (msg of chatMessages(); track msg.id) {
-          <div class="msg-row {{ msg.sender }}">
+          <div class="msg-row {{ msg.sender }}" [class.initial-greeting]="chatMessages().length === 1">
             @if (msg.sender === 'ai') {
               <div class="avatar-tag ai-tag">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -224,13 +239,13 @@
                       <div class="ticket-venue">
                         <span class="t-venue-lbl">📍 Flagship Venue:</span>
                         <span class="t-venue-val">{{ ticket.venue }}</span>
-                        <span class="t-landmark">Near Noida Sector 62 Metro · Valet Parking Available</span>
+                        <span class="t-landmark"></span>
                       </div>
                     </div>
 
                     <div class="ticket-footer">
                       <button type="button" class="btn-ticket-act primary" (click)="navigateToBookings()">
-                        <span>📍 View in My Account Bookings ➔</span>
+                        <span>📍 View in My Account Bookings ↗</span>
                       </button>
                       <a [href]="'tel:' + ticket.hotline" class="btn-ticket-act outline">
                         <span>📞 Studio Desk</span>
@@ -245,10 +260,10 @@
                         <span class="wz-icon">💈</span>
                         <div>
                           <strong>Select Service & Reserve Chair</strong>
-                          <span>Direct in-chat booking · 100% Guaranteed Slot</span>
+                          <span>Direct in-chat booking · Choose your preferred time</span>
                         </div>
                       </div>
-                      <span class="wz-venue-pill">Sector 63 Studio</span>
+                      <span class="wz-venue-pill">Urban Blade Studio</span>
                     </div>
 
                     <!-- Step 1: Select Service -->
@@ -305,7 +320,7 @@
 
                     <!-- Step 4: Guest Contact Details -->
                     <div class="wz-step contact-step">
-                      <label class="wz-step-title">5. Client Contact Information:</label>
+                      <label class="wz-step-title">4. Client Contact Information:</label>
                       <div class="wz-contact-inputs">
                         <input 
                           type="text" 
@@ -383,13 +398,13 @@
                     <div class="ticket-venue">
                       <span class="t-venue-lbl">📍 Flagship Venue:</span>
                       <span class="t-venue-val">{{ bc.venue }}</span>
-                      <span class="t-landmark">Near Noida Sector 62 Metro · Valet Parking Available</span>
+                      <span class="t-landmark"></span>
                     </div>
                   </div>
 
                   <div class="ticket-footer">
                     <button type="button" class="btn-ticket-act primary" (click)="navigateToBookings()">
-                      <span>📍 View in My Account Bookings ➔</span>
+                      <span>📍 View in My Account Bookings ↗</span>
                     </button>
                     <a [href]="'tel:' + bc.hotline" class="btn-ticket-act outline">
                       <span>📞 Studio Desk</span>
@@ -413,7 +428,7 @@
                       <span>💬 WhatsApp Concierge</span>
                     </a>
                   </div>
-                  <span class="esc-note">Average connect response time: &lt; 2 minutes</span>
+                  <span class="esc-note">Our team will follow up on your request.</span>
                 </div>
               }
 
@@ -446,17 +461,11 @@
         }
       </div>
 
+      @if (chatError()) { <div class="chat-error-notice" role="alert"><span>{{ chatError() }}</span><button type="button" (click)="retryChatMessage()" [disabled]="isGenerating()">Try again</button></div> }
       <!-- Chat Input Footer -->
       <form class="chat-input-bar" (ngSubmit)="sendChatMessage()">
-        <input 
-          type="text" 
-          [ngModel]="userInput()" 
-          (ngModelChange)="userInput.set($event)" 
-          name="userQuery"
-          placeholder="Ask a question, enter your Order ID, or inquire about beard care..." 
-          [disabled]="isGenerating()"
-        />
-        <button type="submit" class="btn-send-chat" [disabled]="!userInput().trim() || isGenerating()">
+        <textarea [ngModel]="userInput()" (ngModelChange)="userInput.set($event)" name="userQuery" rows="2" maxlength="4000" aria-label="Message Urban Blade" placeholder="How can we help you today?" (keydown)="onChatKeydown($event)"></textarea>
+        <button type="submit" class="btn-send-chat" aria-label="Send message" [disabled]="!userInput().trim() || isGenerating()">
           <span>Send</span>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -467,13 +476,15 @@
     </div>
   </div>
 
+  </div>
+
   <!-- ═════════════════════════════════════════════════════════════════════════
        HELP TOPIC CARDS GRID
        ═════════════════════════════════════════════════════════════════════════ -->
   <section class="topics-section">
     <div class="topics-header">
-      <h2>Browse Support Categories</h2>
-      <p>Self-service guides and catalog links for every product category.</p>
+      <h2>Find your way</h2>
+      <p>A few useful places to start.</p>
     </div>
 
     <div class="topics-grid">
@@ -483,40 +494,10 @@
           <p>{{ topic.body }}</p>
           <a [routerLink]="topic.route" [queryParams]="topic.query" class="topic-link">
             <span>{{ topic.link }}</span>
-            <span class="arr">➔</span>
+            <span class="arr">↗</span>
           </a>
         </article>
       }
-    </div>
-  </section>
-
-  <!-- Contact & Studio Telemetry -->
-  <section class="contact-section">
-    <div class="contact-card">
-      <div class="contact-icon">📞</div>
-      <div>
-        <h3>Speak with Client Concierge</h3>
-        <p>Available Mon - Sun, 9:00 AM to 9:00 PM IST</p>
-        <div class="contact-links">
-          <a [href]="'tel:' + salon.phoneTel" class="contact-pill">
-            <span>Call: {{ salon.phoneDisplay }}</span>
-          </a>
-          <a [href]="'mailto:' + salon.email" class="contact-pill">
-            <span>Email: {{ salon.email }}</span>
-          </a>
-        </div>
-      </div>
-    </div>
-
-    <div class="contact-card studio">
-      <div class="contact-icon">💈</div>
-      <div>
-        <h3>Flagship Studio Address</h3>
-        <p>{{ salon.address }}, {{ salon.city }} - {{ salon.pin }}</p>
-        <a routerLink="/book" class="contact-pill gold">
-          <span>Book In-Salon Barber Visit ➔</span>
-        </a>
-      </div>
     </div>
   </section>
 
@@ -525,19 +506,20 @@
        ═════════════════════════════════════════════════════════════════════════ -->
   @if (ticketModalOpen()) {
     <div class="modal-backdrop" (click)="closeTicketModal()">
-      <div class="modal-card" (click)="$event.stopPropagation()">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="support-ticket-title" (click)="$event.stopPropagation()">
         <div class="modal-header">
           <div>
-            <span class="m-kicker">PRIORITY ESCALATION</span>
-            <h3>Submit Official Support Inquiry</h3>
+            <span class="m-kicker">PERSONAL SUPPORT</span>
+            <h3 id="support-ticket-title">Talk to our studio team</h3>
           </div>
-          <button type="button" class="btn-close" (click)="closeTicketModal()">✕</button>
+          <button type="button" class="btn-close" aria-label="Close support request" (click)="closeTicketModal()">✕</button>
         </div>
 
+        @if (ticketError()) { <div class="chat-error-notice" role="alert">{{ ticketError() }}</div> }
         @if (ticketSuccessMessage()) {
           <div class="ticket-success">
-            <span class="s-icon">✅</span>
-            <h4>Inquiry Dispatched</h4>
+            <span class="s-icon">✓</span>
+            <h4>Request received</h4>
             <p>{{ ticketSuccessMessage() }}</p>
           </div>
         } @else {

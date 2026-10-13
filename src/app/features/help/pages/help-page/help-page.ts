@@ -16,37 +16,37 @@ export class HelpPage {
       title: 'Hair care',
       route: '/shop',
       query: { cat: 'hair' },
-      body: 'Shampoo, conditioner, hair oil, serum, wax, clay, gel, pomade, cream, spray, styling powder, hair colour, anti-dandruff treatment, hair growth, and heat protection spray.',
+      body: 'Everyday cleansing, conditioning and styling essentials for your hair.',
     },
     {
       title: 'Beard & moustache',
       route: '/shop',
       query: { cat: 'beard' },
-      body: 'Beard oil, balm, wax, wash, shampoo, conditioner, serum, softener, growth serum, moustache wax, comb, brush, and beard straightener.',
+      body: 'Explore washes, oils, balms and tools for a well-kept beard.',
     },
     {
       title: 'Skin',
       route: '/shop',
       query: { cat: 'skin' },
-      body: "Men's charcoal face wash, de-tan home kit, and ladies glow day cream with SPF 30 — the same formulas used after a chair service.",
+      body: "Discover cleansing and care essentials for your skin routine.",
     },
     {
       title: 'Salon tools',
       route: '/shop',
       query: { cat: 'tools' },
-      body: 'Precision beard trimmer, ionic hair dryer, and ceramic styling iron. Heat tools include a manufacturer cover.',
+      body: 'Browse grooming and styling tools for care at home.',
     },
     {
       title: 'Gift cards',
       route: '/shop',
       query: { cat: 'gifts' },
-      body: '₹1,000 and ₹2,500 Urban Blade cards plus the couples spa voucher. Redeem on retail or a visit at the Pratap Vihar studio.',
+      body: 'Explore gift cards and vouchers for someone special.',
     },
     {
       title: 'Salon services',
       route: '/shop',
       query: { cat: 'services' },
-      body: "Men's precision haircut, ladies hair colour, and men's spa package. Book a slot — these are fulfilled in-salon, not shipped.",
+      body: "Find a service for your next visit to the Urban Blade studio.",
     },
   ];
 

@@ -1,5 +1,7 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, input, output } from '@angular/core';
+import { Component, computed, inject, input, output, viewChild, ElementRef } from '@angular/core';
+import { PrintDocumentService } from '@core/services/print-document.service';
+import { ToastService } from '@core/services/toast.service';
 import { SiteSettingsService } from '@core/services/site-settings.service';
 import { InrPipe } from '@shared/pipes/inr-pipe';
 
@@ -58,10 +60,12 @@ export class OrderInvoice {
     captured: 'Payment received', refunded: 'Payment refunded', pending: 'Payment pending', failed: 'Payment failed',
   }[this.order().payment_status] || this.order().payment_status));
 
-  print(): void {
-    const originalTitle = document.title;
-    document.title = `Tax_Invoice_UB_${this.order().id.slice(0, 8).toUpperCase()}`;
-    window.print();
-    window.setTimeout(() => (document.title = originalTitle), 1000);
+  private readonly printer = inject(PrintDocumentService);
+  private readonly toast = inject(ToastService);
+  private readonly paper = viewChild.required<ElementRef<HTMLElement>>('invoiceDocument');
+
+  async print(): Promise<void> {
+    try { await this.printer.print(this.paper().nativeElement, `Tax_Invoice_${this.invoiceNumber()}`); }
+    catch { this.toast.error('Invoice print preview could not be opened. Please retry.'); }
   }
 }

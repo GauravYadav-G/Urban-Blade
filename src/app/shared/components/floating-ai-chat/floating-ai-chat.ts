@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
+import { Component, inject, signal, OnInit, OnDestroy, ViewChild, ElementRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -62,7 +62,14 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
   readonly unreadAdminCount = signal<number>(0);
   readonly addedProductIds = signal<Set<string>>(new Set<string>());
   readonly copiedTrackingId = signal<string | null>(null);
-  readonly soundEnabled = signal<boolean>(true);
+  readonly soundEnabled = signal<boolean>(false);
+  readonly chatError = signal('');
+  readonly resettingChat = signal(false);
+  readonly connectionState = signal<'ready' | 'reconnecting'>('ready');
+  private failedMessage: { id: string; text: string } | null = null;
+  private fetchingInquiry = false;
+  @ViewChild('chatComposer') private composer?: ElementRef<HTMLTextAreaElement>;
+  @ViewChild('chatLauncher') private launcher?: ElementRef<HTMLButtonElement>;
 
   // Interactive In-Chat Salon Booking State
   readonly activeBookingForm = signal<{ [msgId: string]: BookingFormState }>({});
@@ -85,17 +92,17 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
   readonly messages = signal<ChatMessage[]>(this.getInitialWelcomeMessages());
 
   readonly quickChips: ChatActionChip[] = [
-    { label: 'Reserve Chair', query: 'Book appointment' },
-    { label: 'Haircut Rates', query: 'What are your haircut prices?' },
-    { label: 'Track Order', query: 'Where is my order?' },
-    { label: 'Studio Location', query: 'Where is your studio located?' },
-    { label: 'Hair Fall Care', query: 'What should I do for hair fall?' },
-    { label: 'Beard Styling', query: 'How to fix a patchy beard?' },
-    { label: 'Shipping Policy', query: 'What are the shipping charges?' },
-    { label: '7-Day Guarantee', query: 'What is the return and warranty policy?' },
+    { label: 'Book a visit', query: 'Book appointment' },
+    { label: 'Services & prices', query: 'What are your haircut prices?' },
+    { label: 'Track an order', query: 'Where is my order?' },
+    { label: 'Studio details', query: 'Where is your studio located?' },
+    { label: 'Hair care', query: 'What should I do for hair fall?' },
+    { label: 'Beard care', query: 'How to fix a patchy beard?' },
+    { label: 'Delivery', query: 'What are the shipping charges?' },
+    { label: 'Returns', query: 'What is the return and warranty policy?' },
   ];
 
-  private pollInterval: any = null;
+  private pollInterval: ReturnType<typeof setInterval> | null = null;
   private broadcastChannel: BroadcastChannel | null = null;
 
   private getInitialWelcomeMessages(): ChatMessage[] {
@@ -107,7 +114,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
         timestamp: new Date().toISOString(),
         actionChips: [
           { label: 'Reserve Barber Chair', query: 'Book appointment' },
-          { label: 'Haircut Rates', query: 'What are your haircut prices?' },
+          { label: 'Services & prices', query: 'What are your haircut prices?' },
           { label: 'Live Order Tracking', query: 'Where is my order?' },
           { label: 'Studio Location & Hours', query: 'Where is your studio located?' },
           { label: 'Hair Fall Protocol', query: 'What do I do for hair fall?' },
@@ -132,7 +139,8 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
     }
     this.dateOptions.set(dates);
 
-    const savedId = localStorage.getItem('urban_active_inquiry_id');
+    let savedId: string | null = null;
+    try { savedId = localStorage.getItem('urban_active_inquiry_id'); } catch { /* browser storage unavailable */ }
     if (savedId) {
       this.inquiryId.set(savedId);
       this.fetchLatestInquiry(savedId);
@@ -144,7 +152,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
         const id = this.inquiryId();
         if (event.data?.type === 'INQUIRY_DELETED') {
           if (id && (event.data.ids?.includes(id) || event.data.inquiryId === id)) {
-            localStorage.removeItem('urban_active_inquiry_id');
+            try { localStorage.removeItem('urban_active_inquiry_id'); } catch { /* storage unavailable */ }
             this.inquiryId.set(null);
             this.messages.set(this.getInitialWelcomeMessages());
           }
@@ -178,7 +186,28 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
         this.fetchLatestInquiry(id);
       }
       this.scrollToBottom('auto');
+      setTimeout(() => this.composer?.nativeElement.focus(), 0);
+    } else {
+      setTimeout(() => this.launcher?.nativeElement.focus(), 0);
     }
+  }
+
+  @HostListener('document:keydown.escape')
+  closeOnEscape(): void { if (this.isOpen()) this.toggleOpen(); }
+
+  onComposerKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault(); this.sendMessage();
+    }
+  }
+
+  canRetryMessage(): boolean { return this.failedMessage !== null; }
+
+  retryMessage(): void {
+    const failed = this.failedMessage;
+    if (!failed || this.isGenerating()) return;
+    this.messages.update(messages => messages.filter(message => message.id !== failed.id));
+    this.sendMessage(failed.text);
   }
 
   toggleExpand(): void {
@@ -212,6 +241,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
+      osc.onended = () => { void ctx.close(); };
       osc.type = 'sine';
       const now = ctx.currentTime;
       if (type === 'send') {
@@ -266,7 +296,8 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
   }
 
   fetchLatestInquiry(id: string): void {
-    if (this.isGenerating()) return;
+    if (this.isGenerating() || this.fetchingInquiry) return;
+    this.fetchingInquiry = true;
 
     this.http
       .get<{ data: { id: string; messages: ChatMessage[]; status: string } | null; notFound?: boolean }>(
@@ -274,8 +305,11 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
       )
       .subscribe({
         next: (res) => {
+          this.fetchingInquiry = false;
+          if (this.inquiryId() !== id) return;
+          this.connectionState.set('ready');
           if (res?.notFound || !res?.data) {
-            localStorage.removeItem('urban_active_inquiry_id');
+            try { localStorage.removeItem('urban_active_inquiry_id'); } catch { /* storage unavailable */ }
             this.inquiryId.set(null);
             this.messages.set(this.getInitialWelcomeMessages());
             return;
@@ -304,36 +338,51 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
             }
           }
         },
-        error: () => {
-          localStorage.removeItem('urban_active_inquiry_id');
-          this.inquiryId.set(null);
-          this.messages.set(this.getInitialWelcomeMessages());
+        error: (error: { status?: number }) => {
+          this.fetchingInquiry = false;
+          if (this.inquiryId() !== id) return;
+          if (error.status === 401 || error.status === 403) {
+            this.inquiryId.set(null);
+            this.messages.set(this.getInitialWelcomeMessages());
+          } else {
+            this.connectionState.set('reconnecting');
+          }
         },
       });
   }
 
   clearChat(): void {
-    if (!confirm('Permanently delete and reset this chat conversation?')) return;
+    if (this.isGenerating() || this.resettingChat()) return;
+    if (!confirm('Delete this conversation and start a new chat?')) return;
     const currentId = this.inquiryId();
-    if (currentId) {
-      this.http.delete(`/api/support/inquiries/${currentId}`).subscribe({
-        next: () => {},
-        error: () => {},
-      });
-    }
-    localStorage.removeItem('urban_active_inquiry_id');
-    this.inquiryId.set(null);
-    this.messages.set(this.getInitialWelcomeMessages());
-    this.activeBookingForm.set({});
-    this.confirmedBookings.set({});
-    if (this.broadcastChannel) {
-      this.broadcastChannel.postMessage({ type: 'USER_QUERY', deletedInquiryId: currentId });
-    }
+    const reset = () => {
+      try { localStorage.removeItem('urban_active_inquiry_id'); } catch { /* storage unavailable */ }
+      this.inquiryId.set(null);
+      this.messages.set(this.getInitialWelcomeMessages());
+      this.activeBookingForm.set({});
+      this.confirmedBookings.set({});
+      this.chatError.set('');
+      this.failedMessage = null;
+      this.resettingChat.set(false);
+      this.broadcastChannel?.postMessage({ type: 'USER_QUERY', deletedInquiryId: currentId });
+    };
+    if (!currentId) { reset(); return; }
+    this.resettingChat.set(true);
+    this.http.delete(`/api/support/inquiries/${currentId}`).subscribe({
+      next: reset,
+      error: () => {
+        this.resettingChat.set(false);
+        this.chatError.set('Your conversation could not be cleared. Please try again.');
+      },
+    });
   }
 
   sendMessage(customText?: string): void {
     const text = (customText || this.inputValue || this.inputText()).trim();
-    if (!text || this.isGenerating()) return;
+    if (!text || this.isGenerating() || this.resettingChat()) return;
+    if (text.length > 4000) { this.chatError.set('Please keep your message under 4,000 characters.'); return; }
+    this.chatError.set('');
+    this.failedMessage = null;
 
     if (!customText) {
       this.inputValue = '';
@@ -371,7 +420,7 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
           this.playChime('receive');
           if (res.inquiryId) {
             this.inquiryId.set(res.inquiryId);
-            localStorage.setItem('urban_active_inquiry_id', res.inquiryId);
+            try { localStorage.setItem('urban_active_inquiry_id', res.inquiryId); } catch { /* storage unavailable */ }
           }
           if (res.messages && Array.isArray(res.messages)) {
             this.messages.set(res.messages);
@@ -383,71 +432,8 @@ export class FloatingAiChatComponent implements OnInit, OnDestroy {
         },
         error: () => {
           this.isGenerating.set(false);
-          this.playChime('receive');
-          const tLower = text.toLowerCase();
-          const isGreeting =
-            tLower.startsWith('namaste') ||
-            tLower.startsWith('namste') ||
-            tLower.startsWith('hi') ||
-            tLower.startsWith('hello') ||
-            tLower.startsWith('hey') ||
-            tLower.includes('kaise ho') ||
-            tLower.includes('kesa ho') ||
-            tLower.includes('kese ho') ||
-            tLower.includes('kaisa hai') ||
-            tLower.includes('how are you');
-
-          const isHindi =
-            tLower.includes('namaste') ||
-            tLower.includes('kesa') ||
-            tLower.includes('kaise') ||
-            tLower.includes('app') ||
-            tLower.includes('aap') ||
-            tLower.includes('mujhe') ||
-            tLower.includes('kuch') ||
-            tLower.includes('dekka') ||
-            tLower.includes('dikha') ||
-            tLower.includes('chahiye') ||
-            tLower.includes('batao') ||
-            tLower.includes('chehra');
-          const isFace = tLower.includes('face') || tLower.includes('skin') || tLower.includes('chehra') || tLower.includes('chehre') || tLower.includes('tan') || tLower.includes('glow') || tLower.includes('wash');
-
-          let smartFallback = isHindi
-            ? `Namaste! Main Urban Blade salon concierge hoon. Aap hair care, beard styling, skincare products ya appointment booking ke baare mein pooch sakte hain!`
-            : `Hello! I am Urban Blade Concierge. How can I assist you today with styling advice, grooming products, or reserving a barber chair?`;
-
-          if (isGreeting) {
-            smartFallback = isHindi
-              ? `Namaste! Main bilkul badhiya hoon, aap bataiye aap kaise hain? Urban Blade mein aapka swagat hai. Aaj main aapki styling, hair care products ya salon chair booking mein kya madad kar sakta hoon?`
-              : `Hello! I'm doing great, thank you for asking. Welcome to Urban Blade! How can I assist you today with styling advice, grooming products, or reserving a barber chair?`;
-          } else if (isFace) {
-            smartFallback = isHindi
-              ? `✨ **Urban Blade Face & Skin Care Guide:**\n\nChehre ke liye hamare Master Barbers yeh best salon formulations recommend karte hain:\n\n• **Charcoal Face Wash (₹349)**: Deep pore cleansing ke liye, extra oil aur pollution hatata hai.\n• **De-Tan Home Kit (₹899)**: Dhoop aur sun-tan hatane ke liye 3-step salon facial sequence.\n• **Men's SPA Package (₹1499)**: 90-minute complete facial, massage aur hair care.\n\nAap inhein direct cart mein add kar sakte hain ya salon session book kar sakte hain!`
-              : `✨ **Urban Blade Face & Skin Care Formulations:**\n\nFor healthy, radiant skin, our Master Barbers recommend:\n\n• **Charcoal Face Wash (₹349)**: Activated charcoal & tea tree for deep pore detox and oil control.\n• **De-Tan Home Kit (₹899)**: 3-step salon facial sequence to eliminate sun damage.\n• **Men's SPA Package (₹1499)**: Complete 90-minute in-chair facial and head therapy.`;
-          } else if (tLower.includes('beard') || tLower.includes('daadi')) {
-            smartFallback = isHindi
-              ? `🧔 **Beard Care Guide:**\n\nDaadi ki growth aur styling ke liye hamare Master Barbers **Beard Oil (₹449)** aur **In-Studio Beard Sculpting (₹199)** recommend karte hain!`
-              : `🧔 For beard grooming and growth, we recommend our Organic Beard Growth Oil (₹399) and Shea Beard Butter (₹449), plus in-studio Beard Sculpting (₹199) with hot steam towels.`;
-          } else if (tLower.includes('book') || tLower.includes('haircut') || tLower.includes('appointment')) {
-            smartFallback = `✂️ You can reserve a chair at our Flagship Studio in Sector 63, Noida (open 7 AM – 11 PM daily) for Men's Precision Haircut (₹249) or Master Cut with Vikram Sharma (₹499).`;
-          } else if (tLower.includes('order') || tLower.includes('track')) {
-            smartFallback = `📦 I can check your order tracking right away! Share your Order ID or registered email, and I'll pull live carrier checkpoints.`;
-          }
-
-          this.messages.update((list) => [
-            ...list,
-            {
-              id: `ai-fb-${Date.now()}`,
-              sender: 'ai',
-              text: smartFallback,
-              timestamp: new Date().toISOString(),
-              actionChips: [
-                { label: 'Reserve Barber Chair', query: 'Book appointment' },
-                { label: 'Haircut Rates', query: 'What are your haircut prices?' },
-                { label: 'Live Order Tracking', query: 'Where is my order?' },
-              ],
-            },
-          ]);
+          this.failedMessage = { id: optimisticUserMsg.id, text };
+          this.chatError.set('Your message could not be sent. Please try again.');
           this.scrollToBottom('smooth');
         },
       });

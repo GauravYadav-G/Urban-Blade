@@ -104,6 +104,7 @@ export interface AdminOrder extends TrackedOrder {
 }
 
 export interface AdminBooking {
+  service_id?: string;
   id: string;
   customer_name: string;
   customer_email: string;
@@ -293,11 +294,11 @@ export class AdminService {
   /**
    * Called by CheckoutPage or Admin POS when an order is registered.
    */
-  addOrder(order: AdminOrder, syncToBackend = false): void {
+  addOrder(order: AdminOrder, syncToBackend = false, onComplete?: (saved: boolean) => void): void {
     if (syncToBackend) {
       this.http.post(`${API_BASE}/orders`, order).pipe(takeUntil(this.sessionEnded)).subscribe({
-        next: () => { this.refreshOrders(); this.refreshProducts(); this.toast.success('Counter order saved.'); },
-        error: error => this.toast.error(error.error?.message || 'Counter order could not be saved.'),
+        next: () => { this.refreshOrders(); this.refreshProducts(); this.toast.success('Counter order saved.'); onComplete?.(true); },
+        error: error => { this.toast.error(error.error?.message || 'Counter order could not be saved.'); onComplete?.(false); },
       });
       return;
     }

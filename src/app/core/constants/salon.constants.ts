@@ -33,7 +33,8 @@ export const PAGES_NAV: { label: string; route: string; query?: Record<string, s
   { label: 'My Account', route: '/account' },
   { label: 'Orders & Tracking', route: '/account', query: { tab: 'orders' } },
   { label: 'Book a Visit', route: '/book' },
-  { label: 'Help / Support', route: '/help' },
+  { label: 'Help Centre', route: '/help' },
+  { label: 'Support Chat', route: '/support' },
 ];
 
 export const DEMO_ACCOUNT = {

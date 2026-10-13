@@ -20,6 +20,9 @@ import { ToastService } from '@core/services/toast.service';
 import { InrPipe } from '@shared/pipes/inr-pipe';
 import { OrderInvoice } from '@shared/components/order-invoice/order-invoice';
 
+type AccountTab = 'overview' | 'orders' | 'bookings' | 'addresses' | 'profile';
+const ACCOUNT_TABS: readonly AccountTab[] = ['overview', 'orders', 'bookings', 'addresses', 'profile'];
+
 interface NominatimSearchHit {
   lat: string;
   lon: string;
@@ -51,6 +54,11 @@ export interface CustomerOrder extends TrackedOrder {
   subtotal: number;
   total_amount: number;
   discount_amount?: number;
+  shipping_fee?: number;
+  tax_amount?: number;
+  tax_rate_percent?: number;
+  tax_inclusive?: boolean;
+  transaction_id?: string;
   coupon_code?: string;
   tracking_number?: string;
   currency: string;
@@ -135,13 +143,34 @@ export class AccountPage implements OnInit {
   }
 
   // Active Dashboard Navigation Tab
-  readonly activeTab = signal<'overview' | 'orders' | 'bookings' | 'addresses' | 'profile'>('overview');
+  readonly activeTab = signal<AccountTab>('profile');
+
+  readonly accountNavigation: readonly { tab: AccountTab; label: string; icon: string }[] = [
+    { tab: 'profile', label: 'Account details', icon: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0' },
+    { tab: 'overview', label: 'Overview', icon: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z' },
+    { tab: 'orders', label: 'Orders & receipts', icon: 'M6 3h12l3 4v14H3V7l3-4M3 7h18M8 11a4 4 0 0 0 8 0' },
+    { tab: 'bookings', label: 'Appointments', icon: 'M3 5h18v16H3zM3 10h18M8 2v6M16 2v6' },
+    { tab: 'addresses', label: 'Address book', icon: 'M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 0 1 18 0M15 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0' },
+  ];
+  readonly sectionTitle = computed(() => ({
+    overview: 'Welcome back.', orders: 'Your orders', bookings: 'Your appointments',
+    addresses: 'Address book', profile: 'Account details',
+  })[this.activeTab()]);
+  readonly sectionDescription = computed(() => ({
+    overview: 'A little overview of everything you have with us.',
+    orders: 'Follow your deliveries and revisit your favourites.',
+    bookings: 'Make time for yourself. Keep your next visit in view.',
+    addresses: 'Keep your delivery details ready for next time.',
+    profile: 'Manage your Urban Blade profile.',
+  })[this.activeTab()]);
 
   // Orders & Bookings Data
   readonly orders = signal<CustomerOrder[]>([]);
   readonly bookings = signal<CustomerBooking[]>([]);
   readonly loadingOrders = signal<boolean>(false);
   readonly loadingBookings = signal<boolean>(false);
+  readonly ordersError = signal('');
+  readonly bookingsError = signal('');
 
   // Orders Filtering & Search
   readonly orderStatusFilter = signal<'all' | 'active' | 'delivered' | 'cancelled'>('all');
@@ -187,9 +216,13 @@ export class AccountPage implements OnInit {
   readonly activeOrdersCount = computed(() =>
     this.orders().filter((o) => o.status !== 'delivered' && o.status !== 'cancelled').length
   );
-  readonly upcomingBookingsCount = computed(() =>
-    this.bookings().filter((b) => b.status !== 'completed' && b.status !== 'cancelled').length
-  );
+  readonly upcomingBookings = computed(() => {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    return this.bookings()
+      .filter(booking => booking.status === 'confirmed' && booking.booking_date.slice(0, 10) >= today)
+      .slice().sort((a, b) => a.booking_date.localeCompare(b.booking_date) || a.time_slot.localeCompare(b.time_slot));
+  });
+  readonly upcomingBookingsCount = computed(() => this.upcomingBookings().length);
 
 
 
@@ -241,6 +274,7 @@ export class AccountPage implements OnInit {
   });
 
   ngOnInit(): void {
+    void this.addresses.load(true);
     const user = this.account.user();
     if (user) {
       this.profileName.set(user.name);
@@ -250,11 +284,10 @@ export class AccountPage implements OnInit {
     }
 
     // Synchronize active tab from URL query params (e.g. /account?tab=orders)
-    this.route.queryParamMap.subscribe((params) => {
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const tabParam = params.get('tab');
-      if (tabParam && ['overview', 'orders', 'bookings', 'addresses', 'profile'].includes(tabParam)) {
-        this.activeTab.set(tabParam as any);
-      }
+      const tab = ACCOUNT_TABS.find(tab => tab === tabParam) ?? 'profile';
+      this.activeTab.set(tab);
     });
 
     this.fetchUserOrders();
@@ -276,7 +309,7 @@ export class AccountPage implements OnInit {
   fetchUserOrders(background = false): void {
     if (this.fetchingOrders) return;
     this.fetchingOrders = true;
-    if (!background) this.loadingOrders.set(true);
+    if (!background) { this.loadingOrders.set(true); this.ordersError.set(''); }
     const identity = this.account.user();
     const email = this.account.user()?.email;
     const url = email ? `/api/orders?email=${encodeURIComponent(email)}` : '/api/orders';
@@ -288,6 +321,7 @@ export class AccountPage implements OnInit {
         if (identity !== this.account.user()) return;
         // An empty response is authoritative. Never replace it with the shared
         // admin cache, which contains orders belonging to other customers.
+        this.ordersError.set('');
         this.orders.set(Array.isArray(data) ? data : []);
         const activeId = this.activeTrackingOrder()?.id;
         if (activeId) this.activeTrackingOrder.set(this.orders().find(order => order.id === activeId) || null);
@@ -295,6 +329,8 @@ export class AccountPage implements OnInit {
       error: () => {
         this.fetchingOrders = false;
         this.loadingOrders.set(false);
+        if (identity !== this.account.user()) return;
+        this.ordersError.set('Your orders could not be loaded. Please try again.');
         if (!background) this.toast.error('Orders could not be loaded. Please retry.');
       },
     });
@@ -315,17 +351,21 @@ export class AccountPage implements OnInit {
 
   fetchUserBookings(): void {
     this.loadingBookings.set(true);
+    this.bookingsError.set('');
+    const identity = this.account.user();
     const email = this.account.user()?.email;
     const url = email ? `/api/bookings?email=${encodeURIComponent(email)}` : '/api/bookings';
 
-    this.http.get<CustomerBooking[]>(url).subscribe({
+    this.http.get<CustomerBooking[]>(url).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.loadingBookings.set(false);
+        if (identity !== this.account.user()) return;
         this.bookings.set(Array.isArray(data) ? data : []);
       },
       error: () => {
         this.loadingBookings.set(false);
-        this.bookings.set([]);
+        if (identity !== this.account.user()) return;
+        this.bookingsError.set('Your appointments could not be loaded. Please try again.');
       },
     });
   }
@@ -360,8 +400,8 @@ export class AccountPage implements OnInit {
     if (!code) return;
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(code).then(() => {
-        this.toast.success(`📋 Copied Airway Bill ${code} to clipboard!`);
-      });
+        this.toast.success(`Tracking number ${code} copied.`);
+      }).catch(() => this.toast.error('Clipboard unavailable. Please copy the tracking number manually.'));
     } else {
       this.toast.info(`Airway Bill: ${code}`);
     }
@@ -415,10 +455,16 @@ export class AccountPage implements OnInit {
   }
 
   async saveProfile(): Promise<void> {
+    if (this.isSavingProfile()) return;
+    this.profileSavedMessage.set('');
     const name = this.profileName().trim();
     const phone = this.profilePhone().trim();
     if (!name) {
       this.toast.error('Name cannot be empty.');
+      return;
+    }
+    if (phone && !/^[6-9]\d{9}$/.test(phone)) {
+      this.toast.error('Enter a valid 10-digit Indian mobile number.');
       return;
     }
     this.isSavingProfile.set(true);
@@ -427,7 +473,7 @@ export class AccountPage implements OnInit {
       this.profileSavedMessage.set('Profile information successfully updated.');
       this.toast.success('Your profile details have been saved.');
     } catch {
-      this.profileSavedMessage.set('Profile could not be saved.');
+      this.profileSavedMessage.set('');
       this.toast.error('Profile update failed. Please retry.');
     } finally {
       this.isSavingProfile.set(false);
@@ -491,7 +537,8 @@ export class AccountPage implements OnInit {
     this.form.reset();
   }
 
-  saveAddress(): void {
+  async saveAddress(): Promise<void> {
+    if (this.addresses.saving()) return;
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       this.toast.error('Please complete all required address fields.');
@@ -499,24 +546,34 @@ export class AccountPage implements OnInit {
     }
 
     const value = this.form.getRawValue();
-    this.addresses.save(
-      {
-        ...value,
-        location: this.pinnedLocation(),
-      },
-      this.editingId() ?? undefined
-    );
-    this.toast.success('Address saved to your address book.');
-    this.cancelForm();
+    try {
+      await this.addresses.save({ ...value, location: this.pinnedLocation() }, this.editingId() ?? undefined);
+      this.toast.success('Address saved to your account.');
+      this.cancelForm();
+    } catch {
+      this.toast.error('Your address could not be saved. Please retry.');
+    }
   }
 
-  removeAddress(id: string): void {
-    if (confirm('Are you sure you want to remove this delivery address?')) {
-      this.addresses.remove(id);
+  async removeAddress(id: string): Promise<void> {
+    if (this.addresses.saving()) return;
+    if (!confirm('Remove this delivery address from your account?')) return;
+    try {
+      await this.addresses.remove(id);
       this.toast.info('Address removed.');
-      if (this.editingId() === id) {
-        this.cancelForm();
-      }
+      if (this.editingId() === id) this.cancelForm();
+    } catch {
+      this.toast.error('Address could not be removed. Please retry.');
+    }
+  }
+
+  async makeDefaultAddress(id: string): Promise<void> {
+    if (this.addresses.saving()) return;
+    try {
+      await this.addresses.setDefault(id);
+      this.toast.success('Default address updated.');
+    } catch {
+      this.toast.error('Default address could not be updated. Please retry.');
     }
   }
 

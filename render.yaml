@@ -44,8 +44,16 @@ services:
       - key: REDIS_URL
         sync: false
       - key: RAZORPAY_KEY_ID
-        value: rzp_test_TZtC5tBbAEEppP
+        sync: false
       - key: RAZORPAY_KEY_SECRET
-        value: bSQij93encYPYkJK6yLzy8xm
+        sync: false
       - key: RAZORPAY_WEBHOOK_SECRET
         sync: false
+
+      # AI keys belong to the backend environment, never the Angular bundle.
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: NVIDIA_MODEL
+        value: meta/llama-3.2-11b-vision-instruct
+      - key: AI_ALLOW_PUBLIC_FALLBACK
+        value: "false"

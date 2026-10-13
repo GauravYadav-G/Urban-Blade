@@ -78,6 +78,7 @@ export class AdminOrders implements OnInit, OnDestroy {
 
   // Manual POS Order Modal State
   readonly isCreateModalOpen = signal(false);
+  readonly isSavingManualOrder = signal(false);
   readonly manualCustomerName = signal('');
   readonly manualCustomerPhone = signal('');
   readonly manualCustomerCity = signal('Ghaziabad');
@@ -618,6 +619,7 @@ export class AdminOrders implements OnInit, OnDestroy {
   getWhatsAppUrl(order: AdminOrder): string {
     const rawPhone = (order.shipping_address?.phone || '').replace(/\D/g, '');
     const phone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
+    if (phone.length < 10 || phone.length > 15) return '';
     const name = order.shipping_address?.fullName || 'Valued Customer';
     const tracking = order.tracking_number || `TRK-UB-${order.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
     const carrier = order.carrier || 'Urban Express';
@@ -631,7 +633,7 @@ export class AdminOrders implements OnInit, OnDestroy {
   openWhatsApp(order: AdminOrder, event?: Event): void {
     event?.stopPropagation();
     const url = this.getWhatsAppUrl(order);
-    if (!url) { this.toast.info('No official portal is configured for this carrier. Review the shipment manually.'); return; }
+    if (!url) { this.toast.error('Add a valid customer phone number before opening WhatsApp.'); return; }
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
@@ -819,32 +821,35 @@ export class AdminOrders implements OnInit, OnDestroy {
 
   private performExportCSV(orders: AdminOrder[], filename: string): void {
     const headers = ['Order_ID', 'Customer_Name', 'Phone', 'City', 'Order_Date', 'Status', 'Payment_Method', 'Total_Amount', 'Items_Count', 'Items_List', 'Tracking_AWB', 'Carrier'];
+    const escapeCell = (value: string | number): string => {
+      const text = String(value);
+      // Spreadsheet apps execute formula-prefixed customer input unless neutralized.
+      const safe = /^[\s]*[=+@-]/.test(text) ? `'${text}` : text;
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
     const rows = orders.map((o) => [
-      o.id || '',
-      `"${(o.shipping_address?.fullName || 'Customer').replace(/"/g, '""')}"`,
-      o.shipping_address?.phone || '',
-      o.shipping_address?.city || '',
-      o.created_at || '',
-      (o.status || '').toUpperCase(),
-      (o.payment_method || '').toUpperCase(),
-      o.total_amount || 0,
+      o.id || '', o.shipping_address?.fullName || 'Customer',
+      o.shipping_address?.phone || '', o.shipping_address?.city || '',
+      o.created_at || '', (o.status || '').toUpperCase(),
+      (o.payment_method || '').toUpperCase(), o.total_amount || 0,
       o.items?.length || 0,
-      `"${(o.items || []).map((i) => `${i.quantity}x ${i.product_name}`).join('; ').replace(/"/g, '""')}"`,
-      o.tracking_number || '',
-      o.carrier || 'Urban Express',
+      (o.items || []).map((i) => `${i.quantity}x ${i.product_name}`).join('; '),
+      o.tracking_number || '', o.carrier || 'Urban Express',
     ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(escapeCell).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', filename);
+    link.href = url;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   // ─── MANUAL POS MODAL ─────────────────────────────────────────────────────
   openCreateModal(): void {
+    if (this.isSavingManualOrder()) return;
     const prods = this.admin.products();
     if (prods.length > 0) {
       this.manualProductId.set(prods[0].id);
@@ -856,22 +861,38 @@ export class AdminOrders implements OnInit, OnDestroy {
   }
 
   closeCreateModal(): void {
+    if (this.isSavingManualOrder()) return;
     this.isCreateModalOpen.set(false);
   }
 
   saveManualOrder(): void {
+    if (this.isSavingManualOrder()) return;
     if (!this.manualCustomerName().trim() || !this.manualCustomerPhone().trim()) {
       alert('Please provide customer name and phone number.');
       return;
     }
 
-    const prod = this.admin.products().find((p) => p.id === this.manualProductId()) || this.admin.products()[0];
+    const prod = this.admin.products().find((p) => p.id === this.manualProductId());
     if (!prod) {
       alert('No product selected.');
       return;
     }
 
-    const qty = Math.max(1, Number(this.manualQuantity()) || 1);
+    const phone = this.manualCustomerPhone().replace(/[\s()+-]/g, '');
+    if (!/^(?:91)?[6-9]\d{9}$/.test(phone)) {
+      this.toast.error('Enter a valid Indian mobile number, optionally prefixed with +91.');
+      return;
+    }
+    const qty = Number(this.manualQuantity());
+    if (!Number.isSafeInteger(qty) || qty < 1) {
+      this.toast.error('Quantity must be a positive whole number.');
+      return;
+    }
+    const available = prod.availableQuantity ?? prod.stock_quantity ?? prod.stockQuantity ?? 0;
+    if (!prod.inStock || qty > available) {
+      this.toast.error(`Only ${available} units are available. Choose another quantity or product.`);
+      return;
+    }
     const subtotal = prod.price * qty;
 
     const order: AdminOrder = {
@@ -900,7 +921,10 @@ export class AdminOrders implements OnInit, OnDestroy {
       ],
     };
 
-    this.admin.addOrder(order, true);
-    this.isCreateModalOpen.set(false);
+    this.isSavingManualOrder.set(true);
+    this.admin.addOrder(order, true, (saved) => {
+      this.isSavingManualOrder.set(false);
+      if (saved) this.isCreateModalOpen.set(false);
+    });
   }
 }
