@@ -5,15 +5,24 @@ import { query, withTransaction } from '../../db/pool.js';
 import { vendorBalances } from './vendor-finance.service.js';
 
 const stylistSchema = z.object({ name: z.string().trim().min(2).max(255), role: z.string().trim().min(2).max(100), is_active: z.boolean().default(true) }).strict();
+const permanentDeletionSchema = z.object({ confirmationName: z.string().trim().min(1).max(255) }).strict();
+
+class StylistDeletionError extends Error {
+  constructor(readonly code: 'STYLIST_NOT_FOUND' | 'STYLIST_CONFIRMATION_MISMATCH') {
+    super(code);
+  }
+}
 
 export async function stylistsRoutes(app: FastifyInstance) {
-  app.get('/admin/stylists', { preHandler: [requireAdmin] }, async () => ({
-    data: (await query(`
-      SELECT DISTINCT ON (LOWER(TRIM(name))) id, name, role, is_active
-      FROM stylists
-      ORDER BY LOWER(TRIM(name)), is_active DESC, name ASC
-    `)).rows
-  }));
+  app.get('/admin/stylists', { preHandler: [requireAdmin] }, async (request, reply) => {
+    try {
+      return { data: (await query(`SELECT id, name, role, COALESCE(is_active, false) AS is_active FROM stylists
+        ORDER BY LOWER(TRIM(name)), is_active DESC, name, id`)).rows };
+    } catch (error) {
+      request.log.error({ err: error }, 'Stylist directory unavailable');
+      return reply.code(503).send({ error: 'STYLIST_DIRECTORY_UNAVAILABLE', message: 'The stylist directory could not be loaded. Check the connection and retry.' });
+    }
+  });
 
   app.post('/admin/stylists', { preHandler: [requireAdmin] }, async (request, reply) => {
     const parsed = stylistSchema.safeParse(request.body);
@@ -48,6 +57,47 @@ export async function stylistsRoutes(app: FastifyInstance) {
     // Archive rather than erase the assignment history of completed visits.
     const result = await query('UPDATE stylists SET is_active=false WHERE id=$1 RETURNING id', [request.params.id]);
     return result.rowCount ? { ok: true, archived: true } : reply.code(404).send({ error: 'STYLIST_NOT_FOUND' });
+  });
+
+  app.delete<{ Params: { id: string } }>('/admin/stylists/:id/permanent', { preHandler: [requireAdmin] }, async (request, reply) => {
+    const parsed = permanentDeletionSchema.safeParse(request.body);
+    if (!z.string().uuid().safeParse(request.params.id).success || !parsed.success) {
+      return reply.code(400).send({ error: 'INVALID_STYLIST_DELETION', message: 'Provide a valid stylist ID and type the stylist name to confirm permanent deletion.' });
+    }
+    try {
+      const unassignedBookings = await withTransaction(async client => {
+        const result = await client.query<{ id: string; name: string }>(
+          'SELECT id, name FROM stylists WHERE id = $1 FOR UPDATE', [request.params.id],
+        );
+        const stylist = result.rows[0];
+        if (!stylist) throw new StylistDeletionError('STYLIST_NOT_FOUND');
+        // Check the saved name under the same lock as the delete. A renamed or
+        // stale directory entry must require a fresh review and confirmation.
+        if (stylist.name.trim() !== parsed.data.confirmationName) {
+          throw new StylistDeletionError('STYLIST_CONFIRMATION_MISMATCH');
+        }
+        const bookings = await client.query(
+          `UPDATE bookings SET stylist_id = NULL, version = version + 1
+           WHERE stylist_id = $1 RETURNING id`, [stylist.id],
+        );
+        await client.query('DELETE FROM stylists WHERE id = $1', [stylist.id]);
+        return bookings.rowCount || 0;
+      });
+      return {
+        ok: true, deleted: true, id: request.params.id, unassignedBookings,
+        message: `Stylist permanently deleted. ${unassignedBookings} booking assignment(s) cleared; booking records were kept.`,
+      };
+    } catch (error) {
+      request.log.warn({ err: error }, 'Permanent stylist deletion failed');
+      if (error instanceof StylistDeletionError) {
+        return reply.code(error.code === 'STYLIST_NOT_FOUND' ? 404 : 409).send({
+          error: error.code, message: error.code === 'STYLIST_NOT_FOUND'
+            ? 'This stylist no longer exists. Refresh the directory.'
+            : 'The confirmation name does not match the saved stylist. Refresh the directory and review the name before deleting.',
+        });
+      }
+      return reply.code(503).send({ error: 'STYLIST_DELETION_UNAVAILABLE', message: 'Permanent deletion could not be completed. Refresh the directory and retry.' });
+    }
   });
 
   app.get('/admin/overview', { preHandler: [requireStaff] }, async (request, reply) => {

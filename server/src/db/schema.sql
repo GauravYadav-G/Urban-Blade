@@ -369,7 +369,39 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_reason TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_review_note TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_requested_at TIMESTAMPTZ;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_received_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_requested_by UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_reviewed_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_restock BOOLEAN;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_external_reference VARCHAR(150);
+CREATE INDEX IF NOT EXISTS idx_orders_return_queue ON orders(return_status, return_requested_at DESC)
+  WHERE return_status IS NOT NULL;
+CREATE TABLE IF NOT EXISTS order_return_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_sequence BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  source VARCHAR(20) NOT NULL CHECK (source IN ('customer', 'admin')),
+  previous_status VARCHAR(20) CHECK (previous_status IN ('requested', 'approved', 'rejected', 'received')),
+  status VARCHAR(20) NOT NULL CHECK (status IN ('requested', 'approved', 'rejected', 'received')),
+  note TEXT NOT NULL,
+  restock BOOLEAN,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK ((status = 'received' AND restock IS NOT NULL) OR (status <> 'received' AND restock IS NULL))
+);
+ALTER TABLE order_return_events ADD COLUMN IF NOT EXISTS event_sequence BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE;
+CREATE INDEX IF NOT EXISTS idx_order_return_events_order ON order_return_events(order_id, created_at);
+CREATE TABLE IF NOT EXISTS offline_payment_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL REFERENCES orders(id),
+  kind VARCHAR(20) NOT NULL CHECK (kind IN ('collection', 'refund')),
+  reference VARCHAR(150) NOT NULL,
+  amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+  recorded_by UUID NOT NULL REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(kind, reference),
+  UNIQUE(order_id, kind)
+);
 CREATE TABLE IF NOT EXISTS vendor_payouts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   vendor_id VARCHAR(120) NOT NULL REFERENCES vendors(id),
@@ -390,6 +422,10 @@ ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS provider_transfer_id VARCHAR
 ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS provider_status VARCHAR(30) NOT NULL DEFAULT 'manual_recorded';
 ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS failure_reason TEXT;
 ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS processed_at TIMESTAMPTZ;
+ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS provider_payload JSONB;
+ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS provider_idempotency_key VARCHAR(36);
+ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS submission_started_at TIMESTAMPTZ;
+ALTER TABLE vendor_payouts ADD COLUMN IF NOT EXISTS checked_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_payouts_provider_transfer_id
   ON vendor_payouts(provider_transfer_id) WHERE provider_transfer_id IS NOT NULL;
 

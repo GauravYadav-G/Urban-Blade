@@ -99,6 +99,7 @@ await assert.rejects(settleCapturedPayment('pay_fixture',online,{payments:{fetch
 const {initiateOrderRefund}=await mod('modules/orders/refund.service.js');
 let refundCreateCount=0;
 const refundGateway={payments:{
+  fetch:async()=>({id:'pay_fixture',order_id:'order_fixture',status:'captured',amount:59900,currency:'INR',amount_refunded:0}),
   fetchMultipleRefund:async()=>({items:[]}),
   refund:async(_paymentId,params)=>{refundCreateCount++;return {id:'rfnd_fixture',payment_id:'pay_fixture',status:'pending',amount:params.amount,receipt:params.receipt};},
   fetchRefund:async()=>({id:'rfnd_fixture',payment_id:'pay_fixture',status:'processed',amount:59900}),
@@ -147,7 +148,7 @@ assert.equal((await query('SELECT stock_quantity FROM products WHERE id=$1',[pro
 await assert.rejects(applyRefundWebhook({id:'rfnd_fixture',payment_id:'pay_fixture',status:'processed',amount:1}),/REFUND_AMOUNT_MISMATCH/);checked++;
 // Timeout after provider acceptance is ambiguous: retry only reconciles, never creates twice.
 let ambiguousCreates=0;
-const ambiguousGateway={payments:{fetchMultipleRefund:async()=>({items:[]}),refund:async()=>{ambiguousCreates++;throw new Error('network timeout');}}};
+const ambiguousGateway={payments:{fetch:async()=>({id:'pay_late',order_id:'order_expired_fixture',status:'captured',amount:59900,currency:'INR',amount_refunded:0}),fetchMultipleRefund:async()=>({items:[]}),refund:async()=>{ambiguousCreates++;throw new Error('network timeout');}}};
 await assert.rejects(initiateOrderRefund(stale,'Customer cancellation',ambiguousGateway),/network timeout/);
 assert.equal((await query('SELECT refund_status FROM orders WHERE id=$1',[stale])).rows[0].refund_status,'pending');
 await initiateOrderRefund(stale,'Customer cancellation',ambiguousGateway);
@@ -171,6 +172,8 @@ assert.equal((await vendorRequest('POST',`/api/admin/orders/${online}/reconcile-
 const secondProduct='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 await query("INSERT INTO products(id,slug,name,description,price,category,kind,vendor,audience,image_url,stock_quantity,in_stock) VALUES($1,'other-brand','Other Brand','Test',100,'hair','retail','Other Vendor','unisex','/images/placeholder.svg',10,true)",[secondProduct]);
 await query("INSERT INTO order_items(order_id,product_id,product_name,unit_price,quantity) VALUES($1,$2,'Other Brand',100,1)",[recover.json().orderId,secondProduct]);
+await query('UPDATE products SET stock_quantity = stock_quantity - 1 WHERE id = $1', [secondProduct]);
+await query("INSERT INTO stock_reservations(order_id,product_id,quantity,status) VALUES($1,$2,1,'committed')", [recover.json().orderId,secondProduct]);
 const vendorOrders=await vendorRequest('GET','/api/admin/orders?vendor=Other');
 assert.equal(vendorOrders.statusCode,200,vendorOrders.body);
 const scoped=vendorOrders.json().data.find(row=>row.id===recover.json().orderId);
@@ -188,7 +191,7 @@ assert.equal((await req('POST',`/api/admin/orders/${returnOrder}/collection`,{re
 const summary=await req('GET','/api/admin/finance/summary',undefined,admin);
 assert.equal(summary.statusCode,200,summary.body);
 const balance=summary.json().vendorSettlements.find(row=>row.id===vendorId);
-assert.equal(Number(balance.payable_amount),396);
+assert.equal(Number(balance.payable_amount),335.60);
 const payoutPayload={vendorId,amount:100,reference:'bank-transfer-001'};
 const payout=await req('POST','/api/admin/finance/process-payout',payoutPayload,admin);
 assert.equal(payout.statusCode,200,payout.body);assert.equal(payout.json().disbursed,false);
@@ -203,7 +206,7 @@ const {vendorBalances}=await mod('modules/admin/vendor-finance.service.js');
 const pendingBalance=(await vendorBalances()).rows.find(row=>row.id===vendorId);
 assert.equal(Number(pendingBalance.paid_amount),100);
 assert.equal(Number(pendingBalance.pending_amount),50);
-assert.equal(Number(pendingBalance.payable_amount),246);
+assert.equal(Number(pendingBalance.payable_amount),185.60);
 await query("DELETE FROM vendor_payouts WHERE reference='pending-fixture'");
 const forgedVerification=await req('PUT',`/api/admin/vendors/${vendorId}`,{payoutAccount:{upi:'vendor@upi',verified:true,verificationReference:'forged'}},admin);
 assert.equal(forgedVerification.statusCode,200,forgedVerification.body);
@@ -239,7 +242,7 @@ assert.equal(history.json().find(row=>row.id===returnOrder).return_status,'recei
 const delivered='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 await query("INSERT INTO orders(id,user_id,idempotency_key,status,subtotal,total_amount,currency,shipping_address,payment_method,payment_status,razorpay_payment_id) VALUES($1,$2,'delivered_fixture','delivered',500,500,'INR','{}','Razorpay','captured','pay_delivered')",[delivered,customer]);
 await query("INSERT INTO stock_reservations(order_id,product_id,quantity,status) VALUES($1,$2,1,'committed')",[delivered,product]);
-const deliveredGateway={payments:{fetchMultipleRefund:async()=>({items:[]}),refund:async()=>({id:'rfnd_delivered',payment_id:'pay_delivered',status:'processed',amount:50000})}};
+const deliveredGateway={payments:{fetch:async()=>({id:'pay_delivered',order_id:'delivered_fixture',status:'captured',amount:50000,currency:'INR',amount_refunded:0}),fetchMultipleRefund:async()=>({items:[]}),refund:async()=>({id:'rfnd_delivered',payment_id:'pay_delivered',status:'processed',amount:50000})}};
 await assert.rejects(initiateOrderRefund(delivered,'Return before receipt',deliveredGateway),/ORDER_ALREADY_FULFILLED/);
 await req('POST',`/api/orders/${delivered}/return`,{reason:'Damaged in transit'});
 await req('PUT',`/api/admin/orders/${delivered}/return`,{status:'approved',note:'Return for inspection'},admin);
@@ -401,11 +404,43 @@ await t.test('refund lookup failures before submission remain safely retryable',
   assert.equal(creates, 0);
   assert.equal((await query('SELECT refund_status FROM orders WHERE id=$1', [id])).rows[0].refund_status, 'failed');
   const retried = await initiateOrderRefund(id, 'Customer cancellation', { payments: {
+    fetch: async () => ({ id: 'pay_lookup_retry', amount: 50000, currency: 'INR', status: 'captured', amount_refunded: 0 }),
     fetchMultipleRefund: async () => ({ items: [] }),
     refund: async () => { creates++; return { id: 'rfnd_lookup_retry', payment_id: 'pay_lookup_retry', amount: 50000, status: 'processed' }; },
   } });
   assert.equal(retried.payment_status, 'refunded');
   assert.equal(creates, 1);
+});
+await t.test('dashboard partial refunds block a second full-order refund before submission', async () => {
+  const id = 'adadadad-adad-4ada-8ada-adadadadadad';
+  await query("INSERT INTO orders(id,user_id,status,subtotal,total_amount,currency,shipping_address,payment_method,payment_status,razorpay_payment_id) VALUES($1,$2,'confirmed',500,500,'INR','{}','Razorpay','captured','pay_external_partial')", [id, customer]);
+  let creates = 0;
+  await assert.rejects(initiateOrderRefund(id, 'Customer cancellation', { payments: {
+    fetchMultipleRefund: async () => ({ items: [] }),
+    fetch: async () => ({ id: 'pay_external_partial', amount: 50000, currency: 'INR', status: 'captured', amount_refunded: 10000 }),
+    refund: async () => { creates++; },
+  } }), /PARTIAL_REFUND_REQUIRES_REVIEW/);
+  assert.equal(creates, 0);
+  assert.equal((await query('SELECT refunded_paise FROM gateway_payments WHERE id=$1', ['pay_external_partial'])).rows[0].refunded_paise, 10000);
+  assert.equal((await query('SELECT refund_status FROM orders WHERE id=$1', [id])).rows[0].refund_status, 'failed');
+});
+await t.test('offline collection/refund references are durable and retries cannot change them', async () => {
+  const collectionRetry = await req('POST', `/api/admin/orders/${returnOrder}/collection`, { reference: 'cod-collection-001' }, admin);
+  assert.equal(collectionRetry.statusCode, 200, collectionRetry.body);
+  assert.equal((await req('POST', `/api/admin/orders/${returnOrder}/collection`, { reference: 'changed-collection' }, admin)).statusCode, 409);
+  const refundRetry = await req('POST', `/api/admin/orders/${returnOrder}/refund/manual`, { reference: 'bank-refund-001', reason: 'Repeat completed return' }, admin);
+  assert.equal(refundRetry.statusCode, 200, refundRetry.body);
+  assert.equal((await req('POST', `/api/admin/orders/${returnOrder}/refund/manual`, { reference: 'changed-refund', reason: 'Duplicate repayment' }, admin)).statusCode, 409);
+  const records = (await query('SELECT * FROM offline_payment_records WHERE order_id = $1 ORDER BY kind', [returnOrder])).rows;
+  assert.equal(records.length, 2);
+  assert.ok(records.every(record => record.recorded_by === admin && Number(record.amount) > 0));
+  const id = 'aeaeaeae-aeae-4aea-8aea-aeaeaeaeaeae';
+  await query("INSERT INTO orders(id,user_id,status,subtotal,total_amount,currency,shipping_address,payment_method,payment_status) VALUES($1,$2,'delivered',500,500,'INR','{}','Cash on Delivery','pending')", [id, customer]);
+  assert.equal((await req('POST', `/api/admin/orders/${id}/collection`, { reference: 'cod-collection-001' }, admin)).statusCode, 409);
+  assert.equal((await query('SELECT payment_status FROM orders WHERE id = $1', [id])).rows[0].payment_status, 'pending');
+  await query("UPDATE orders SET payment_status = 'captured', return_status = 'received', return_restock = false WHERE id = $1", [id]);
+  assert.equal((await req('POST', `/api/admin/orders/${id}/refund/manual`, { reference: 'bank-refund-001', reason: 'Return received' }, admin)).statusCode, 409);
+  assert.equal((await query('SELECT refund_status FROM orders WHERE id = $1', [id])).rows[0].refund_status, null);
 });
 await t.test('delayed partial refunds cannot regress full refund settlement or money totals', async () => {
   const inventoryBefore = (await query('SELECT stock_quantity FROM products WHERE id=$1', [product])).rows[0].stock_quantity;
@@ -450,6 +485,47 @@ await t.test('settled refunds remain reviewable during gateway outages', async (
     config.razorpay.keyId = previousKeyId;
     config.razorpay.keySecret = previousKeySecret;
   }
+});
+await t.test('settled refund notifications update gateway totals and revenue uses confirmed money', async () => {
+  const snapshot = (await query('SELECT status, refunded_paise FROM gateway_payments WHERE id = $1', ['pay_fixture'])).rows[0];
+  assert.equal(snapshot.status, 'refunded');
+  assert.equal(Number(snapshot.refunded_paise), 59900);
+  const finance = await req('GET', '/api/admin/finance/audit?days=30', undefined, admin);
+  const metrics = await req('GET', '/api/admin/metrics', undefined, admin);
+  const daily = await req('GET', '/api/admin/metrics/daily', undefined, admin);
+  const summary = await req('GET', '/api/admin/finance/summary', undefined, admin);
+  for (const response of [finance, metrics, daily, summary]) assert.equal(response.statusCode, 200, response.body);
+  assert.equal(Number(metrics.json().revenue.week), Number(finance.json().local.net));
+  assert.equal(daily.json().data.reduce((sum, row) => sum + Number(row.revenue), 0), Number(finance.json().local.net));
+  assert.equal(Number(summary.json().macro.totalNetCollectedRevenue), Number(finance.json().local.net));
+  assert.equal(Number(summary.json().macro.totalGrossRevenue) - Number(summary.json().macro.totalRefundedRevenue), Number(finance.json().local.net));
+  const offline = await req('GET', '/api/admin/finance/offline-transactions?days=30&search=bank-refund-001', undefined, admin);
+  assert.equal(offline.statusCode, 200, offline.body);
+  assert.equal(offline.json().total, 1);
+  assert.equal(offline.json().data[0].kind, 'refund');
+  assert.equal(offline.json().data[0].recorded_by_name, 'Admin');
+  assert.equal((await req('GET', '/api/admin/finance/offline-transactions', undefined, customer)).statusCode, 403);
+  const payouts = await req('GET', '/api/admin/finance/payouts?days=30&search=bank-transfer-001', undefined, admin);
+  assert.equal(payouts.statusCode, 200, payouts.body);
+  assert.equal(payouts.json().total, 1);
+  assert.equal(payouts.json().data[0].provider_status, 'manual_recorded');
+  assert.equal(payouts.json().data[0].provider_payload, undefined);
+  assert.equal((await req('POST', `/api/admin/finance/payouts/${payouts.json().data[0].id}/reconcile`, {}, customer)).statusCode, 403);
+});
+await t.test('vendor merchandise earnings exclude saved inclusive GST and separately added GST', async () => {
+  const taxVendor = 'vendor-tax-fixture';
+  const taxProduct = 'afafafaf-afaf-4afa-8afa-afafafafafaf';
+  await query("INSERT INTO vendors(id,name,slug,email,password,contact_person,phone,commission_rate) VALUES($1,'Tax Vendor','tax-fixture','tax@example.invalid','unused','Tax Vendor','9999999999',12)", [taxVendor]);
+  await query("INSERT INTO products(id,slug,name,description,price,category,kind,vendor,audience,image_url) VALUES($1,'tax-product','Tax Product','Fixture',118,'hair','retail','Tax Vendor','unisex','/images/placeholder.svg')", [taxProduct]);
+  for (const inclusive of [true, false]) {
+    const base = inclusive ? 118 : 100;
+    const order = (await query("INSERT INTO orders(user_id,status,subtotal,total_amount,shipping_fee,tax_amount,tax_inclusive,currency,shipping_address,payment_method,payment_status) VALUES($1,'delivered',$2,129,11,18,$3,'INR','{}','Cash','captured') RETURNING id", [customer, base, inclusive])).rows[0];
+    await query("INSERT INTO order_items(order_id,product_id,product_name,unit_price,quantity) VALUES($1,$2,'Tax Product',$3,1)", [order.id, taxProduct, base]);
+  }
+  const taxBalance = (await vendorBalances()).rows.find(row => row.id === taxVendor);
+  assert.equal(Number(taxBalance.gross_sales), 200);
+  assert.equal(Number(taxBalance.platform_cut), 24);
+  assert.equal(Number(taxBalance.payable_amount), 176);
 });
 console.log(`PASS: schema applied twice, indexes applied, ${checked} API/database assertions (production mode, Redis disconnected).`);
 

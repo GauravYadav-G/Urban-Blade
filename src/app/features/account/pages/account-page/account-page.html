@@ -366,6 +366,7 @@
             >
               Cancelled
             </button>
+            <button type="button" class="filter-pill" [class.active]="orderStatusFilter() === 'returns'" (click)="orderStatusFilter.set('returns')">Returns & refunds</button>
           </div>
 
           <div class="order-search-wrap">
@@ -516,6 +517,7 @@
                   }
                 </div>
 
+                <app-order-return-status [order]="ord" />
                 <!-- Order Card Footer -->
                 <div class="order-card-footer">
                   <div class="ocf-left">
@@ -537,11 +539,11 @@
                     </div>
 
                     <div class="order-button-group">
-                      @if (ord.return_status) { <span>Return: {{ ord.return_status }} · {{ ord.return_review_note || 'Awaiting review' }}</span> }
-                      @if (ord.refund_status) { <span>Refund: {{ ord.refund_status }}</span> }
-                      @if (ord.status === 'delivered' && !ord.return_status && ord.payment_status !== 'refunded') {
+                      @if (ord.refund_status && !ord.return_status) { <span>Refund: {{ ord.refund_status === 'processed' ? 'completed' : ord.refund_status === 'failed' ? 'needs attention' : 'processing' }}</span> }
+                      @if (canRequestReturn(ord)) {
                         <button type="button" class="btn-invoice" [disabled]="requestingReturn() !== null" (click)="requestReturn(ord)">Request return</button>
                       }
+                      @if (ord.return_status) { <a routerLink="/support" class="btn-invoice">Return help</a> }
                       <button type="button" class="btn-invoice" (click)="openInvoice(ord, $event)" title="View & print official GST tax invoice">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -964,4 +966,20 @@
      ═════════════════════════════════════════════════════════════════════════ -->
 @if (selectedInvoiceOrder(); as invoice) {
   <app-order-invoice [order]="invoice" (close)="closeInvoice()" />
+}
+
+@if (returnOrder(); as order) {
+    <dialog appAdminDialog class="return-dialog" aria-labelledby="customer-return-title" (cancel)="$event.preventDefault(); closeReturn()">
+      <header class="return-dialog-header"><div><h2 id="customer-return-title">Request a product return</h2><p>Order #{{ order.id.slice(0, 8).toUpperCase() }}</p></div><button type="button" class="return-close" (click)="closeReturn()" [disabled]="requestingReturn() !== null" aria-label="Close return request">×</button></header>
+      <p class="return-help">This request covers all products and quantities listed below. Our team will review the request, provide return instructions if approved, and inspect the parcel before arranging any refund due. Uncollected COD orders have no payment to refund.</p>
+      <div class="return-items">@for (item of order.items; track $index) { <div><span>{{ item.product_name }}</span><strong>Qty {{ item.quantity }}</strong></div> }<div><span>Original order total</span><strong>{{ order.total_amount | currency:order.currency }}</strong></div></div>
+      <form [formGroup]="returnForm" (ngSubmit)="submitReturn()">
+        <label class="return-field" for="customer-return-reason">Reason for return<select id="customer-return-reason" formControlName="category" required><option value="">Choose the issue</option>@for (reason of returnReasons; track reason) { <option [value]="reason">{{ reason }}</option> }</select></label>
+        <label class="return-field" for="customer-return-details">Tell us what happened<textarea id="customer-return-details" formControlName="details" rows="4" maxlength="400" required placeholder="Describe the issue and which products are affected."></textarea><small>3–400 characters. Please include useful product or delivery details.</small></label>
+        <label class="return-acknowledgement"><input type="checkbox" formControlName="acknowledged" required /><span>I understand this is a request to return the full order, including every listed product and quantity.</span></label>
+        <p class="return-warning">Keep the products and packaging until you receive return instructions. Submitting a request does not start a refund or book a collection.</p>
+        @if (returnError()) { <p class="return-error" role="alert">{{ returnError() }}</p> }
+        <div class="return-dialog-actions"><button type="button" [disabled]="requestingReturn() !== null" (click)="closeReturn()">Cancel</button><button type="submit" class="return-primary" [disabled]="requestingReturn() !== null">{{ requestingReturn() ? 'Submitting…' : 'Submit return request' }}</button></div>
+      </form>
+    </dialog>
 }

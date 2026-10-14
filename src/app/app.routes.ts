@@ -39,6 +39,11 @@ export const routes: Routes = [
           import('./features/admin/pages/admin-orders/admin-orders').then((m) => m.AdminOrders),
       },
       {
+        path: 'returns',
+        loadComponent: () =>
+          import('./features/admin/pages/admin-returns/admin-returns').then((m) => m.AdminReturns),
+      },
+      {
         path: 'refunds',
         loadComponent: () =>
           import('./features/admin/pages/admin-refunds/admin-refunds').then((m) => m.AdminRefunds),

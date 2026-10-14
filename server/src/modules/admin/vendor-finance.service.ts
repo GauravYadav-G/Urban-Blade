@@ -13,7 +13,10 @@ export async function vendorBalances(client?: PoolClient) {
     FROM vendors v
     LEFT JOIN (
       SELECT LOWER(pr.vendor) AS vendor,
-        SUM(oi.unit_price * oi.quantity * GREATEST(0, 1 - COALESCE(o.discount_amount, 0) / NULLIF(o.subtotal, 0))) AS gross_sales
+        SUM(oi.unit_price * oi.quantity * GREATEST(0, 1 - COALESCE(o.discount_amount, 0) / NULLIF(o.subtotal, 0))
+          * CASE WHEN o.tax_inclusive AND COALESCE(o.tax_amount, 0) > 0
+            THEN GREATEST(0, 1 - o.tax_amount / NULLIF(o.subtotal - COALESCE(o.discount_amount, 0), 0))
+            ELSE 1 END) AS gross_sales
       FROM order_items oi JOIN products pr ON pr.id = oi.product_id JOIN orders o ON o.id = oi.order_id
       WHERE o.status = 'delivered' AND o.payment_status = 'captured'
         AND COALESCE(o.refund_status, '') = '' AND COALESCE(o.refund_amount,0)=0 AND COALESCE(o.return_status, '') IN ('', 'rejected')

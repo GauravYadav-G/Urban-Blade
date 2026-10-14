@@ -1,9 +1,12 @@
-import { StylistsService, Stylist } from '@core/services/stylists.service';
+import { StylistsService, type Stylist } from '@core/services/stylists.service';
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { finalize } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { AdminService, type AdminBooking } from '@core/services/admin.service';
 import { ToastService } from '@core/services/toast.service';
+import { AdminDialog } from '@shared/directives/admin-dialog';
 
 type VisitSegment = 'all' | 'salon' | 'home';
 type BookingStatus = 'all' | AdminBooking['status'];
@@ -11,13 +14,15 @@ type BookingStatus = 'all' | AdminBooking['status'];
 @Component({
   selector: 'app-admin-bookings',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, AdminDialog],
   templateUrl: './admin-bookings.html',
   styleUrl: './admin-bookings.scss',
 })
 export class AdminBookings implements OnInit {
   readonly admin = inject(AdminService);
   private readonly toast = inject(ToastService);
+  private readonly destroyRef = inject(DestroyRef);
+  private rosterRequest = 0;
 
   readonly activeVisitType = signal<VisitSegment>('all');
   readonly selectedStatus = signal<BookingStatus>('all');
@@ -85,25 +90,39 @@ export class AdminBookings implements OnInit {
   readonly editingStylist = signal<string | null>(null);
   readonly staffName = signal('');
   readonly staffRole = signal('Stylist');
+  readonly stylistLoading = signal(false);
+  readonly archivingStylist = signal<string | null>(null);
+  readonly pendingStylistDelete = signal<Stylist | null>(null);
+  readonly deleteConfirmationName = signal('');
+  readonly stylistDeleting = signal(false);
+  readonly stylistDeleteError = signal('');
+  readonly stylistMutating = computed(() => this.stylistSaving() || this.archivingStylist() !== null || this.stylistDeleting());
+  readonly canConfirmStylistDelete = computed(() => {
+    const stylist = this.pendingStylistDelete();
+    return stylist !== null && !this.stylistMutating() && !this.isSaving() &&
+      this.deleteConfirmationName().trim() === stylist.name.trim();
+  });
 
   loadStylists(): void {
-    this.stylistApi.list().subscribe({
+    const request = ++this.rosterRequest;
+    this.stylistLoading.set(true);
+    this.stylistApi.list().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (r) => {
-        const seen = new Set<string>();
-        const unique = (r.data || []).filter((s) => {
-          const key = s.name.trim().toLowerCase();
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        this.stylistRecords.set(unique);
+        if (request !== this.rosterRequest) return;
+        this.stylistLoading.set(false);
+        this.stylistRecords.set(r.data);
         this.stylistError.set('');
       },
-      error: () => this.stylistError.set('Stylist records could not be loaded. Retry before assigning staff.')
+      error: () => {
+        if (request !== this.rosterRequest) return;
+        this.stylistLoading.set(false);
+        this.stylistError.set('Stylist records could not be loaded. Retry before assigning staff.');
+      },
     });
   }
 
   editStylist(stylist: Stylist): void {
+    if (this.stylistMutating()) return;
     this.editingStylist.set(stylist.id);
     this.staffName.set(stylist.name);
     this.staffRole.set(stylist.role);
@@ -116,11 +135,11 @@ export class AdminBookings implements OnInit {
   }
 
   saveStylist(): void {
-    if (this.stylistSaving()) return;
+    if (this.stylistMutating()) return;
     const name = this.staffName().trim();
     const role = this.staffRole().trim();
-    if (name.length < 2 || role.length < 2) {
-      this.stylistError.set('Enter a stylist name and role of at least 2 characters.');
+    if (name.length < 2 || name.length > 255 || role.length < 2 || role.length > 100) {
+      this.stylistError.set('Enter a name of 2–255 characters and a role of 2–100 characters.');
       return;
     }
     if (!this.editingStylist()) {
@@ -131,7 +150,7 @@ export class AdminBookings implements OnInit {
       }
     }
     this.stylistSaving.set(true);
-    this.stylistApi.save(this.editingStylist(), { name, role, is_active: true }).subscribe({
+    this.stylistApi.save(this.editingStylist(), { name, role, is_active: true }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.stylistSaving.set(false);
         this.resetStylist();
@@ -146,12 +165,77 @@ export class AdminBookings implements OnInit {
     });
   }
 
-  removeStylist(stylist: Stylist): void {
-    if (!confirm(`Remove ${stylist.name} from new assignments? Existing booking assignments remain in the history.`)) return;
-    this.stylistApi.remove(stylist.id).subscribe({
-      next: () => this.loadStylists(),
-      error: () => this.stylistError.set('Stylist could not be removed. Retry.')
+  archiveStylist(stylist: Stylist): void {
+    if (this.stylistMutating() || !stylist.is_active) return;
+    if (!confirm(`Archive ${stylist.name}? This prevents new assignments and keeps existing booking assignments and the stylist record.`)) return;
+    this.archivingStylist.set(stylist.id);
+    this.stylistApi.archive(stylist.id).pipe(takeUntilDestroyed(this.destroyRef), finalize(() => this.archivingStylist.set(null))).subscribe({
+      next: response => {
+        if (!response?.ok || !response.archived) {
+          this.stylistError.set('The archive was not confirmed. Refresh the directory before retrying.');
+          return;
+        }
+        this.stylistRecords.update(records => records.map(record => record.id === stylist.id ? { ...record, is_active: false } : record));
+        if (this.stylistName() === stylist.id) this.stylistName.set('');
+        if (this.rescheduleStylist() === stylist.id) this.rescheduleStylist.set('');
+        this.loadStylists();
+        this.toast.success(`${stylist.name} archived. Existing booking assignments are preserved.`);
+      },
+      error: error => this.stylistError.set(error.error?.message || 'Stylist could not be archived. Refresh the directory and retry.'),
     });
+  }
+
+  openPermanentStylistDelete(stylist: Stylist): void {
+    if (this.stylistMutating() || this.isSaving()) return;
+    this.pendingStylistDelete.set({ ...stylist });
+    this.deleteConfirmationName.set('');
+    this.stylistDeleteError.set('');
+  }
+
+  closePermanentStylistDelete(): void {
+    if (this.stylistDeleting()) return;
+    this.pendingStylistDelete.set(null);
+    this.deleteConfirmationName.set('');
+    this.stylistDeleteError.set('');
+  }
+
+  confirmPermanentStylistDelete(): void {
+    const stylist = this.pendingStylistDelete();
+    if (!stylist || this.stylistMutating() || this.isSaving()) return;
+    if (this.deleteConfirmationName().trim() !== stylist.name.trim()) {
+      this.stylistDeleteError.set('Type the stylist name exactly as shown to confirm permanent deletion.');
+      return;
+    }
+    this.stylistDeleting.set(true);
+    this.stylistDeleteError.set('');
+    this.stylistApi.deletePermanently(stylist.id, this.deleteConfirmationName().trim()).pipe(
+      takeUntilDestroyed(this.destroyRef),
+      finalize(() => this.stylistDeleting.set(false))
+    ).subscribe({
+      next: response => {
+        this.stylistRecords.update(records => records.filter(record => record.id !== stylist.id));
+        this.clearDeletedStylistAssignments(stylist.id);
+        this.pendingStylistDelete.set(null);
+        this.deleteConfirmationName.set('');
+        this.loadStylists();
+        this.admin.refreshBookings();
+        this.toast.success(response.message || `${stylist.name} permanently deleted. ${response.unassignedBookings} booking assignments cleared.`);
+      },
+      error: error => this.stylistDeleteError.set(error.error?.message || 'Permanent deletion could not be confirmed. Refresh the directory to check the record, then retry.'),
+    });
+  }
+
+  private clearDeletedStylistAssignments(stylistId: string): void {
+    if (this.selectedStylist() === stylistId) this.selectedStylist.set('all');
+    if (this.editingStylist() === stylistId) this.resetStylist();
+    if (this.stylistName() === stylistId) this.stylistName.set('');
+    if (this.rescheduleStylist() === stylistId) this.rescheduleStylist.set('');
+    const unassign = (booking: AdminBooking): AdminBooking => booking.stylist_id === stylistId
+      ? { ...booking, stylist_id: undefined, stylist_name: undefined }
+      : booking;
+    this.admin.bookings.update(bookings => bookings.map(unassign));
+    this.inspectingBooking.update(booking => booking ? unassign(booking) : null);
+    this.reschedulingBooking.update(booking => booking ? unassign(booking) : null);
   }
 
   readonly salonCount = computed(() =>

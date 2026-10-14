@@ -31,7 +31,7 @@
       <div class="metric-copy">
         <span class="metric-label">Total Refund Cases</span>
         <strong class="metric-val">{{ refunds().length }}</strong>
-        <small class="metric-meta">Across online payment transactions</small>
+        <small class="metric-meta">Across recorded repayment methods</small>
       </div>
     </article>
 
@@ -117,34 +117,9 @@
     </div>
   </section>
 
-  <section class="table-card">
-    <h2>Return requests</h2>
-    <p>Review full-order returns, confirm receipt and inspect goods before issuing a refund.</p>
-    <div class="table-scroll">
-      <table class="refunds-table">
-        <thead><tr><th>Order</th><th>Reason</th><th>Status</th><th>Review</th><th>Actions</th></tr></thead>
-        <tbody>
-          @for (order of returns(); track order.id) {
-            <tr>
-              <td>#{{ order.id.slice(0, 8) }}</td><td>{{ order.return_reason }}</td>
-              <td>{{ order.return_status }}</td><td>{{ order.return_review_note || 'Awaiting review' }}</td>
-              <td>
-                @if (order.return_status === 'requested') {
-                  <button class="btn-reconcile" [disabled]="processingOrderId() !== null" (click)="reviewReturn(order, 'approved')">Approve return</button>
-                  <button class="btn-reconcile" [disabled]="processingOrderId() !== null" (click)="reviewReturn(order, 'rejected')">Reject return</button>
-                }
-                @if (order.return_status === 'approved') {
-                  <button class="btn-reconcile" [disabled]="processingOrderId() !== null" (click)="reviewReturn(order, 'received')">Confirm receipt &amp; inspect</button>
-                }
-                @if (order.return_status === 'received' && order.refund_status !== 'processed') {
-                  <button class="btn-reconcile" [disabled]="processingOrderId() !== null" (click)="refundReturn(order)">{{ order.payment_method === 'Razorpay' ? 'Refund / check status' : 'Record external refund' }}</button>
-                }
-              </td>
-            </tr>
-          } @empty { <tr><td colspan="5">No return requests.</td></tr> }
-        </tbody>
-      </table>
-    </div>
+  <section class="toolbar-card">
+    <div><h2>Product returns</h2><p>Review customer requests, arrange the return, inspect received goods, and record the inventory outcome before repayment.</p></div>
+    <a routerLink="/admin/returns" class="btn-refresh">Open Product Returns</a>
   </section>
 
   <!-- Refund Records Table -->

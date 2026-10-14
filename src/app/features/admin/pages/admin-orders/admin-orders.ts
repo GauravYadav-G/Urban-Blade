@@ -1,5 +1,5 @@
 import { ShipmentTrackingComponent } from '@shared/components/shipment-tracking/shipment-tracking';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
 import { Component, inject, signal, computed, effect, untracked, OnInit, OnDestroy } from '@angular/core';
@@ -13,7 +13,7 @@ import { OrderInvoice } from '@shared/components/order-invoice/order-invoice';
 @Component({
   selector: 'app-admin-orders',
   standalone: true,
-  imports: [CommonModule, FormsModule, OrderInvoice, ShipmentTrackingComponent],
+  imports: [CommonModule, FormsModule, RouterLink, OrderInvoice, ShipmentTrackingComponent],
   templateUrl: './admin-orders.html',
   styleUrl: './admin-orders.scss',
 })

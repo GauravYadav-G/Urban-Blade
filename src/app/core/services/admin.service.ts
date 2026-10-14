@@ -8,6 +8,7 @@ import { ToastService } from './toast.service';
 import type { Product } from '@core/models/product.model';
 import type { VendorAccount, RazorpayUpiValidationResult } from '@core/models/vendor.model';
 import type { SupportInquiry, AdminTask, AiChatResponse } from '@core/models/support.model';
+import type { OrderReturnDetails } from '@core/models/order-return.model';
 
 export interface AdminMetrics {
   revenue: {
@@ -54,7 +55,7 @@ export interface AdminProduct extends Product {
   availableQuantity?: number;
 }
 
-export interface AdminOrder extends TrackedOrder {
+export interface AdminOrder extends TrackedOrder, OrderReturnDetails {
   id: string;
   status: 'accepted' | 'processing' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled' | 'pending';
   subtotal: number;
@@ -65,10 +66,17 @@ export interface AdminOrder extends TrackedOrder {
   return_status?: 'requested' | 'approved' | 'rejected' | 'received' | null;
   return_reason?: string;
   return_review_note?: string;
+  return_requested_at?: string | null;
+  return_requested_by?: string | null;
+  return_reviewed_at?: string | null;
+  return_reviewed_by?: string | null;
+  return_received_at?: string | null;
+  return_restock?: boolean | null;
   payment_reconciliation_error?: string | null;
   refund_status?: 'pending' | 'processed' | 'failed' | null;
   refund_id?: string;
   refund_amount?: number;
+  confirmed_refund_amount?: number;
   refund_reason?: string;
   refund_requested_at?: string;
   refunded_at?: string;
@@ -781,12 +789,17 @@ export class AdminService {
     const bookingsList = this.bookings ? this.bookings() : [];
     const productsList = this.products ? this.products() : [];
 
-    const nonCancelledOrders = ordersList.filter((o) => o.status !== 'cancelled' && o.payment_status === 'captured' && !o.refund_status);
-    const totalRev = nonCancelledOrders.reduce((sum, o) => sum + o.total_amount, 0);
+    const collectedOrders = ordersList.filter((o) => ['captured', 'refunded'].includes(o.payment_status));
+    const netCollected = (order: AdminOrder): number => {
+      const total = Number(order.total_amount || 0);
+      const refunded = order.confirmed_refund_amount ??
+        (order.payment_status === 'refunded' || order.refund_status === 'processed' ? Number(order.refund_amount ?? total) : 0);
+      return Math.max(0, total - Number(refunded || 0));
+    };
 
     const todayStr = new Date().toISOString().split('T')[0];
-    const todayOrders = nonCancelledOrders.filter((o) => o.created_at.startsWith(todayStr));
-    const todayRev = todayOrders.reduce((sum, o) => sum + o.total_amount, 0);
+    const todayOrders = collectedOrders.filter((o) => o.created_at.startsWith(todayStr));
+    const todayRev = todayOrders.reduce((sum, o) => sum + netCollected(o), 0);
 
     const incompletePayment = ordersList.filter((o) => this.isPaymentIncomplete(o)).length;
     const accepted = ordersList.filter(
@@ -808,8 +821,8 @@ export class AdminService {
     return {
       revenue: {
         today: todayRev,
-        week: nonCancelledOrders.filter(o => new Date(o.created_at).getTime() >= Date.now()-7*86400000).reduce((sum,o)=>sum+Number(o.total_amount),0),
-        month: nonCancelledOrders.filter(o => new Date(o.created_at).getTime() >= Date.now()-30*86400000).reduce((sum,o)=>sum+Number(o.total_amount),0),
+        week: collectedOrders.filter(o => new Date(o.created_at).getTime() >= Date.now()-7*86400000).reduce((sum,o)=>sum+netCollected(o),0),
+        month: collectedOrders.filter(o => new Date(o.created_at).getTime() >= Date.now()-30*86400000).reduce((sum,o)=>sum+netCollected(o),0),
         trendPercent: null,
       },
       orders: {
@@ -896,10 +909,17 @@ export class AdminService {
             return_status: o.return_status,
             return_reason: o.return_reason,
             return_review_note: o.return_review_note,
+            return_requested_at: o.return_requested_at,
+            return_requested_by: o.return_requested_by,
+            return_reviewed_at: o.return_reviewed_at,
+            return_reviewed_by: o.return_reviewed_by,
+            return_received_at: o.return_received_at,
+            return_restock: o.return_restock,
             payment_reconciliation_error: o.payment_reconciliation_error,
             refund_status: o.refund_status || null,
             refund_id: o.refund_id || undefined,
             refund_amount: o.refund_amount ? Number(o.refund_amount) : undefined,
+            confirmed_refund_amount: o.confirmed_refund_amount == null ? undefined : Number(o.confirmed_refund_amount),
             refund_reason: o.refund_reason || undefined,
             refund_requested_at: o.refund_requested_at || undefined,
             refunded_at: o.refunded_at || undefined,
@@ -926,6 +946,7 @@ export class AdminService {
             created_at: o.created_at || new Date().toISOString(),
             updated_at: o.updated_at,
             items: (o.items || []).map((i: any) => ({
+              product_id: i.product_id,
               product_name: i.product_name || 'Salon Care Item',
               unit_price: Number(i.unit_price) || 0,
               quantity: Number(i.quantity) || 1,

@@ -1,4 +1,3 @@
-import { HttpClient } from '@angular/common/http';
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -17,8 +16,6 @@ type RefundFilter = 'all' | 'pending' | 'processed' | 'failed';
 })
 export class AdminRefunds implements OnInit {
   readonly admin = inject(AdminService);
-  private readonly http = inject(HttpClient);
-  readonly returns = computed(() => this.admin.orders().filter(order => Boolean(order.return_status)));
   private readonly toast = inject(ToastService);
 
   readonly searchQuery = signal('');
@@ -84,28 +81,6 @@ export class AdminRefunds implements OnInit {
 
   closeInspector(): void {
     this.inspectingOrder.set(null);
-  }
-
-  reviewReturn(order: AdminOrder, status: 'approved' | 'rejected' | 'received'): void {
-    const note = window.prompt('Enter the return review or inspection note:')?.trim();
-    if (!note || note.length < 3 || this.processingOrderId()) return;
-    const restock = status === 'received' ? window.confirm('Are all returned items inspected and fit to restock? Cancel means do not restock.') : undefined;
-    this.processingOrderId.set(order.id);
-    this.http.put(`/api/admin/orders/${order.id}/return`, { status, note, restock }).subscribe({
-      next: () => { this.processingOrderId.set(null); this.admin.refreshOrders(); this.toast.success('Return review saved.'); },
-      error: error => { this.processingOrderId.set(null); this.toast.error(error.error?.message || 'Return review failed.'); },
-    });
-  }
-
-  refundReturn(order: AdminOrder): void {
-    if (order.payment_method === 'Razorpay') { this.reconcile(order); return; }
-    const reference = window.prompt('Enter the reference of the completed external refund. This records the repayment; it does not transfer money.')?.trim();
-    if (!reference || reference.length < 3 || this.processingOrderId()) return;
-    this.processingOrderId.set(order.id);
-    this.http.post(`/api/admin/orders/${order.id}/refund/manual`, { reference, reason: order.return_reason || 'Received customer return' }).subscribe({
-      next: () => { this.processingOrderId.set(null); this.admin.refreshOrders(); this.toast.success('External refund recorded.'); },
-      error: error => { this.processingOrderId.set(null); this.toast.error(error.error?.message || 'Refund record failed.'); },
-    });
   }
 
   reconcile(order: AdminOrder, event?: Event): void {

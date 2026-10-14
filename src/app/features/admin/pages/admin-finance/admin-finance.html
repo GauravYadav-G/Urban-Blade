@@ -37,7 +37,10 @@
         <button [class.active]="tab()==='gateway'" (click)="tab.set('gateway');offset.set(0);refresh()">Gateway attempts</button>
         <button [class.active]="tab()==='inventory'" (click)="tab.set('inventory')">Stock exceptions ({{ audit.inventory.length }})</button>
         <button [class.active]="tab()==='vendors'" (click)="tab.set('vendors')">Vendor balances</button>
-        <input aria-label="Search order or payment reference" placeholder="Order UUID or Razorpay reference" [ngModel]="search()" (ngModelChange)="search.set($event)" (keyup.enter)="filter()" />
+        <button [class.active]="tab()==='payouts'" (click)="tab.set('payouts');offset.set(0);refresh()">Payout ledger</button>
+        <button [class.active]="tab()==='offline'" (click)="tab.set('offline');offset.set(0);refresh()">Offline transactions</button>
+        <a routerLink="/admin/returns">Product returns</a>
+        <input aria-label="Search order, vendor or payment reference" placeholder="Order, vendor or transaction reference" [ngModel]="search()" (ngModelChange)="search.set($event)" (keyup.enter)="filter()" />
         <button (click)="filter()">Search</button><button (click)="exportPage()">Export order page</button>
       </div>
       <div class="audit-table-wrap">
@@ -93,9 +96,34 @@
           </tr>}@empty{<tr><td colspan="7">No vendors yet. Add a vendor to begin tracking settlements.</td></tr>}
           </tbody></table>
         }
+        @if(tab()==='payouts'){
+          <p>Saved vendor transfers and external payment records. An uncertain transfer keeps its balance reserved; check this record before sending another payout.</p>
+          <table><thead><tr><th>Vendor / reference</th><th>Amount</th><th>Method</th><th>Status</th><th>Provider transfer</th><th>Recorded / checked</th><th>Action</th></tr></thead><tbody>
+          @for(record of payouts().data;track record.id){<tr>
+            <td>{{ record.vendor_name }}<small>{{ record.reference }}</small></td>
+            <td>{{ record.amount | currency:'INR':'symbol':'1.2-2' }}</td>
+            <td>{{ record.provider==='manual' ? 'Completed external transfer' : 'RazorpayX' }}</td>
+            <td>{{ record.provider_status }}<small>{{ record.failure_reason }}</small></td>
+            <td>{{ record.provider_transfer_id || 'Confirmation pending' }}</td>
+            <td>{{ record.created_at | date:'medium' }}<small>{{ record.checked_at ? (record.checked_at | date:'medium') : 'Not checked' }}</small></td>
+            <td>@if(record.provider==='razorpayx'){<button [disabled]="checking()!==null||loading()||!!error()" (click)="reconcilePayout(record)">{{ checking()===record.id ? 'Checking…' : 'Check saved payout' }}</button>}</td>
+          </tr>}@empty{<tr><td colspan="7">{{ loading() ? 'Loading payouts…' : 'No payout records match this period and search.' }}</td></tr>}
+          </tbody></table>
+        }
+        @if(tab()==='offline'){
+          <p>Completed COD collections and externally paid refunds recorded by staff. These actions record transactions; they do not transfer money.</p>
+          <table><thead><tr><th>Order</th><th>Transaction</th><th>Reference</th><th>Amount</th><th>Recorded by</th><th>Date</th></tr></thead><tbody>
+          @for(record of offlineTransactions().data;track record.id){<tr>
+            <td><a routerLink="/admin/orders">{{ record.order_id }}</a></td>
+            <td>{{ record.kind==='collection' ? 'COD collection' : 'External refund' }}</td>
+            <td>{{ record.reference }}</td><td>{{ record.amount | currency:'INR':'symbol':'1.2-2' }}</td>
+            <td>{{ record.recorded_by_name || 'Staff' }}</td><td>{{ record.created_at | date:'medium' }}</td>
+          </tr>}@empty{<tr><td colspan="6">{{ loading() ? 'Loading transactions…' : 'No offline transactions match this period and search.' }}</td></tr>}
+          </tbody></table>
+        }
       </div>
-      @if(tab()==='orders'||tab()==='gateway'){
-        <div class="audit-controls"><button [disabled]="offset()===0||loading()" (click)="page(-50)">Previous</button><span>Page {{ offset()/50+1 }} · {{ tab()==='orders'?audit.total:audit.gateway.attempts }} records in period</span><button [disabled]="loading()||(tab()==='orders'?audit.orders.length:audit.attempts.length)<50" (click)="page(50)">Next</button></div>
+      @if(tab()==='orders'||tab()==='gateway'||tab()==='payouts'||tab()==='offline'){
+        <div class="audit-controls"><button [disabled]="offset()===0||loading()" (click)="page(-50)">Previous</button><span>Page {{ offset()/50+1 }} · {{ transactionTotal() }} records in period</span><button [disabled]="loading()||transactionCount()<50" (click)="page(50)">Next</button></div>
       }
     </section>
   }@else{<p role="status">{{ loading()?'Loading financial records…':'No financial snapshot available.' }}</p>}

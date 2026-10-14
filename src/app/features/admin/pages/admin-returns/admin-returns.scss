@@ -1,0 +1,32 @@
+@use '../../../../../styles/return-flow' as returns;
+@include returns.dialog;
+:host { display: block; color: #0b0f19; }
+* { box-sizing: border-box; }
+button, input { font: inherit; }
+:where(button, a, input, select, textarea):focus-visible { outline: 2px solid #f59e0b; outline-offset: 3px; }
+.returns-page { display: flex; flex-direction: column; gap: 20px; }
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; h1 { margin: 0; font-size: 28px; letter-spacing: -.035em; } p { margin: 8px 0 0; color: #64748b; line-height: 1.6; font-size: 14px; max-width: 660px; } }
+.header-actions, .filters, .pagination, .pagination > div { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.button { display: inline-flex; justify-content: center; padding: 9px 13px; border: 1px solid #cbd5e1; border-radius: 7px; color: #0b0f19; background: #fff; cursor: pointer; text-decoration: none; font-weight: 600; font-size: 12px; white-space: nowrap; &:hover { background: #f8fafc; } &:disabled { opacity: .5; cursor: not-allowed; } &.primary { background: #f59e0b; border-color: #f59e0b; } }
+.flow-guide { display: flex; flex-wrap: wrap; padding: 18px 20px; margin: 0; list-style: none; gap: 20px 30px; background: #0b0f19; color: #fff; border-radius: 10px; font-size: 13px; strong { margin-right: 8px; color: #f59e0b; } }
+.scope-note { margin: 0; color: #64748b; font-size: 13px; line-height: 1.7; }
+.lookup-panel { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; padding: 18px 20px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; label { font-weight: 600; font-size: 13px; } p { margin: 5px 0 0; font-size: 12px; color: #64748b; } a { font-size: 12px; color: #64748b; } input { flex: 1; min-width: 180px; } }
+input { padding: 10px 12px; border: 1px solid #cbd5e1; background: #fff; color: #0b0f19; border-radius: 7px; font-size: 12px; }
+.queue-panel { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; overflow: hidden; }
+.toolbar { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 18px; border-bottom: 1px solid #e2e8f0; }
+.filters button { border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; font-size: 12px; padding: 8px 11px; color: #64748b; cursor: pointer; &.active { border-color: #f59e0b; color: #92400e; background: #fffbeb; } }
+.search { display: flex; gap: 8px; flex: 1; min-width: 260px; max-width: 390px; input { flex: 1; min-width: 0; } }
+.empty-state { text-align: center; padding: 48px 24px; h2 { font-size: 18px; } p { font-size: 13px; color: #64748b; line-height: 1.7; max-width: 550px; margin: 12px auto 18px; } }
+.table-scroll { overflow: auto; }
+table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; min-width: 800px; }
+th { padding: 13px 18px; background: #f8fafc; color: #64748b; font-weight: 600; }
+td { padding: 17px 18px; vertical-align: top; border-top: 1px solid #e2e8f0; span, small { display: block; margin-top: 5px; line-height: 1.5; } small { color: #64748b; } }
+.reason { width: 30%; overflow-wrap: anywhere; }
+.status { display: inline-block !important; padding: 5px 8px; border: 1px solid #e2e8f0; border-radius: 5px; background: #f8fafc; &.requested { background: #fffbeb; color: #92400e; border-color: #fde68a; } &.approved, &.received { color: #047857; background: #ecfdf5; border-color: #a7f3d0; } &.rejected { color: #b91c1c; background: #fef2f2; border-color: #fecaca; } }
+.pagination { padding: 16px 18px; border-top: 1px solid #e2e8f0; justify-content: space-between; color: #64748b; font-size: 12px; }
+.order-total { border-top: 1px solid #e2e8f0; margin-top: 8px; padding-top: 12px !important; }
+.request-reason { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.action-title { font-size: 16px; margin: 24px 0 0; }
+.order-link { color: #64748b; font-size: 12px; margin-right: auto; padding: 10px 0; }
+.audit-history { margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 16px; h3 { margin: 0 0 16px; font-size: 15px; } ol { padding: 0; list-style: none; } li { border-left: 2px solid #f59e0b; padding: 0 0 20px 14px; font-size: 12px; } li > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; } span, small { color: #64748b; } p { line-height: 1.7; margin: 7px 0; overflow-wrap: anywhere; } }
+@media (max-width: 600px) { .lookup-panel { padding: 16px; } .lookup-panel > div { width: 100%; } .toolbar { padding: 14px; } .search { width: 100%; max-width: none; } .header-actions { width: 100%; } .flow-guide { gap: 14px; font-size: 12px; } }

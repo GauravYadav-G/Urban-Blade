@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom, Subject, takeUntil } from 'rxjs';
-import { FinanceAuditService, FinanceAudit, AuditOrder, VendorBalance } from '@core/services/finance-audit.service';
+import { FinanceAuditService, FinanceAudit, AuditOrder, VendorBalance, PayoutRecord, OfflineTransaction, TransactionPage } from '@core/services/finance-audit.service';
 import { AdminService } from '@core/services/admin.service';
 import { ToastService } from '@core/services/toast.service';
 
@@ -20,7 +20,9 @@ export class AdminFinance implements OnInit,OnDestroy {
   readonly days=signal(30);
   readonly offset=signal(0);
   readonly search=signal('');
-  readonly tab=signal<'orders'|'gateway'|'inventory'|'vendors'>('orders');
+  readonly tab=signal<'orders'|'gateway'|'inventory'|'vendors'|'payouts'|'offline'>('orders');
+  readonly payouts = signal<TransactionPage<PayoutRecord>>({ data: [], total: 0 });
+  readonly offlineTransactions = signal<TransactionPage<OfflineTransaction>>({ data: [], total: 0 });
   readonly loading=signal(false);
   readonly syncing=signal(false);
   readonly syncMessage=signal('');
@@ -39,7 +41,14 @@ export class AdminFinance implements OnInit,OnDestroy {
   ngOnDestroy(){this.alive=false;this.destroyed.next();this.destroyed.complete();if(this.timer)clearInterval(this.timer);}
   async refresh(){
     const version=++this.requestVersion;this.loading.set(true);this.error.set('');
-    try{const result=await firstValueFrom(this.api.load(this.days(),this.offset(),this.search()).pipe(takeUntil(this.destroyed)));if(this.alive&&version===this.requestVersion)this.data.set(result);}
+    try{
+      const [result, payouts, offline] = await Promise.all([
+        firstValueFrom(this.api.load(this.days(),this.offset(),this.search()).pipe(takeUntil(this.destroyed))),
+        this.tab() === 'payouts' ? firstValueFrom(this.api.payouts(this.days(),this.offset(),this.search()).pipe(takeUntil(this.destroyed))) : Promise.resolve(null),
+        this.tab() === 'offline' ? firstValueFrom(this.api.offlineTransactions(this.days(),this.offset(),this.search()).pipe(takeUntil(this.destroyed))) : Promise.resolve(null),
+      ]);
+      if(this.alive&&version===this.requestVersion){this.data.set(result);if(payouts)this.payouts.set(payouts);if(offline)this.offlineTransactions.set(offline);}
+    }
     catch(error){if(this.alive&&version===this.requestVersion)this.error.set(this.message(error,'Financial data is unavailable. Displayed values may be stale.'));}
     finally{if(this.alive&&version===this.requestVersion)this.loading.set(false);}
   }
@@ -73,6 +82,26 @@ export class AdminFinance implements OnInit,OnDestroy {
     catch(error){if(this.alive)this.toast.error(this.message(error,'Inventory repair was rejected.'));}
     finally{if(this.alive)this.checking.set(null);}
   }
+  async reconcilePayout(payout: PayoutRecord) {
+    if (this.checking() || this.loading() || this.error()) return;
+    this.checking.set(payout.id);
+    try {
+      const result = await firstValueFrom(this.api.reconcilePayout(payout.id).pipe(takeUntil(this.destroyed)));
+      if (this.alive) { this.toast.info(result.message); await this.refresh(); }
+    } catch (error) {
+      if (this.alive) { this.toast.error(this.message(error, 'Payout status could not be confirmed.')); await this.refresh(); }
+    } finally { if (this.alive) this.checking.set(null); }
+  }
+  transactionTotal(): number {
+    if(this.tab()==='payouts')return this.payouts().total;
+    if(this.tab()==='offline')return this.offlineTransactions().total;
+    return this.tab()==='orders' ? this.data()?.total || 0 : this.data()?.gateway.attempts || 0;
+  }
+  transactionCount(): number {
+    if(this.tab()==='payouts')return this.payouts().data.length;
+    if(this.tab()==='offline')return this.offlineTransactions().data.length;
+    return this.tab()==='orders' ? this.data()?.orders.length || 0 : this.data()?.attempts.length || 0;
+  }
   openPayout(vendor: VendorBalance) {
     this.payout.set(vendor);
     this.payoutAmount.set(Number(vendor.payable_amount));
@@ -104,7 +133,7 @@ export class AdminFinance implements OnInit,OnDestroy {
     if(!Number.isFinite(this.payoutAmount())||this.payoutAmount()<=0||this.payoutAmount()>Number(vendor.payable_amount)||Math.abs(this.payoutAmount()*100-Math.round(this.payoutAmount()*100))>0.00001||this.payoutReference().trim().length<3){this.toast.error('Enter an amount within the available balance (up to two decimals) and a reference of at least 3 characters.');return;}
     this.saving.set(true);
     try{const result=await firstValueFrom(this.api.recordPayout(vendor.id,this.payoutAmount(),this.payoutReference().trim(),this.payoutMode()).pipe(takeUntil(this.destroyed)));this.payout.set(null);this.toast.success(result.message);await this.refresh();}
-    catch(error){if(this.alive)this.toast.error(this.message(error,'Payout record could not be saved.'));}
+    catch(error){if(this.alive){this.toast.error(this.message(error,'Payout record could not be saved. Review the payout ledger before retrying.'));await this.refresh();}}
     finally{if(this.alive)this.saving.set(false);}
   }
   discrepancy(order:AuditOrder):string{
@@ -113,7 +142,7 @@ export class AdminFinance implements OnInit,OnDestroy {
     if(!order.gateway_status)return 'Gateway not checked';
     if(['captured','refunded'].includes(order.gateway_status)&&!['captured','refunded'].includes(order.payment_status))return 'Payment mismatch';
     if(order.gateway_amount!==null&&Number(order.gateway_amount)!==Number(order.total_amount))return 'Amount mismatch';
-    if(Number(order.gateway_refunded||0)!==Number(order.refund_amount||0))return 'Refund mismatch';
+    if(Number(order.gateway_refunded||0)!==Number(order.confirmed_refund_amount||0))return 'Refund mismatch';
     return order.payment_status==='pending'?'Awaiting successful payment':'Matched';
   }
   exportPage(){

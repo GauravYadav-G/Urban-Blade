@@ -1,0 +1,12 @@
+@mixin dialog {
+  .return-dialog { background: #fff; color: #0b0f19; width: min(calc(100% - 40px), 640px); max-height: 90vh; overflow: auto; border: 0; border-radius: 12px; box-shadow: 0 16px 64px rgba(11, 15, 25, .2); padding: 24px; &::backdrop { background: rgba(11, 15, 25, .55); } }
+  .return-dialog-header { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; h2 { margin: 0; font-size: 21px; } p { color: #64748b; margin: 6px 0 0; font-size: 13px; } }
+  .return-close { border: 0; background: #f1f5f9; width: 34px; height: 34px; border-radius: 6px; flex-shrink: 0; cursor: pointer; }
+  .return-items { margin: 16px 0; padding: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 13px; > div { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; } }
+  .return-field { display: flex; flex-direction: column; gap: 7px; margin: 18px 0; font-size: 13px; font-weight: 600; textarea, select, input { width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 11px; background: #fff; color: #0b0f19; font: inherit; } textarea { resize: vertical; min-height: 110px; } small { font-weight: 400; color: #64748b; line-height: 1.6; } }
+  .return-help { font-size: 13px; color: #64748b; line-height: 1.7; margin: 12px 0; }
+  .return-error { font-size: 13px; color: #b91c1c; margin: 12px 0; line-height: 1.6; }
+  .return-warning { font-size: 13px; line-height: 1.7; padding: 12px; border: 1px solid #fde68a; border-radius: 6px; background: #fffbeb; color: #92400e; }
+  .return-dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 22px; button { padding: 10px 16px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #0b0f19; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; } .return-primary { border-color: #f59e0b; background: #f59e0b; } button:disabled { opacity: .5; cursor: not-allowed; } }
+  @media (max-width: 600px) { .return-dialog { width: calc(100% - 24px); padding: 18px; } }
+}

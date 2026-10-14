@@ -20,6 +20,7 @@ export const adminGuard: CanActivateFn = (route, state) => {
       const forbiddenForVendors = [
         '/admin/vendors',
         '/admin/refunds',
+        '/admin/returns',
         '/admin/finance',
         '/admin/bookings',
         '/admin/customers',

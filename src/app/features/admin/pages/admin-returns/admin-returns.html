@@ -1,0 +1,79 @@
+<div class="returns-page">
+  <header class="page-header">
+    <div><h1>Product Returns</h1><p>Review requests, inspect received products, restore eligible stock, and settle refunds.</p></div>
+    <div class="header-actions"><a routerLink="/admin/refunds" class="button">Refund audit</a><button type="button" class="button" (click)="loadQueue()" [disabled]="loading()">{{ loading() ? 'Refreshing…' : 'Refresh queue' }}</button></div>
+  </header>
+
+  <ol class="flow-guide" aria-label="Return workflow"><li><strong>01</strong> Review request</li><li><strong>02</strong> Arrange return</li><li><strong>03</strong> Receive & inspect</li><li><strong>04</strong> Refund payment</li></ol>
+  <p class="scope-note">Returns cover every product and quantity in the original order. Approving a request does not collect a parcel or send money. Provide collection or shipping instructions in the approval note.</p>
+
+  <form class="lookup-panel" (ngSubmit)="openOrder(lookupId())">
+    <div><label for="return-order-id">Open return by order ID</label><p>Use this to log a customer's request or open an older order.</p></div>
+    <input id="return-order-id" name="orderId" [ngModel]="lookupId()" (ngModelChange)="lookupId.set($event)" placeholder="Full order ID" maxlength="100" required />
+    <button type="submit" class="button primary" [disabled]="detailsLoading() || !lookupId().trim()">{{ detailsLoading() ? 'Opening…' : 'Open order' }}</button>
+    <a routerLink="/admin/orders">Find order</a>
+  </form>
+
+  <section class="queue-panel" aria-label="Return requests">
+    <div class="toolbar">
+      <div class="filters" aria-label="Filter returns">@for (status of statuses; track status) { <button type="button" [class.active]="filter() === status" [attr.aria-pressed]="filter() === status" (click)="setFilter(status)">{{ status === 'all' ? 'All returns' : status === 'requested' ? 'Needs review' : status === 'approved' ? 'Awaiting parcel' : status === 'received' ? 'Received' : 'Declined' }}</button> }</div>
+      <form class="search" (ngSubmit)="search()"><input type="search" aria-label="Search all return requests" placeholder="Order, customer, product or reason" name="query" maxlength="150" [ngModel]="query()" (ngModelChange)="query.set($event)" /><button class="button" type="submit">Search</button></form>
+    </div>
+    @if (queueError()) {
+      <div class="empty-state" role="alert"><h2>Queue unavailable</h2><p>{{ queueError() }}</p><button type="button" class="button" (click)="loadQueue()">Retry</button></div>
+    } @else if (loading()) {
+      <div class="empty-state" role="status"><p>Loading return requests…</p></div>
+    } @else if (queue().length === 0) {
+      <div class="empty-state"><h2>{{ filter() === 'all' && !query() ? 'No return requests yet' : 'No matching returns' }}</h2><p>Customers can request a return from Account → Orders after delivery. You can also open an order above.</p>@if (filter() !== 'all' || query()) { <button type="button" class="button" (click)="query.set(''); setFilter('all')">Clear filters</button> }</div>
+    } @else {
+      <div class="table-scroll"><table><thead><tr><th>Order & customer</th><th>Products / value</th><th>Request</th><th>Progress</th><th>Action</th></tr></thead><tbody>
+        @for (order of queue(); track order.id) {
+          <tr><td><strong>#{{ order.id.slice(0, 8).toUpperCase() }}</strong><span>{{ order.shipping_address.fullName }}</span><small>{{ order.shipping_address.phone || order.shipping_address.email }}</small></td>
+            <td><strong>{{ order.total_amount | currency:order.currency }}</strong><span>{{ order.items.length }} product line(s) · {{ order.payment_method }}</span></td>
+            <td class="reason"><span>{{ order.return_reason }}</span><small>{{ order.return_requested_at | date:'medium' }}</small></td>
+            <td><span class="status" [class]="'status ' + order.return_status">{{ order.return_status ? labels[order.return_status] : 'No return' }}</span>@if (order.refund_status) { <small>Refund {{ order.refund_status === 'processed' ? 'completed' : order.refund_status === 'failed' ? 'needs attention' : 'processing' }}</small> }</td>
+            <td><button type="button" class="button" (click)="openOrder(order.id)" [disabled]="detailsLoading()">Review details</button></td></tr>
+        }
+      </tbody></table></div>
+    }
+    @if (!queueError() && total() > 0) { <footer class="pagination"><span>{{ total() }} matching return(s) · Page {{ page() }} of {{ pageCount() }}</span><div><button type="button" class="button" [disabled]="loading() || page() === 1" (click)="changePage(-1)">Previous</button><button type="button" class="button" [disabled]="loading() || page() === pageCount()" (click)="changePage(1)">Next</button></div></footer> }
+  </section>
+</div>
+
+@if (selectedOrder(); as order) {
+    <dialog appAdminDialog class="return-dialog" aria-labelledby="return-dialog-title" (cancel)="$event.preventDefault(); close()">
+      <header class="return-dialog-header"><div><h2 id="return-dialog-title">Return · #{{ order.id.slice(0, 8).toUpperCase() }}</h2><p>{{ order.shipping_address.fullName }} · {{ order.shipping_address.phone || order.shipping_address.email }}</p></div><button type="button" class="return-close" aria-label="Close return details" [disabled]="saving()" (click)="close()">×</button></header>
+      <div class="return-items">@for (item of order.items; track $index) { <div><span>{{ item.product_name }} × {{ item.quantity }}</span><strong>{{ item.unit_price * item.quantity | currency:order.currency }}</strong></div> }<div class="order-total"><span>Original order total</span><strong>{{ order.total_amount | currency:order.currency }}</strong></div></div>
+      <p class="return-help">Order {{ order.status }} · {{ order.payment_method }} · Payment {{ order.payment_status }}</p>
+      @if (order.return_reason) { <p class="request-reason"><strong>Customer's reason:</strong> {{ order.return_reason }}</p> }
+      <app-order-return-status [order]="order" />
+      @if (order.return_status === 'received') { <p class="return-help"><strong>Inventory inspection:</strong> {{ order.return_restock === true ? 'Products returned to available stock.' : order.return_restock === false ? 'Products kept out of available stock.' : 'No inventory decision recorded.' }}</p> }
+
+      @if (action() === 'view') {
+        <div class="return-dialog-actions">
+          @if (canRequest(order)) { <button type="button" class="return-primary" (click)="setAction('requested')">Open return request</button> }
+          @if (order.return_status === 'requested') { <button type="button" (click)="setAction('rejected')">Decline</button><button type="button" class="return-primary" (click)="setAction('approved')">Approve & add instructions</button> }
+          @if (order.return_status === 'approved') { <button type="button" class="return-primary" (click)="setAction('received')">Receive & inspect products</button> }
+          @if (canRefund(order)) { <button type="button" class="return-primary" (click)="setAction('refund')">{{ isGateway(order) ? (order.refund_status === 'pending' ? 'Check refund settlement' : order.refund_status === 'failed' ? 'Check refund' : 'Issue refund') : 'Record external repayment' }}</button> }
+        </div>
+        @if (!order.return_status && !canRequest(order)) { <p class="return-warning">A return can be opened after delivery with a confirmed payment and no existing refund. Review payment and delivery status in Orders & Fulfillment.</p> }
+      } @else {
+        <form [formGroup]="form" (ngSubmit)="submit()">
+          <h3 class="action-title">{{ actionTitle() }}</h3>
+          <label class="return-field" for="return-review-note">{{ action() === 'requested' ? 'Return reason' : action() === 'approved' ? 'Decision & return instructions' : action() === 'received' ? 'Inspection note' : action() === 'refund' ? 'Refund reason' : 'Decision reason' }}<textarea id="return-review-note" formControlName="note" rows="4" [maxlength]="noteLimit()" placeholder="Add enough detail for the customer and audit history." required></textarea><small>3–{{ noteLimit() }} characters. Return review notes are visible to the customer.</small></label>
+          @if (action() === 'received') {
+            <label class="return-field" for="return-restock">Inventory outcome<select id="return-restock" formControlName="restock" required><option value="">Choose an inspection outcome</option><option value="yes">Fit for sale — restock every returned item</option><option value="no">Keep every returned item out of saleable stock</option></select></label><p class="return-warning">Confirm all products and quantities listed above have physically arrived. This completes inspection and records one full-order inventory decision.</p>
+          }
+          @if (action() === 'refund') {
+            @if (isGateway(order)) { <p class="return-warning">{{ order.refund_status === 'pending' ? 'This checks the existing refund with the payment gateway.' : 'This requests a full refund through the authenticated backend to the original Razorpay payment. Settlement is confirmed separately by the gateway.' }}</p> }
+            @else { <label class="return-field" for="return-refund-reference">Completed repayment reference<input id="return-refund-reference" formControlName="reference" maxlength="150" placeholder="Bank / UPI transfer or cash receipt reference" required /></label><p class="return-warning">Pay the customer {{ order.total_amount | currency:order.currency }} externally first. Saving records the completed repayment for {{ order.payment_method }}; it does not transfer money.</p> }
+          }
+          @if (actionError()) { <p class="return-error" role="alert">{{ actionError() }}</p> }
+          <div class="return-dialog-actions"><button type="button" (click)="setAction('view')" [disabled]="saving()">Back to details</button><button type="submit" class="return-primary" [disabled]="saving()">{{ saving() ? 'Saving…' : action() === 'refund' ? (isGateway(order) ? 'Confirm gateway action' : 'Confirm repayment is complete') : action() === 'received' ? 'Confirm receipt & inventory outcome' : 'Save decision' }}</button></div>
+        </form>
+      }
+
+      @if (events().length) { <section class="audit-history"><h3>Return audit history</h3><ol>@for (event of events(); track event.id) { <li><div><strong>{{ labels[event.status] }}</strong><span>{{ event.created_at | date:'medium' }}</span></div><p>{{ event.note }}</p><small>{{ event.actor_name || event.source }}@if (event.restock !== null && event.restock !== undefined) { · {{ event.restock ? 'Restocked' : 'Kept out of stock' }} }</small></li> }</ol></section> }
+      <div class="return-dialog-actions"><a [routerLink]="['/admin/orders']" [queryParams]="{ q: order.id }" class="order-link">Open original order</a><button type="button" [disabled]="saving()" (click)="close()">Close</button></div>
+    </dialog>
+}

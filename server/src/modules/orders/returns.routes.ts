@@ -1,83 +1,113 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { requireAdmin, requireAuth } from '../../core/auth.middleware.js';
-import { query, withTransaction } from '../../db/pool.js';
-import { invalidateCatalog } from '../../redis/cache.service.js';
-import { restoreCommittedStock } from './refund.service.js';
+import { OfflinePaymentError, recordCodCollection, recordExternalRefund } from './offline-payment.service.js';
+import { getOrderReturn, listOrderReturns, requestOrderReturn, ReturnFlowError, reviewOrderReturn } from './return.service.js';
 
 const reasonSchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict();
 const reviewSchema = z.object({
   status: z.enum(['approved', 'rejected', 'received']),
   note: z.string().trim().min(3).max(500),
   restock: z.boolean().optional(),
-}).strict();
+}).strict().superRefine((review, context) => {
+  if (review.status === 'received' && review.restock === undefined) context.addIssue({ code: z.ZodIssueCode.custom, path: ['restock'], message: 'Choose whether inspected goods can be restocked.' });
+  if (review.status !== 'received' && review.restock !== undefined) context.addIssue({ code: z.ZodIssueCode.custom, path: ['restock'], message: 'Record stock decisions only when goods are received.' });
+});
 const idSchema = z.string().uuid();
+const queueSchema = z.object({
+  status: z.enum(['all', 'requested', 'approved', 'rejected', 'received']).default('all'),
+  page: z.coerce.number().int().min(1).max(1_000_000).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  q: z.string().trim().max(150).optional(),
+}).strict();
+
+function returnFailure(error: unknown, request: FastifyRequest, reply: FastifyReply) {
+  request.log.warn({ err: error }, 'Return operation failed');
+  if (error instanceof ReturnFlowError) return reply.code(error.statusCode).send({ error: error.code, message: error.message });
+  return reply.code(503).send({ error: 'RETURN_UNAVAILABLE', message: 'Returns are temporarily unavailable. Refresh the order and retry.' });
+}
+
+function offlinePaymentFailure(error: unknown, request: FastifyRequest, reply: FastifyReply) {
+  request.log.warn({ err: error }, 'Offline payment record failed');
+  const messages: Record<string, string> = {
+    ORDER_NOT_FOUND: 'This order could not be found.',
+    PAYMENT_REFERENCE_IN_USE: 'This payment reference is already attached to another order. Check the transaction record.',
+    PAYMENT_REFERENCE_CONFLICT: 'This order already has a different payment reference. Refresh and review the recorded transaction.',
+    COLLECTION_NOT_ALLOWED: 'Record collections only for delivered, unpaid COD orders before return receipt.',
+    MANUAL_REFUND_NOT_ALLOWED: 'Record refunds only for collected offline payments after the repayment has completed.',
+    RETURN_RECEIPT_REQUIRED: 'Receive and inspect shipped or delivered products before recording their refund.',
+  };
+  if (error instanceof OfflinePaymentError && messages[error.message]) {
+    return reply.code(error.message === 'ORDER_NOT_FOUND' ? 404 : 409).send({ error: error.message, message: messages[error.message] });
+  }
+  if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505') {
+    return reply.code(409).send({ error: 'PAYMENT_REFERENCE_IN_USE', message: messages['PAYMENT_REFERENCE_IN_USE'] });
+  }
+  return reply.code(503).send({ error: 'PAYMENT_RECORD_UNAVAILABLE', message: 'The payment record could not be saved. Refresh the order and retry.' });
+}
 
 export async function returnsRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>('/orders/:id/return', { preHandler: [requireAuth] }, async (request, reply) => {
     const parsed = reasonSchema.safeParse(request.body);
-    if (!parsed.success || !idSchema.safeParse(request.params.id).success) return reply.code(400).send({ error: 'INVALID_RETURN_REQUEST' });
+    if (!parsed.success || !idSchema.safeParse(request.params.id).success) return reply.code(400).send({ error: 'INVALID_RETURN_REQUEST', message: 'Provide a valid order and a reason between 3 and 500 characters.' });
     try {
-      const order = await withTransaction(async client => {
-        const result = await client.query('SELECT * FROM orders WHERE id = $1 AND user_id = $2 FOR UPDATE', [request.params.id, request.user.id]);
-        const current = result.rows[0];
-        if (!current) throw new Error('ORDER_NOT_FOUND');
-        if (current.return_status) return current;
-        if (current.status !== 'delivered' || current.payment_status === 'refunded' || current.refund_status === 'pending') throw new Error('ORDER_NOT_RETURNABLE');
-        return (await client.query(`UPDATE orders SET return_status = 'requested', return_reason = $2,
-          return_requested_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`, [current.id, parsed.data.reason])).rows[0];
-      });
-      return { ok: true, returnStatus: order.return_status };
+      const result = await requestOrderReturn(request.params.id, parsed.data.reason, request.user.id, 'customer');
+      return { ok: true, order: result.order, returnStatus: result.order.return_status,
+        message: result.changed ? 'Your full-order return was requested. Wait for approval before sending the products back.' : 'A return has already been recorded for this order.' };
     } catch (error) {
-      const code = error instanceof Error ? error.message : 'RETURN_UNAVAILABLE';
-      request.log.warn({ error }, 'Return request failed');
-      return reply.code(code === 'ORDER_NOT_FOUND' ? 404 : code === 'ORDER_NOT_RETURNABLE' ? 409 : 503).send({ error: code, message: 'The return could not be requested. Check the order status and retry.' });
+      return returnFailure(error, request, reply);
     }
+  });
+
+  app.post<{ Params: { id: string } }>('/admin/orders/:id/return', { preHandler: [requireAdmin] }, async (request, reply) => {
+    const parsed = reasonSchema.safeParse(request.body);
+    if (!parsed.success || !idSchema.safeParse(request.params.id).success) return reply.code(400).send({ error: 'INVALID_RETURN_REQUEST', message: 'Provide a valid order and a reason between 3 and 500 characters.' });
+    try {
+      const result = await requestOrderReturn(request.params.id, parsed.data.reason, request.user.id, 'admin');
+      return { ok: true, order: result.order, returnStatus: result.order.return_status,
+        message: result.changed ? 'Full-order return opened. Review it before requesting the products back.' : 'A return has already been recorded for this order.' };
+    } catch (error) { return returnFailure(error, request, reply); }
   });
 
   app.put<{ Params: { id: string } }>('/admin/orders/:id/return', { preHandler: [requireAdmin] }, async (request, reply) => {
     const parsed = reviewSchema.safeParse(request.body);
-    if (!parsed.success || !idSchema.safeParse(request.params.id).success) return reply.code(400).send({ error: 'INVALID_RETURN_REVIEW' });
-    if (parsed.data.status === 'received' && parsed.data.restock === undefined) return reply.code(400).send({ error: 'RESTOCK_DECISION_REQUIRED' });
+    if (!parsed.success || !idSchema.safeParse(request.params.id).success) return reply.code(400).send({ error: 'INVALID_RETURN_REVIEW', message: 'Provide a review note and choose a stock decision when receiving products.' });
     try {
-      const order = await withTransaction(async client => {
-        const current = (await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [request.params.id])).rows[0];
-        if (!current) throw new Error('ORDER_NOT_FOUND');
-        if (current.return_status === parsed.data.status) return current;
-        const allowed: Record<string, string[]> = { requested: ['approved', 'rejected'], approved: ['received'] };
-        if (!allowed[current.return_status]?.includes(parsed.data.status)) throw new Error('INVALID_RETURN_TRANSITION');
-        if (parsed.data.status === 'received') {
-          if (parsed.data.restock) await restoreCommittedStock(client, current.id);
-          else {
-            // Inspected damaged goods must never be added back by refund reconciliation.
-            await client.query("UPDATE stock_reservations SET status = 'restored', resolved_at = NOW() WHERE order_id = $1 AND status = 'committed'", [current.id]);
-          }
-        }
-        return (await client.query(`UPDATE orders SET return_status = $2::varchar, return_review_note = $3,
-          return_received_at = CASE WHEN $2::text = 'received' THEN NOW() ELSE return_received_at END,
-          updated_at = NOW(), version = version + 1 WHERE id = $1 RETURNING *`, [current.id, parsed.data.status, parsed.data.note])).rows[0];
-      });
-      await invalidateCatalog().catch(() => {});
-      return { ok: true, order };
+      const result = await reviewOrderReturn(request.params.id, request.user.id, parsed.data);
+      return { ok: true, order: result.order, returnStatus: result.order.return_status,
+        message: parsed.data.status === 'received' ? 'Receipt recorded. Review the payment and process any refund due.' : `Return ${parsed.data.status}.` };
     } catch (error) {
-      const code = error instanceof Error ? error.message : 'RETURN_UNAVAILABLE';
-      request.log.warn({ error }, 'Return review failed');
-      return reply.code(code === 'ORDER_NOT_FOUND' ? 404 : code === 'INVALID_RETURN_TRANSITION' ? 409 : 503).send({ error: code, message: 'Return review could not be saved. Refresh the order and retry.' });
+      return returnFailure(error, request, reply);
     }
+  });
+
+  app.get('/admin/returns', { preHandler: [requireAdmin] }, async (request, reply) => {
+    const parsed = queueSchema.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: 'INVALID_RETURN_FILTER', message: 'Choose a valid return status, page and search query.' });
+    try { return await listOrderReturns(parsed.data); }
+    catch (error) { return returnFailure(error, request, reply); }
+  });
+
+  app.get<{ Params: { id: string } }>('/admin/orders/:id/return', { preHandler: [requireAdmin] }, async (request, reply) => {
+    if (!idSchema.safeParse(request.params.id).success) return reply.code(400).send({ error: 'INVALID_ORDER_ID' });
+    try { return await getOrderReturn(request.params.id); }
+    catch (error) { return returnFailure(error, request, reply); }
+  });
+
+  app.get<{ Params: { id: string } }>('/orders/:id/return', { preHandler: [requireAuth] }, async (request, reply) => {
+    if (!idSchema.safeParse(request.params.id).success) return reply.code(400).send({ error: 'INVALID_ORDER_ID' });
+    try { return await getOrderReturn(request.params.id, request.user.id); }
+    catch (error) { return returnFailure(error, request, reply); }
   });
 
   app.post<{ Params: { id: string } }>('/admin/orders/:id/collection', { preHandler: [requireAdmin] }, async (request, reply) => {
     const parsed = z.object({ reference: z.string().trim().min(3).max(150) }).strict().safeParse(request.body);
     if (!parsed.success || !idSchema.safeParse(request.params.id).success) return reply.code(400).send({ error: 'INVALID_COLLECTION' });
     try {
-      const result = await query(`UPDATE orders SET payment_status = 'captured', transaction_id = $2, updated_at = NOW()
-        WHERE id = $1 AND status = 'delivered' AND payment_status = 'pending'
-          AND payment_method IN ('Cash on Delivery', 'cash_on_delivery') AND refund_status IS NULL RETURNING id`, [request.params.id, parsed.data.reference]);
-      if (!result.rowCount) return reply.code(409).send({ error: 'COLLECTION_NOT_ALLOWED', message: 'Only delivered, unpaid COD orders can have a collection recorded.' });
-      return { ok: true, message: 'COD collection recorded.' };
+      const order = await recordCodCollection(request.params.id, parsed.data.reference, request.user.id);
+      return { ok: true, order, message: 'COD collection recorded.' };
     } catch (error) {
-      request.log.error({ error }, 'Collection record failed');
-      return reply.code(503).send({ error: 'COLLECTION_UNAVAILABLE' });
+      return offlinePaymentFailure(error, request, reply);
     }
   });
 
@@ -86,22 +116,10 @@ export async function returnsRoutes(app: FastifyInstance) {
     const parsed = z.object({ reference: z.string().trim().min(3).max(150), reason: z.string().trim().min(3).max(500) }).strict().safeParse(request.body);
     if (!parsed.success || !idSchema.safeParse(request.params.id).success) return reply.code(400).send({ error: 'INVALID_REFUND_RECORD' });
     try {
-      const order = await withTransaction(async client => {
-        const current = (await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [request.params.id])).rows[0];
-        if (!current) throw new Error('ORDER_NOT_FOUND');
-        if (!['Cash on Delivery', 'cash_on_delivery', 'Cash', 'UPI', 'Card'].includes(current.payment_method) || !['captured', 'refunded'].includes(current.payment_status)) throw new Error('MANUAL_REFUND_NOT_ALLOWED');
-        if (['shipped', 'delivered'].includes(current.status) && current.return_status !== 'received') throw new Error('RETURN_RECEIPT_REQUIRED');
-        if (current.refund_status === 'processed') return current;
-        await restoreCommittedStock(client, current.id);
-        return (await client.query(`UPDATE orders SET status = CASE WHEN status = 'delivered' THEN status ELSE 'cancelled' END, payment_status = 'refunded', refund_status = 'processed',
-          refund_amount = total_amount, refund_reason = $2, refund_external_reference = $3,
-          refund_requested_at = NOW(), refunded_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`, [current.id, parsed.data.reason, parsed.data.reference])).rows[0];
-      });
-      await invalidateCatalog().catch(() => {});
+      const order = await recordExternalRefund(request.params.id, parsed.data.reference, parsed.data.reason, request.user.id);
       return { ok: true, order, message: 'External refund recorded. No money was transferred by this application.' };
     } catch (error) {
-      request.log.warn({ error }, 'Manual refund record failed');
-      return reply.code(409).send({ error: 'REFUND_RECORD_REJECTED', message: 'Record refunds only for collected offline payments. Shipped orders must be returned and received first.' });
+      return offlinePaymentFailure(error, request, reply);
     }
   });
 }

@@ -15,7 +15,9 @@ import { initiateOrderRefund } from '../orders/refund.service.js';
 import { reserveStock, commitStockReservation, cancelOrderAndReleaseStock } from '../orders/stock-reservation.service.js';
 import { generateAiReply } from '../support/support.routes.js';
 import { requireAdmin, requireStaff } from '../../core/auth.middleware.js';
-import { PayoutProviderError, createRazorpayXPayout, type VendorPayoutAccount } from './vendor-payout.service.js';
+import { PayoutProviderError } from './vendor-payout.service.js';
+import { processVendorPayout } from './durable-payout.service.js';
+import { orderMoneyCte } from '../orders/order-money.service.js';
 import { validateVendorUpiWithRazorpay } from './razorpay-validation.service.js';
 
 const taskCreateSchema = z.object({
@@ -98,14 +100,14 @@ export async function adminRoutes(app: FastifyInstance) {
     try {
       // 1. Revenue aggregations (Today, Week, Month)
       const revRes = await query(`
+        WITH ${orderMoneyCte}
         SELECT
-          COALESCE(SUM(CASE WHEN created_at >= CURRENT_DATE THEN total_amount ELSE 0 END), 0)::numeric as today_rev,
-          COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '7 days' THEN total_amount ELSE 0 END), 0)::numeric as week_rev,
-          COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days' THEN total_amount ELSE 0 END), 0)::numeric as prev_week_rev,
-          COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '30 days' THEN total_amount ELSE 0 END), 0)::numeric as month_rev,
-          COALESCE(SUM(total_amount), 0)::numeric as total_rev
-        FROM orders
-        WHERE status != 'cancelled' AND payment_status = 'captured' AND COALESCE(refund_status, '') = '';
+          COALESCE(SUM(CASE WHEN created_at >= CURRENT_DATE THEN total_amount - confirmed_refund_amount ELSE 0 END), 0)::numeric as today_rev,
+          COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '7 days' THEN total_amount - confirmed_refund_amount ELSE 0 END), 0)::numeric as week_rev,
+          COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days' THEN total_amount - confirmed_refund_amount ELSE 0 END), 0)::numeric as prev_week_rev,
+          COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '30 days' THEN total_amount - confirmed_refund_amount ELSE 0 END), 0)::numeric as month_rev,
+          COALESCE(SUM(total_amount - confirmed_refund_amount), 0)::numeric as total_rev
+        FROM order_money WHERE payment_status IN ('captured', 'refunded');
       `);
 
       // 2. Order stage status counts (including confirmed orders in accepted/new queue)
@@ -203,7 +205,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/admin/metrics/daily', async (request, reply) => {
     try {
       const res = await query(`
-        WITH days AS (
+        WITH ${orderMoneyCte}, days AS (
           SELECT generate_series(
             CURRENT_DATE - INTERVAL '6 days',
             CURRENT_DATE,
@@ -213,10 +215,10 @@ export async function adminRoutes(app: FastifyInstance) {
         SELECT
           to_char(d.day, 'YYYY-MM-DD') as date,
           to_char(d.day, 'Dy') as day_label,
-          COALESCE(SUM(o.total_amount), 0)::numeric as revenue,
+          COALESCE(SUM(o.total_amount - o.confirmed_refund_amount), 0)::numeric as revenue,
           COUNT(o.id)::int as orders
         FROM days d
-        LEFT JOIN orders o ON DATE(o.created_at) = d.day AND o.status != 'cancelled' AND o.payment_status = 'captured' AND COALESCE(o.refund_status, '') = ''
+        LEFT JOIN order_money o ON DATE(o.created_at) = d.day AND o.payment_status IN ('captured', 'refunded')
         GROUP BY d.day
         ORDER BY d.day ASC;
       `);
@@ -593,6 +595,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }
     try {
       let sql = `
+        WITH ${orderMoneyCte}
         SELECT
           o.id,
           o.user_id,
@@ -610,6 +613,7 @@ export async function adminRoutes(app: FastifyInstance) {
           o.payment_method,
           o.payment_status, o.payment_reconciliation_error, o.payment_checked_at,
           o.return_status, o.return_reason, o.return_review_note, o.return_requested_at,
+          o.return_received_at, o.return_restock, o.return_reviewed_at, o.return_reviewed_by, o.return_requested_by,
           o.refund_status,
           o.refund_id,
           o.refund_amount::numeric,
@@ -617,6 +621,8 @@ export async function adminRoutes(app: FastifyInstance) {
           o.refund_requested_at,
           o.refunded_at,
           o.refund_failure_reason,
+          o.refund_external_reference,
+          (SELECT om.confirmed_refund_amount FROM order_money om WHERE om.id = o.id) AS confirmed_refund_amount,
           o.transaction_id,
           o.razorpay_payment_id,
           o.idempotency_key as gateway_order_id,
@@ -803,7 +809,7 @@ export async function adminRoutes(app: FastifyInstance) {
     { preHandler: [requireAdmin] },
     async (request, reply) => {
       const parsed = refundRequestSchema.safeParse(request.body);
-      if (!parsed.success) {
+      if (!parsed.success || !z.string().uuid().safeParse(request.params.id).success) {
         return reply.code(400).send({ error: 'INVALID_REFUND_REQUEST', message: 'Provide a refund reason between 3 and 300 characters.' });
       }
       try {
@@ -814,16 +820,23 @@ export async function adminRoutes(app: FastifyInstance) {
           order: { ...order, items: items.rows },
           refundStatus: order.refund_status,
           message: order.refund_status === 'processed'
-            ? 'Refund processed and inventory restored.'
+            ? 'Refund processed. Stock follows the saved return inspection decision.'
             : order.refund_status === 'failed' ? 'The gateway reported a refund failure. Review the refund before retrying.' : 'Refund is pending gateway confirmation. Check its status before taking further action.',
         });
       } catch (error: any) {
-        const code = String(error?.message || 'REFUND_FAILED');
+        const knownCodes = ['ORDER_NOT_FOUND', 'PAYMENT_NOT_CAPTURED', 'ONLINE_REFUND_ONLY',
+          'ORDER_ALREADY_FULFILLED', 'REFUND_PAYMENT_MISMATCH', 'REFUND_AMOUNT_MISMATCH',
+          'PAYMENT_UNAVAILABLE', 'PARTIAL_REFUND_REQUIRES_REVIEW', 'PAYMENT_MISMATCH'];
+        const code = knownCodes.includes(error?.message) ? error.message : 'REFUND_UNAVAILABLE';
         const status = code === 'ORDER_NOT_FOUND' ? 404
-          : ['PAYMENT_NOT_CAPTURED', 'ONLINE_REFUND_ONLY', 'ORDER_ALREADY_FULFILLED', 'REFUND_PAYMENT_MISMATCH', 'REFUND_AMOUNT_MISMATCH'].includes(code) ? 409
+          : ['PAYMENT_NOT_CAPTURED', 'ONLINE_REFUND_ONLY', 'ORDER_ALREADY_FULFILLED', 'REFUND_PAYMENT_MISMATCH', 'REFUND_AMOUNT_MISMATCH', 'PARTIAL_REFUND_REQUIRES_REVIEW', 'PAYMENT_MISMATCH'].includes(code) ? 409
             : code === 'PAYMENT_UNAVAILABLE' ? 503 : 502;
         request.log.error({ error, orderId: request.params.id }, 'Order refund failed');
-        return reply.code(status).send({ error: code, message: `Refund could not be completed: ${code.replaceAll('_', ' ').toLowerCase()}.` });
+        return reply.code(status).send({ error: code, message: code === 'PARTIAL_REFUND_REQUIRES_REVIEW'
+          ? 'This payment already has a partial refund. Review its remaining balance in Razorpay before issuing another refund.'
+          : code === 'ORDER_ALREADY_FULFILLED' ? 'Receive and inspect the returned products before issuing a refund.'
+          : code === 'REFUND_UNAVAILABLE' ? 'Refund confirmation is unavailable. Reconcile this request before attempting another refund.'
+          : `Refund could not be completed: ${code.replaceAll('_', ' ').toLowerCase()}.` });
       }
     }
   );
@@ -834,6 +847,7 @@ export async function adminRoutes(app: FastifyInstance) {
     { preHandler: [requireStaff] },
     async (request, reply) => {
       const { id } = request.params;
+      if (!z.string().uuid().safeParse(id).success) return reply.code(400).send({ error: 'INVALID_ORDER_ID' });
       try {
         const order = await reconcileOrderPayment(id);
         const items = await query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
@@ -847,9 +861,9 @@ export async function adminRoutes(app: FastifyInstance) {
 
       } catch (err: any) {
         request.log.error(err, 'Payment reconciliation error');
-        return reply.status(500).send({
+        return reply.status(err.message === 'ORDER_NOT_FOUND' ? 404 : 503).send({
           error: 'RECONCILIATION_ERROR',
-          message: err.message || 'Failed to reconcile payment with Razorpay.',
+          message: 'Payment status could not be confirmed. Review the gateway record and retry without creating another payment.',
         });
       }
     }
@@ -1032,6 +1046,9 @@ export async function adminRoutes(app: FastifyInstance) {
       );
       return reply.status(201).send({ ...res.rows[0], stylist_name: stylistName });
     } catch (err: any) {
+      if (err.code === '23503' && err.constraint === 'bookings_stylist_id_fkey') {
+        return reply.code(409).send({ error: 'STYLIST_UNAVAILABLE', message: 'The selected stylist is no longer available. Refresh the directory and choose another stylist.' });
+      }
       return reply.status(err.code === '23505' ? 409 : 500).send({ error: 'FAILED_TO_CREATE_BOOKING', message: 'Could not save booking. Check the stylist schedule and retry.' });
     }
   });
@@ -1086,6 +1103,9 @@ export async function adminRoutes(app: FastifyInstance) {
         if (!updated.rowCount) return reply.code(404).send({ error: 'BOOKING_NOT_FOUND' });
         return reply.send({ ...updated.rows[0], stylist_name: stylistName });
       } catch (error: any) {
+        if (error.code === '23503' && error.constraint === 'bookings_stylist_id_fkey') {
+          return reply.code(409).send({ error: 'STYLIST_UNAVAILABLE', message: 'The selected stylist is no longer available. Refresh the directory and choose another stylist.' });
+        }
         return reply.code(error.code === '23505' ? 409 : 503).send({ error: 'SCHEDULE_NOT_SAVED', message: 'The stylist may already be booked for this slot. Refresh and choose another time or stylist.' });
       }
     }
@@ -1736,7 +1756,7 @@ export async function adminRoutes(app: FastifyInstance) {
           NULL::numeric as platform_margin,
           NULL::numeric as vendor_payout
         FROM products p
-        LEFT JOIN order_items oi ON oi.product_id = p.id AND EXISTS (SELECT 1 FROM orders paid WHERE paid.id = oi.order_id AND paid.status != 'cancelled' AND paid.payment_status = 'captured' AND COALESCE(paid.refund_status, '') = '')
+        LEFT JOIN order_items oi ON oi.product_id = p.id AND EXISTS (SELECT 1 FROM orders paid WHERE paid.id = oi.order_id AND paid.payment_status IN ('captured', 'refunded'))
         GROUP BY p.id, p.name, p.category, p.vendor, p.price, p.stock_quantity
         ORDER BY gross_revenue DESC, p.name ASC;
       `);
@@ -1772,11 +1792,13 @@ export async function adminRoutes(app: FastifyInstance) {
 
       // 5. Aggregate Macro Totals
       const totalOrderRevRes = await query(`
-        SELECT
+        WITH ${orderMoneyCte} SELECT
           COALESCE(SUM(total_amount), 0)::numeric as total_order_rev,
+          COALESCE(SUM(confirmed_refund_amount), 0)::numeric as total_refunded,
+          COALESCE(SUM(total_amount - confirmed_refund_amount), 0)::numeric as total_net_collected,
           COALESCE(SUM(discount_amount), 0)::numeric as total_discounts,
           COUNT(*)::int as total_orders
-        FROM orders WHERE status != 'cancelled' AND payment_status = 'captured' AND COALESCE(refund_status, '') = '';
+        FROM order_money WHERE payment_status IN ('captured', 'refunded');
       `);
 
       const totalBookingRevRes = await query(`
@@ -1795,6 +1817,8 @@ export async function adminRoutes(app: FastifyInstance) {
         ok: true,
         macro: {
           totalGrossRevenue: totalGross,
+          totalRefundedRevenue: Number(orderMacro.total_refunded || 0),
+          totalNetCollectedRevenue: Number(orderMacro.total_net_collected || 0),
           totalProductRetailRevenue: Number(orderMacro.total_order_rev || 0),
           totalSalonServicesRevenue: null,
           totalBookingQuotedValue: Number(bookingMacro.total_booking_rev || 0),
@@ -1821,47 +1845,21 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'INVALID_PAYOUT', message: 'Provide a vendor, positive amount with at most two decimals, and a unique settlement reference.' });
     const { vendorId, amount, reference, notes, mode } = parsed.data;
     try {
-      const payout = await withTransaction(async client => {
-        const vendor = (await client.query("SELECT id, name, payout_account FROM vendors WHERE id = $1 AND status = 'active' FOR UPDATE", [vendorId])).rows[0];
-        if (!vendor) throw new Error('VENDOR_NOT_FOUND');
-        const existing = (await client.query('SELECT * FROM vendor_payouts WHERE reference = $1', [reference])).rows[0];
-        if (existing) {
-          if (existing.vendor_id !== vendorId || Number(existing.amount) !== amount || existing.provider !== mode) throw new Error('PAYOUT_REFERENCE_CONFLICT');
-          return { payout: existing, disbursed: existing.provider === 'razorpayx' && existing.provider_status === 'processed' };
-        }
-        const balances = await vendorBalances(client);
-        const balance = balances.rows.find(row => row.id === vendorId);
-        if (!balance || amount > Number(balance.payable_amount)) throw new Error('PAYOUT_EXCEEDS_BALANCE');
-
-        const hasRazorpayX = mode === 'razorpayx';
-        let transfer: { provider: string; transferId: string; status: string; disbursed: boolean };
-        if (hasRazorpayX) {
-          const rzp = await createRazorpayXPayout({
-            amount,
-            reference,
-            narration: `Urban Blade payout ${vendor.name}`,
-            vendorId,
-            vendorName: vendor.name,
-            account: (vendor.payout_account || {}) as VendorPayoutAccount,
-          });
-          transfer = { provider: rzp.provider, transferId: rzp.transferId, status: rzp.status, disbursed: rzp.status === 'processed' };
-        } else {
-          transfer = { provider: 'manual', transferId: reference, status: 'manual_recorded', disbursed: false };
-        }
-
-        const processedAt = (transfer.status === 'processed' || transfer.status === 'manual_recorded') ? new Date() : null;
-        const payoutRow = (await client.query(`INSERT INTO vendor_payouts(
-            vendor_id, amount, reference, notes, recorded_by, provider, provider_transfer_id, provider_status, processed_at
-          ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          RETURNING *`, [vendorId, amount, reference, notes || '', request.user.id, transfer.provider, transfer.transferId, transfer.status, processedAt])).rows[0];
-        return { payout: payoutRow, disbursed: transfer.disbursed };
-      });
+      const payout = await processVendorPayout({ vendorId, amount, reference, notes, mode, recordedBy: request.user.id });
       return { ok: true, recorded: true, disbursed: payout.disbursed, payout: payout.payout, message: payout.payout.provider === 'razorpayx' ? `RazorpayX payout status: ${payout.payout.provider_status}.` : 'External payment recorded. This application did not transfer funds.' };
     } catch (error) {
       request.log.warn({ error }, 'Payout record rejected');
-      const code = error instanceof PayoutProviderError ? error.code : String((error as Error)?.message || 'PAYOUT_RECORD_REJECTED');
-      const status = ['PAYOUT_PROVIDER_NOT_CONFIGURED', 'PAYOUT_PROVIDER_UNAVAILABLE'].includes(code) ? 503 : 409;
-      return reply.code(status).send({ error: code, message: error instanceof Error ? error.message : 'Payout could not be created.' });
+      const known = ['VENDOR_NOT_FOUND', 'PAYOUT_REFERENCE_CONFLICT', 'PAYOUT_EXCEEDS_BALANCE'];
+      const code = error instanceof PayoutProviderError ? error.code
+        : error instanceof Error && known.includes(error.message) ? error.message : 'PAYOUT_RECORD_UNAVAILABLE';
+      const status = ['PAYOUT_PROVIDER_NOT_CONFIGURED', 'PAYOUT_PROVIDER_UNAVAILABLE', 'PAYOUT_RECORD_UNAVAILABLE'].includes(code) ? 503 : 409;
+      const messages: Record<string, string> = {
+        VENDOR_NOT_FOUND: 'Choose an active vendor before recording a payout.',
+        PAYOUT_REFERENCE_CONFLICT: 'This reference already belongs to a different payout. Review the saved transaction.',
+        PAYOUT_EXCEEDS_BALANCE: 'The payout exceeds the available vendor balance. Refresh the ledger.',
+      };
+      return reply.code(status).send({ error: code, message: error instanceof PayoutProviderError ? error.message
+        : messages[code] || 'Payout confirmation is unavailable. Review the saved payout ledger before submitting another request.' });
     }
   });
 }

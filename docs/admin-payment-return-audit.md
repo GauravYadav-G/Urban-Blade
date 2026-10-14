@@ -1,5 +1,7 @@
 # Admin, payment, return and vendor review
 
+Current follow-up: [14 October payment and return audit](payment-return-audit-2026-10-14.md), including the dedicated Returns workflow and durable transaction ledgers. The sections below preserve earlier audit history.
+
 ## Implemented fixes
 
 - Vendor inventory and order queries use the authenticated vendor identity. Order item lists and item totals are scoped to that vendor. Master-admin APIs are denied to vendors. Vendor sessions validate current account status on each request, so suspension takes effect without waiting for token expiry. Renaming a vendor updates product ownership and its user account in one transaction.

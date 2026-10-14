@@ -3,6 +3,7 @@ import { query, withTransaction } from '../../db/pool.js';
 import { invalidateCatalog } from '../../redis/cache.service.js';
 import { paymentGateway } from './payment-settlement.service.js';
 import { releaseStockReservation } from './stock-reservation.service.js';
+import { recordGatewayPayment } from './payment-snapshot.service.js';
 
 type RefundGateway = ReturnType<typeof paymentGateway>;
 type RefundState = 'pending' | 'processed' | 'failed';
@@ -48,6 +49,12 @@ async function applyGatewayRefund(orderId: string, refund: GatewayRefund) {
 
     if (!['pending', 'processed', 'failed'].includes(refund.status)) throw new Error('INVALID_REFUND_STATUS');
     if (order.refund_id && order.refund_id !== refund.id) throw new Error('REFUND_ID_MISMATCH');
+    if (order.refund_status === 'processed' || refund.status === 'processed') {
+      // Also repair an older imported snapshot when a settled event is replayed.
+      await client.query(`UPDATE gateway_payments SET status = 'refunded',
+        refunded_paise = GREATEST(refunded_paise, $2), checked_at = NOW() WHERE id = $1`,
+      [refund.payment_id, expectedAmount]);
+    }
     // Terminal success must survive delayed and duplicate gateway notifications.
     if (order.refund_status === 'processed') return { order, restored: false };
     if (order.refund_status === 'failed' && refund.status === 'pending') return { order, restored: false };
@@ -132,6 +139,21 @@ export async function initiateOrderRefund(
         return claim.order;
       }
       if (!refund) {
+        // A dashboard refund may have happened since our last reconciliation.
+        // Never submit the full order amount on top of an existing repayment.
+        const payment = await gateway.payments.fetch(claim.order.razorpay_payment_id);
+        await recordGatewayPayment(payment);
+        if (payment.id !== claim.order.razorpay_payment_id
+          || Number(payment.amount) !== Math.round(Number(claim.order.total_amount) * 100)
+          || payment.currency !== claim.order.currency
+          || (claim.order.idempotency_key && payment.order_id !== claim.order.idempotency_key)) {
+          throw new Error('PAYMENT_MISMATCH');
+        }
+        if (Number(payment.amount_refunded || 0) > 0 || payment.status === 'refunded'
+          || existing.items.some(item => ['pending', 'processed'].includes(item.status))) {
+          throw new Error('PARTIAL_REFUND_REQUIRES_REVIEW');
+        }
+        if (payment.status !== 'captured') throw new Error('PAYMENT_NOT_CAPTURED');
         requestStarted = true;
         refund = await gateway.payments.refund(claim.order.razorpay_payment_id, {
           amount: Math.round(Number(claim.order.total_amount) * 100),

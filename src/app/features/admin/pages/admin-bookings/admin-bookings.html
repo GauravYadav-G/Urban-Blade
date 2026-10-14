@@ -45,11 +45,62 @@
   @if(admin.bookingsError()){<p role="alert" class="alert-error">Appointments could not be refreshed. Previously loaded records may be out of date.</p>}
   @if(admin.bookingsCheckedAt()){<p>Last refreshed: {{ admin.bookingsCheckedAt() | date:'medium' }}</p>}
   <section class="staff-panel">
-    <h2>Stylist directory</h2><p>Admins assign staff to salon and home bookings. Salon customers never see staff names. Removing a stylist archives them for future assignments and preserves booking history.</p>
+    <h2>Stylist directory</h2>
+    <p>Assign staff to salon and home bookings. Archive keeps the stylist record and existing assignments. Permanently delete removes the record from the database and clears its booking assignments while keeping the bookings.</p>
     @if(stylistError()){<p role="alert" class="alert-error">{{ stylistError() }}</p>}
-    <div class="staff-editor"><label>Name<input [ngModel]="staffName()" (ngModelChange)="staffName.set($event)" /></label><label>Role<input [ngModel]="staffRole()" (ngModelChange)="staffRole.set($event)" /></label><button class="btn-primary" [disabled]="stylistSaving()" (click)="saveStylist()">{{ editingStylist()?'Save stylist':'Add stylist' }}</button><button class="btn-secondary" (click)="resetStylist()">Clear</button><button class="btn-secondary" (click)="loadStylists()">Refresh</button></div>
-    <div class="table-wrapper"><table><thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>@for(stylist of stylistRecords();track stylist.id){<tr><td>{{ stylist.name }}</td><td>{{ stylist.role }}</td><td>{{ stylist.is_active?'Active':'Archived' }}</td><td><button class="btn-secondary" (click)="editStylist(stylist)">{{ stylist.is_active?'Edit':'Edit & reactivate' }}</button>@if(stylist.is_active){<button class="btn-secondary" (click)="removeStylist(stylist)">Remove</button>}</td></tr>}@empty{<tr><td colspan="4">No stylist records loaded. Add your team to begin assigning bookings.</td></tr>}</tbody></table></div>
+    <div class="staff-editor">
+      <label>Name<input [ngModel]="staffName()" (ngModelChange)="staffName.set($event)" maxlength="255" [disabled]="stylistMutating()" /></label>
+      <label>Role<input [ngModel]="staffRole()" (ngModelChange)="staffRole.set($event)" maxlength="100" [disabled]="stylistMutating()" /></label>
+      <button type="button" class="btn-primary" [disabled]="stylistMutating() || stylistLoading()" (click)="saveStylist()">{{ stylistSaving() ? 'Saving…' : editingStylist() ? 'Save stylist' : 'Add stylist' }}</button>
+      <button type="button" class="btn-secondary" [disabled]="stylistMutating()" (click)="resetStylist()">Clear</button>
+      <button type="button" class="btn-secondary" [disabled]="stylistMutating() || stylistLoading()" (click)="loadStylists()">{{ stylistLoading() ? 'Refreshing…' : 'Refresh' }}</button>
+    </div>
+    <div class="table-wrapper">
+      <table><thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          @for (stylist of stylistRecords(); track stylist.id) {
+            <tr>
+              <td>{{ stylist.name }}</td><td>{{ stylist.role }}</td><td>{{ stylist.is_active ? 'Active' : 'Archived' }}</td>
+              <td class="staff-actions">
+                <button type="button" class="btn-secondary" [disabled]="stylistMutating() || stylistLoading()" (click)="editStylist(stylist)">{{ stylist.is_active ? 'Edit' : 'Edit & reactivate' }}</button>
+                @if (stylist.is_active) {
+                  <button type="button" class="btn-secondary" [disabled]="stylistMutating() || stylistLoading()" (click)="archiveStylist(stylist)">{{ archivingStylist() === stylist.id ? 'Archiving…' : 'Archive' }}</button>
+                }
+                <button type="button" class="btn-stylist-delete" [disabled]="stylistMutating() || stylistLoading() || isSaving()" (click)="openPermanentStylistDelete(stylist)">Permanently delete</button>
+              </td>
+            </tr>
+          } @empty {
+            <tr><td colspan="4">{{ stylistLoading() ? 'Loading stylist directory…' : 'No stylist records loaded. Add your team to begin assigning bookings.' }}</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
   </section>
+
+  @if (pendingStylistDelete(); as stylist) {
+    <dialog appAdminDialog class="booking-modal-card stylist-delete-dialog" aria-labelledby="stylist-delete-title" aria-describedby="stylist-delete-warning" (cancel)="$event.preventDefault(); closePermanentStylistDelete()">
+      <header class="modal-head">
+        <div><span class="modal-eyebrow">STYLIST DIRECTORY</span><h3 class="modal-title" id="stylist-delete-title">Permanently delete stylist</h3></div>
+        <button type="button" class="btn-modal-close" [disabled]="stylistDeleting()" (click)="closePermanentStylistDelete()" aria-label="Close permanent deletion confirmation">×</button>
+      </header>
+      <form (ngSubmit)="confirmPermanentStylistDelete()">
+        <div class="modal-form">
+          <p id="stylist-delete-warning" class="permanent-delete-notice">This permanently removes <strong>{{ stylist.name }}</strong> from the database. Booking records are kept, but this stylist's assignments are cleared and will show as unassigned. This cannot be undone.</p>
+          <div class="form-field">
+            <label for="stylist-delete-confirmation">Type the exact name to confirm</label>
+            <strong class="stylist-confirmation-name">{{ stylist.name }}</strong>
+            <input id="stylist-delete-confirmation" name="confirmationName" type="text" autocomplete="off" spellcheck="false" maxlength="255" [ngModel]="deleteConfirmationName()" (ngModelChange)="deleteConfirmationName.set($event)" [disabled]="stylistDeleting()" required />
+            <small>Name matching is case sensitive. Cancel to keep the record, or use Archive to keep its assignment history.</small>
+          </div>
+          @if (stylistDeleteError()) { <p class="alert-error" role="alert">{{ stylistDeleteError() }}</p> }
+        </div>
+        <footer class="modal-actions">
+          <button type="button" class="btn-cancel" [disabled]="stylistDeleting()" (click)="closePermanentStylistDelete()">Cancel</button>
+          <button type="submit" class="btn-confirm btn-confirm-permanent" [disabled]="!canConfirmStylistDelete()">{{ stylistDeleting() ? 'Deleting permanently…' : 'Permanently delete stylist' }}</button>
+        </footer>
+      </form>
+    </dialog>
+  }
 
   <!-- Location Type Tabs -->
   <nav class="location-segment-bar" aria-label="Appointment location switcher">

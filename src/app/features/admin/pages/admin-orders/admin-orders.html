@@ -1047,6 +1047,9 @@
               <span>Refunded {{ o.refund_amount | currency:o.currency }}</span>
             </div>
           } @else if (o.status === 'delivered') {
+            @if (!account.isVendor()) {
+              <a class="modal-action-btn secondary" routerLink="/admin/returns" [queryParams]="{ order: o.id }">{{ o.return_status ? 'Manage return' : 'Return products' }}</a>
+            }
             <div class="modal-fulfilled-pill">
               <span class="chk">✓</span>
               <span>Order Fulfilled &amp; Delivered</span>

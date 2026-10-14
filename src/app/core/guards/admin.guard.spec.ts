@@ -20,6 +20,7 @@ describe('Admin child route authorization', () => {
         { path: 'dashboard', component: Screen },
         { path: 'customers', component: Screen },
         { path: 'support', component: Screen },
+        { path: 'returns', component: Screen },
         { path: 'products', component: Screen },
       ] }]),
       { provide: AccountService, useValue: { isAdmin: () => false, isVendor: () => true } },
@@ -30,6 +31,8 @@ describe('Admin child route authorization', () => {
     await harness.navigateByUrl('/admin/customers');
     expect(TestBed.inject(Router).url).toBe('/admin/dashboard');
     await harness.navigateByUrl('/admin/support');
+    expect(TestBed.inject(Router).url).toBe('/admin/dashboard');
+    await harness.navigateByUrl('/admin/returns');
     expect(TestBed.inject(Router).url).toBe('/admin/dashboard');
     await harness.navigateByUrl('/admin/%63ustomers');
     expect(TestBed.inject(Router).url).toBe('/admin/dashboard');

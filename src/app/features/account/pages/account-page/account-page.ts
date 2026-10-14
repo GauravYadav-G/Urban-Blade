@@ -1,6 +1,10 @@
 import { DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { interval } from 'rxjs';
+import { interval, finalize } from 'rxjs';
+import { canRequestOrderReturn, type OrderReturnDetails } from '@core/models/order-return.model';
+import { ReturnsService } from '@core/services/returns.service';
+import { OrderReturnStatusComponent } from '@shared/components/order-return-status/order-return-status';
+import { AdminDialog } from '@shared/directives/admin-dialog';
 import type { TrackedOrder } from '@core/models/shipment-tracking.model';
 import { ShipmentTrackingComponent } from '@shared/components/shipment-tracking/shipment-tracking';
 import { Component, computed, inject, signal, OnInit, effect } from '@angular/core';
@@ -48,7 +52,7 @@ interface NominatimReverseHit {
   };
 }
 
-export interface CustomerOrder extends TrackedOrder {
+export interface CustomerOrder extends TrackedOrder, OrderReturnDetails {
   id: string;
   status: 'pending' | 'accepted' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
   subtotal: number;
@@ -64,9 +68,6 @@ export interface CustomerOrder extends TrackedOrder {
   currency: string;
   payment_method: string;
   payment_status: string;
-  return_status?: string;
-  return_review_note?: string;
-  refund_status?: string;
   created_at: string;
   shipping_address?: {
     city?: string;
@@ -105,7 +106,7 @@ export interface CustomerBooking {
 @Component({
   selector: 'app-account-page',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, RouterLink, InrPipe, OrderInvoice, ShipmentTrackingComponent],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, RouterLink, InrPipe, OrderInvoice, ShipmentTrackingComponent, OrderReturnStatusComponent, AdminDialog],
   templateUrl: './account-page.html',
   styleUrl: './account-page.scss',
 })
@@ -123,10 +124,19 @@ export class AccountPage implements OnInit {
   private readonly sanitizer = inject(DomSanitizer);
   private readonly http = inject(HttpClient);
   private readonly toast = inject(ToastService);
+  private readonly returnsService = inject(ReturnsService);
 
   constructor() {
+    let returnIdentity = this.account.user();
     effect(() => {
       const user = this.account.user();
+      if (user !== returnIdentity) {
+        returnIdentity = user;
+        this.returnOrder.set(null);
+        this.returnError.set('');
+        this.requestingReturn.set(null);
+        this.returnForm.reset({ category: '', details: '', acknowledged: false });
+      }
       if (user) {
         if (!this.profileName()) this.profileName.set(user.name);
         if (!this.profileEmail()) this.profileEmail.set(user.email);
@@ -158,7 +168,7 @@ export class AccountPage implements OnInit {
   })[this.activeTab()]);
   readonly sectionDescription = computed(() => ({
     overview: 'A little overview of everything you have with us.',
-    orders: 'Follow your deliveries and revisit your favourites.',
+    orders: 'Follow deliveries, view receipts, and request or track a product return.',
     bookings: 'Make time for yourself. Keep your next visit in view.',
     addresses: 'Keep your delivery details ready for next time.',
     profile: 'Manage your Urban Blade profile.',
@@ -173,7 +183,7 @@ export class AccountPage implements OnInit {
   readonly bookingsError = signal('');
 
   // Orders Filtering & Search
-  readonly orderStatusFilter = signal<'all' | 'active' | 'delivered' | 'cancelled'>('all');
+  readonly orderStatusFilter = signal<'all' | 'active' | 'delivered' | 'cancelled' | 'returns'>('all');
   readonly orderSearchQuery = signal<string>('');
 
   readonly filteredOrders = computed(() => {
@@ -187,6 +197,8 @@ export class AccountPage implements OnInit {
       list = list.filter((o) => o.status === 'delivered');
     } else if (filter === 'cancelled') {
       list = list.filter((o) => o.status === 'cancelled');
+    } else if (filter === 'returns') {
+      list = list.filter((o) => Boolean(o.return_status || o.refund_status));
     }
 
     if (q) {
@@ -337,15 +349,61 @@ export class AccountPage implements OnInit {
   }
 
   readonly requestingReturn = signal<string | null>(null);
+  readonly returnOrder = signal<CustomerOrder | null>(null);
+  readonly returnError = signal('');
+  readonly returnReasons = ['Damaged or defective product', 'Wrong product delivered', 'Missing or incorrect items', 'Product quality concern', 'Other reason'];
+  readonly returnForm = this.fb.nonNullable.group({
+    category: ['', Validators.required],
+    details: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(400)]],
+    acknowledged: [false, Validators.requiredTrue],
+  });
+
+  canRequestReturn(order: CustomerOrder): boolean { return canRequestOrderReturn(order); }
 
   requestReturn(order: CustomerOrder): void {
+    if (this.requestingReturn() || !this.canRequestReturn(order)) return;
+    this.returnOrder.set(order);
+    this.returnError.set('');
+    this.returnForm.reset({ category: '', details: '', acknowledged: false });
+  }
+
+  closeReturn(): void {
     if (this.requestingReturn()) return;
-    const reason = window.prompt('Why would you like to return this order?')?.trim();
-    if (!reason || reason.length < 3) return;
+    this.returnOrder.set(null);
+    this.returnError.set('');
+  }
+
+  submitReturn(): void {
+    const order = this.returnOrder();
+    if (!order || this.requestingReturn()) return;
+    const { category, details } = this.returnForm.getRawValue();
+    if (this.returnForm.invalid || details.trim().length < 3 || !this.returnReasons.includes(category)) {
+      this.returnForm.markAllAsTouched();
+      this.returnError.set('Choose a reason, describe the issue in at least 3 characters, and confirm the full-order return.');
+      return;
+    }
+    const reason = `${category}: ${details.trim()}`;
+    const identity = this.account.user();
+    this.returnError.set('');
     this.requestingReturn.set(order.id);
-    this.http.post(`/api/orders/${order.id}/return`, { reason }).subscribe({
-      next: () => { this.requestingReturn.set(null); this.fetchUserOrders(); this.toast.success('Return requested. We will review it before arranging a return.'); },
-      error: error => { this.requestingReturn.set(null); this.toast.error(error.error?.message || 'Return could not be requested.'); },
+    this.returnsService.request(order.id, reason).pipe(takeUntilDestroyed(this.destroyRef), finalize(() => {
+      if (identity === this.account.user() && this.requestingReturn() === order.id) this.requestingReturn.set(null);
+    })).subscribe({
+      next: response => {
+        if (identity !== this.account.user()) return;
+        if (!response?.ok || !response.order?.id) {
+          this.returnError.set('The return request was not confirmed. Refresh your orders before retrying.');
+          return;
+        }
+        this.orders.update(orders => orders.map(current => current.id === order.id ? { ...current, ...response.order } : current));
+        this.returnOrder.set(null);
+        this.fetchUserOrders(true);
+        this.toast.success('Return requested. Track the review and refund progress in your orders.');
+      },
+      error: error => {
+        if (identity !== this.account.user()) return;
+        this.returnError.set(error.error?.message || 'Your return could not be requested. Check your connection and try again.');
+      },
     });
   }
 
