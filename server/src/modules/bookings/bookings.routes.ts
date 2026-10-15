@@ -1,9 +1,30 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
 import crypto from 'crypto';
 import { query, withTransaction } from '../../db/pool.js';
 import { acquireLock, releaseLock } from '../../redis/lock.service.js';
 import { requireAuth, optionalAuth } from '../../core/auth.middleware.js';
 import { z } from 'zod';
+
+const customerSlots = ['09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
+  '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM'] as const;
+const scheduleDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
+  const parsed = new Date(`${value}T12:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+});
+function futureSlot(date: string, slot: string): boolean {
+  const match = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(slot);
+  if (!match) return false;
+  const hour = Number(match[1]) % 12 + (match[3].toUpperCase() === 'PM' ? 12 : 0);
+  return Date.parse(`${date}T${String(hour).padStart(2, '0')}:${match[2]}:00+05:30`) > Date.now();
+}
+async function customerScheduleOnly(request: FastifyRequest, reply: FastifyReply) {
+  if (request.user.role !== 'customer') {
+    return reply.code(403).send({ error: 'FORBIDDEN', message: 'Use the customer account that owns this appointment.' });
+  }
+}
+const ownedBookingSql = `SELECT id, status, stylist_id,
+  to_char(booking_date, 'YYYY-MM-DD') AS booking_date, time_slot
+  FROM bookings WHERE id = $1 AND LOWER(customer_email) = LOWER($2)`;
 
 export async function bookingsRoutes(app: FastifyInstance) {
   // ─── LIST STYLISTS ────────────────────────────────────────────────────────
@@ -38,6 +59,74 @@ export async function bookingsRoutes(app: FastifyInstance) {
       }
     }
   );
+
+  app.get<{ Params: { id: string }; Querystring: { date: string } }>(
+    '/bookings/:id/available-slots', { preHandler: [requireAuth, customerScheduleOnly] },
+    async (request, reply) => {
+      const parsed = z.object({ date: scheduleDate }).strict().safeParse(request.query);
+      if (!parsed.success || !z.string().uuid().safeParse(request.params.id).success) {
+        return reply.code(400).send({ error: 'INVALID_SCHEDULE', message: 'Choose a valid appointment and date.' });
+      }
+      try {
+        const booking = (await query(ownedBookingSql, [request.params.id, request.user.email])).rows[0];
+        if (!booking) return reply.code(404).send({ message: 'Appointment not found in your account.' });
+        if (booking.status !== 'confirmed' || !futureSlot(booking.booking_date, booking.time_slot)) {
+          return reply.code(409).send({ message: 'Only upcoming confirmed appointments can be rescheduled.' });
+        }
+        const taken = booking.stylist_id ? (await query(
+          `SELECT time_slot FROM bookings WHERE stylist_id=$1 AND booking_date=$2 AND id<>$3 AND status!='cancelled'`,
+          [booking.stylist_id, parsed.data.date, request.params.id])).rows : [];
+        const blocked = new Set(taken.map(row => row.time_slot));
+        return { date: parsed.data.date, availableSlots: customerSlots.filter(slot =>
+          futureSlot(parsed.data.date, slot) && !blocked.has(slot)) };
+      } catch (error) {
+        request.log.warn({ err: error }, 'Customer reschedule availability failed');
+        return reply.code(503).send({ message: 'Availability could not be checked. Please retry.' });
+      }
+    });
+
+  app.put<{ Params: { id: string } }>('/bookings/:id/schedule',
+    { preHandler: [requireAuth, customerScheduleOnly] }, async (request, reply) => {
+      const parsed = z.object({ bookingDate: scheduleDate, timeSlot: z.enum(customerSlots),
+        expectedDate: scheduleDate, expectedTimeSlot: z.string().min(4).max(20) }).strict().safeParse(request.body);
+      if (!parsed.success || !z.string().uuid().safeParse(request.params.id).success ||
+          !futureSlot(parsed.data.bookingDate, parsed.data.timeSlot)) {
+        return reply.code(400).send({ error: 'INVALID_SCHEDULE', message: 'Choose an available future date and time.' });
+      }
+      try {
+        const result = await withTransaction(async client => {
+          const booking = (await client.query(`${ownedBookingSql} FOR UPDATE`, [request.params.id, request.user.email])).rows[0];
+          if (!booking) return { kind: 'missing' } as const;
+          if (booking.status !== 'confirmed' || !futureSlot(booking.booking_date, booking.time_slot)) return { kind: 'closed' } as const;
+          if (booking.booking_date !== parsed.data.expectedDate || booking.time_slot !== parsed.data.expectedTimeSlot) return { kind: 'stale' } as const;
+          if (booking.stylist_id) {
+            const conflict = await client.query(`SELECT id FROM bookings WHERE stylist_id=$1 AND booking_date=$2
+              AND time_slot=$3 AND id<>$4 AND status!='cancelled'`,
+              [booking.stylist_id, parsed.data.bookingDate, parsed.data.timeSlot, request.params.id]);
+            if (conflict.rows.length) return { kind: 'conflict' } as const;
+          }
+          // Ownership, price, visit address and salon staff assignment are preserved.
+          // The existing unique active-stylist index also arbitrates concurrent moves.
+          const saved = await client.query(`UPDATE bookings SET booking_date=$2, time_slot=$3, version=version+1
+            WHERE id=$1 RETURNING id, customer_name, customer_email, customer_phone,
+              to_char(booking_date,'YYYY-MM-DD') AS booking_date, time_slot, status,
+              total_price, notes, visit_type, service_address, created_at`,
+            [request.params.id, parsed.data.bookingDate, parsed.data.timeSlot]);
+          return { kind: 'saved', booking: saved.rows[0] } as const;
+        });
+        if (result.kind === 'missing') return reply.code(404).send({ message: 'Appointment not found in your account.' });
+        if (result.kind !== 'saved') return reply.code(409).send({ message: result.kind === 'closed'
+          ? 'Only upcoming confirmed appointments can be rescheduled.' : result.kind === 'stale'
+            ? 'This appointment changed on another device. Refresh before rescheduling.'
+            : 'This time is no longer available. Choose another slot.' });
+        return result.booking;
+      } catch (error) {
+        request.log.warn({ err: error }, 'Customer reschedule failed');
+        const conflict = typeof error === 'object' && error !== null && 'code' in error && error.code === '23505';
+        return reply.code(conflict ? 409 : 503).send({ message: conflict
+          ? 'This time was just booked. Choose another slot.' : 'The appointment could not be changed. Please retry.' });
+      }
+    });
 
   // ─── BOOK APPOINTMENT WITH DISTRIBUTED REDIS LOCK ──────────────────────────
   app.post<{
