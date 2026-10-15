@@ -1,0 +1,12 @@
+Urban Blade mobile 2.5.0 (20) — local verification, 14 October 2026
+
+flutter analyze --no-pub: PASS, no issues found
+flutter test --no-pub: PASS, 162 tests passed
+bash mobile_app/build_apk.sh: PASS, executed from repository root
+aapt dump badging: com.urbanblade.mobile, versionName 2.5.0, versionCode 20
+Android SDK: min 24, target 36
+
+APK artifact: UrbanBlade-2.5.0.apk (and symlink UrbanBlade-2.5.apk)
+SHA-256: 029640dad1326761fab61317251da19b6521516d144ddd920dced962ebaa21a0
+Size: ~131MB
+Location: Root workspace folder (/Users/shyam/Downloads/2)

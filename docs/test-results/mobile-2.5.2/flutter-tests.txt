@@ -1,0 +1,213 @@
+Resolving dependencies...
+Downloading packages...
+  archive 4.4.0 (4.5.2 available)
+  cached_network_image 3.4.1 (4.0.4 available)
+  cached_network_image_platform_interface 4.1.1 (5.0.3 available)
+  cached_network_image_web 1.3.1 (2.0.3 available)
+  code_assets 1.2.1 (2.1.0 available)
+  cupertino_icons 1.0.9 (2.0.0 available)
+  dynamic_color 1.9.0 (2.1.0 available)
+  flutter_lints 3.0.2 (6.0.0 available)
+  google_fonts 6.3.3 (9.0.0 available)
+  hooks 2.0.2 (2.2.0 available)
+  image 4.10.2 (4.12.0 available)
+  intl 0.19.0 (0.20.3 available)
+  lints 3.0.0 (6.1.0 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  meta 1.18.3 (1.19.0 available)
+  objective_c 9.5.0 (9.6.2 available)
+  petitparser 7.0.2 (7.1.0 available)
+  qr 3.0.2 (4.0.0 available)
+  record_use 0.6.0 (1.1.1 available)
+  sqflite 2.4.4+1 (2.4.4+2 available)
+  sqflite_android 2.4.4 (2.4.4+1 available)
+  sqflite_common 2.5.13+1 (2.5.14 available)
+  sqflite_darwin 2.4.4 (2.4.4+1 available)
+  synchronized 3.4.2 (3.5.0 available)
+  test_api 0.7.12 (0.7.15 available)
+  vector_math 2.4.0 (2.4.3 available)
+  xml 7.0.1 (7.1.0 available)
+Got dependencies!
+27 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+00:00 +0: loading /Users/shyam/Downloads/2/mobile_app/test/home_card_sizes_test.dart
+00:00 +0: /Users/shyam/Downloads/2/mobile_app/test/catalog_rebuild_budget_test.dart: hidden retained pages defer notifications and show fresh data on return
+00:00 +1: /Users/shyam/Downloads/2/mobile_app/test/cart_flow_test.dart: cart reveal, quantities, back and checkout (reduced: false)
+00:00 +2: /Users/shyam/Downloads/2/mobile_app/test/cart_flow_test.dart: cart reveal, quantities, back and checkout (reduced: false)
+00:00 +3: /Users/shyam/Downloads/2/mobile_app/test/cart_flow_test.dart: cart reveal, quantities, back and checkout (reduced: false)
+00:00 +4: /Users/shyam/Downloads/2/mobile_app/test/cart_flow_test.dart: cart reveal, quantities, back and checkout (reduced: false)
+00:00 +5: /Users/shyam/Downloads/2/mobile_app/test/cart_flow_test.dart: cart reveal, quantities, back and checkout (reduced: false)
+00:01 +6: /Users/shyam/Downloads/2/mobile_app/test/cart_flow_test.dart: cart reveal, quantities, back and checkout (reduced: false)
+00:01 +7: /Users/shyam/Downloads/2/mobile_app/test/cart_flow_test.dart: cart reveal, quantities, back and checkout (reduced: false)
+00:01 +8: /Users/shyam/Downloads/2/mobile_app/test/cart_flow_test.dart: cart reveal, quantities, back and checkout (reduced: false)
+00:01 +9: /Users/shyam/Downloads/2/mobile_app/test/cart_flow_test.dart: cart reveal, quantities, back and checkout (reduced: false)
+00:01 +10: /Users/shyam/Downloads/2/mobile_app/test/cart_flow_test.dart: cart reveal, quantities, back and checkout (reduced: false)
+00:01 +11: /Users/shyam/Downloads/2/mobile_app/test/smooth_navigation_payment_test.dart: Back closes the cart, then returns Shop and secondary tabs Home
+00:01 +12: /Users/shyam/Downloads/2/mobile_app/test/smooth_navigation_payment_test.dart: Back closes the cart, then returns Shop and secondary tabs Home
+00:01 +13: /Users/shyam/Downloads/2/mobile_app/test/smooth_navigation_payment_test.dart: Back closes the cart, then returns Shop and secondary tabs Home
+00:02 +14: /Users/shyam/Downloads/2/mobile_app/test/smooth_navigation_payment_test.dart: Back closes the cart, then returns Shop and secondary tabs Home
+00:02 +15: /Users/shyam/Downloads/2/mobile_app/test/smooth_navigation_payment_test.dart: Back closes the cart, then returns Shop and secondary tabs Home
+00:02 +16: /Users/shyam/Downloads/2/mobile_app/test/smooth_navigation_payment_test.dart: Back closes the cart, then returns Shop and secondary tabs Home
+00:02 +17: /Users/shyam/Downloads/2/mobile_app/test/smooth_navigation_payment_test.dart: Back closes the cart, then returns Shop and secondary tabs Home
+00:02 +18: /Users/shyam/Downloads/2/mobile_app/test/smooth_navigation_payment_test.dart: Back closes the cart, then returns Shop and secondary tabs Home
+00:02 +19: /Users/shyam/Downloads/2/mobile_app/test/smooth_navigation_payment_test.dart: Back closes the cart, then returns Shop and secondary tabs Home
+00:03 +20: /Users/shyam/Downloads/2/mobile_app/test/smooth_navigation_payment_test.dart: Back closes the cart, then returns Shop and secondary tabs Home
+00:03 +21: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:03 +22: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:04 +23: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:04 +24: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:04 +25: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:04 +26: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:04 +27: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:04 +28: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:04 +29: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:04 +30: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+Shell: Helvetica-Bold has no Unicode support see https://github.com/DavBfr/dart_pdf/wiki/Fonts-Management
+00:04 +31: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:04 +32: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:04 +33: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:04 +34: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:05 +35: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:05 +36: /Users/shyam/Downloads/2/mobile_app/test/home_reference_test.dart: dashboard booking actions and cart sheet preserve the home flow
+00:05 +37: /Users/shyam/Downloads/2/mobile_app/test/glass_navigation_test.dart: selected pill icons meet contrast for brand and wallpaper colors
+00:05 +38: /Users/shyam/Downloads/2/mobile_app/test/glass_navigation_test.dart: selected pill icons meet contrast for brand and wallpaper colors
+00:05 +39: /Users/shyam/Downloads/2/mobile_app/test/glass_navigation_test.dart: selected pill icons meet contrast for brand and wallpaper colors
+00:05 +40: /Users/shyam/Downloads/2/mobile_app/test/glass_navigation_test.dart: selected pill icons meet contrast for brand and wallpaper colors
+00:05 +41: /Users/shyam/Downloads/2/mobile_app/test/glass_navigation_test.dart: selected pill icons meet contrast for brand and wallpaper colors
+00:05 +42: /Users/shyam/Downloads/2/mobile_app/test/glass_navigation_test.dart: selected pill icons meet contrast for brand and wallpaper colors
+00:05 +43: /Users/shyam/Downloads/2/mobile_app/test/glass_navigation_test.dart: selected pill icons meet contrast for brand and wallpaper colors
+00:05 +44: /Users/shyam/Downloads/2/mobile_app/test/glass_navigation_test.dart: selected pill icons meet contrast for brand and wallpaper colors
+00:05 +45: /Users/shyam/Downloads/2/mobile_app/test/glass_navigation_test.dart: selected pill icons meet contrast for brand and wallpaper colors
+00:05 +46: /Users/shyam/Downloads/2/mobile_app/test/glass_navigation_test.dart: selected pill icons meet contrast for brand and wallpaper colors
+00:05 +47: /Users/shyam/Downloads/2/mobile_app/test/glass_material_test.dart: high contrast retains glass controls without blur
+00:05 +48: /Users/shyam/Downloads/2/mobile_app/test/glass_navigation_test.dart: glass dock keeps touch targets and insets at Size(320.0, 720.0) / false
+00:05 +49: /Users/shyam/Downloads/2/mobile_app/test/glass_navigation_test.dart: glass dock keeps touch targets and insets at Size(320.0, 720.0) / false
+00:06 +50: /Users/shyam/Downloads/2/mobile_app/test/commerce_ui_test.dart: commerce previews and live tracking keep payment and delivery separate
+00:06 +51: /Users/shyam/Downloads/2/mobile_app/test/commerce_ui_test.dart: commerce previews and live tracking keep payment and delivery separate
+Shell: Helvetica-Bold has no Unicode support see https://github.com/DavBfr/dart_pdf/wiki/Fonts-Management
+Shell: Helvetica-Bold has no Unicode support see https://github.com/DavBfr/dart_pdf/wiki/Fonts-Management
+00:06 +52: /Users/shyam/Downloads/2/mobile_app/test/commerce_ui_test.dart: commerce previews and live tracking keep payment and delivery separate
+00:06 +53: /Users/shyam/Downloads/2/mobile_app/test/commerce_ui_test.dart: commerce previews and live tracking keep payment and delivery separate
+00:06 +54: /Users/shyam/Downloads/2/mobile_app/test/commerce_ui_test.dart: commerce previews and live tracking keep payment and delivery separate
+00:06 +55: /Users/shyam/Downloads/2/mobile_app/test/commerce_ui_test.dart: commerce previews and live tracking keep payment and delivery separate
+00:06 +56: /Users/shyam/Downloads/2/mobile_app/test/commerce_ui_test.dart: commerce previews and live tracking keep payment and delivery separate
+00:06 +57: /Users/shyam/Downloads/2/mobile_app/test/commerce_ui_test.dart: commerce previews and live tracking keep payment and delivery separate
+00:07 +58: /Users/shyam/Downloads/2/mobile_app/test/commerce_ui_test.dart: commerce previews and live tracking keep payment and delivery separate
+00:07 +59: /Users/shyam/Downloads/2/mobile_app/test/commerce_ui_test.dart: commerce previews and live tracking keep payment and delivery separate
+00:07 +60: /Users/shyam/Downloads/2/mobile_app/test/commerce_ui_test.dart: commerce previews and live tracking keep payment and delivery separate
+00:07 +61: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:07 +62: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:08 +63: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:08 +64: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:09 +65: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:09 +66: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:09 +67: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:09 +68: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:09 +69: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:09 +70: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:09 +71: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:09 +72: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:09 +73: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:10 +74: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:10 +75: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:10 +76: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:10 +77: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:10 +78: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:10 +79: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:10 +80: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:10 +81: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:11 +82: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:11 +83: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:12 +84: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:12 +85: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:12 +86: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:12 +87: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:13 +88: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:13 +89: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:13 +90: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:13 +91: /Users/shyam/Downloads/2/mobile_app/test/appearance_motion_test.dart: theme toggle covers every tab, product route and cart without losing state
+00:13 +92: /Users/shyam/Downloads/2/mobile_app/test/visual_preview_test.dart: phone screen visual regression
+00:14 +93: /Users/shyam/Downloads/2/mobile_app/test/visual_preview_test.dart: phone screen visual regression
+00:14 +94: /Users/shyam/Downloads/2/mobile_app/test/visual_preview_test.dart: phone screen visual regression
+00:15 +95: /Users/shyam/Downloads/2/mobile_app/test/visual_preview_test.dart: phone screen visual regression
+00:15 +96: /Users/shyam/Downloads/2/mobile_app/test/visual_preview_test.dart: phone screen visual regression
+00:15 +97: /Users/shyam/Downloads/2/mobile_app/test/visual_preview_test.dart: phone screen visual regression
+00:15 +98: /Users/shyam/Downloads/2/mobile_app/test/visual_preview_test.dart: phone screen visual regression
+00:15 +99: /Users/shyam/Downloads/2/mobile_app/test/visual_preview_test.dart: phone screen visual regression
+00:15 +100: /Users/shyam/Downloads/2/mobile_app/test/visual_preview_test.dart: phone screen visual regression
+00:16 +101: /Users/shyam/Downloads/2/mobile_app/test/visual_preview_test.dart: phone screen visual regression
+00:16 +102: /Users/shyam/Downloads/2/mobile_app/test/visual_preview_test.dart: phone screen visual regression
+00:16 +103: /Users/shyam/Downloads/2/mobile_app/test/mobile_feature_layout_test.dart: home fits 320.0x568.0 with enlarged text
+00:17 +104: /Users/shyam/Downloads/2/mobile_app/test/mobile_feature_layout_test.dart: home fits 320.0x568.0 with enlarged text
+00:17 +105: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:17 +106: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:17 +107: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:18 +108: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:18 +109: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:18 +110: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:18 +111: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:18 +112: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:18 +113: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:18 +114: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:18 +115: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:19 +116: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:19 +117: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:19 +118: /Users/shyam/Downloads/2/mobile_app/test/product_navigation_regression_test.dart: shop product opens, adds to bag and returns through a hero flight
+00:19 +119: /Users/shyam/Downloads/2/mobile_app/test/shared_mobile_constraints_test.dart: stacked sync errors leave room for the active tab in landscape
+00:19 +120: /Users/shyam/Downloads/2/mobile_app/test/shell_layout_regression_test.dart: shell actions clear navigation at Size(320.0, 720.0) / text 2.0
+00:19 +121: /Users/shyam/Downloads/2/mobile_app/test/shell_layout_regression_test.dart: shell actions clear navigation at Size(320.0, 720.0) / text 2.0
+00:19 +122: /Users/shyam/Downloads/2/mobile_app/test/shell_layout_regression_test.dart: shell actions clear navigation at Size(320.0, 720.0) / text 2.0
+00:19 +123: /Users/shyam/Downloads/2/mobile_app/test/shell_layout_regression_test.dart: shell actions clear navigation at Size(320.0, 720.0) / text 2.0
+00:19 +124: /Users/shyam/Downloads/2/mobile_app/test/mobile_feature_layout_test.dart: appointments fits 568.0x320.0 with enlarged text
+00:19 +125: /Users/shyam/Downloads/2/mobile_app/test/shell_layout_regression_test.dart: shell actions clear navigation at Size(412.0, 915.0) / text 1.0
+00:19 +126: /Users/shyam/Downloads/2/mobile_app/test/shell_layout_regression_test.dart: shell actions clear navigation at Size(412.0, 915.0) / text 1.0
+00:20 +127: /Users/shyam/Downloads/2/mobile_app/test/shell_layout_regression_test.dart: shell actions clear navigation at Size(412.0, 915.0) / text 1.0
+00:20 +128: /Users/shyam/Downloads/2/mobile_app/test/shell_layout_regression_test.dart: shell actions clear navigation at Size(412.0, 915.0) / text 1.0
+00:20 +129: /Users/shyam/Downloads/2/mobile_app/test/services_refresh_visual_test.dart: service menu in light appearance
+00:20 +130: /Users/shyam/Downloads/2/mobile_app/test/services_refresh_visual_test.dart: service menu in light appearance
+00:20 +131: /Users/shyam/Downloads/2/mobile_app/test/services_refresh_visual_test.dart: service menu in light appearance
+00:20 +132: /Users/shyam/Downloads/2/mobile_app/test/services_refresh_visual_test.dart: service menu in light appearance
+00:21 +133: /Users/shyam/Downloads/2/mobile_app/test/services_refresh_visual_test.dart: service menu in light appearance
+00:21 +134: /Users/shyam/Downloads/2/mobile_app/test/services_refresh_visual_test.dart: service menu in light appearance
+00:21 +135: /Users/shyam/Downloads/2/mobile_app/test/services_refresh_visual_test.dart: service menu in light appearance
+00:21 +136: /Users/shyam/Downloads/2/mobile_app/test/services_refresh_visual_test.dart: service menu in light appearance
+00:21 +137: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:21 +138: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:21 +139: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:21 +140: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +141: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +142: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +143: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +144: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +145: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +146: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +147: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +148: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +149: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +150: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +151: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +152: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +153: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +154: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:22 +155: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:23 +156: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:23 +157: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:23 +158: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:23 +159: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: booking, checkout and account surfaces remain connected
+00:24 +160: /Users/shyam/Downloads/2/mobile_app/test/booking_virtualization_test.dart: 100 booking services build near the viewport and preserve navigation
+00:24 +161: /Users/shyam/Downloads/2/mobile_app/test/booking_virtualization_test.dart: 100 booking services build near the viewport and preserve navigation
+00:24 +162: /Users/shyam/Downloads/2/mobile_app/test/booking_virtualization_test.dart: 100 booking services build near the viewport and preserve navigation
+00:25 +163: /Users/shyam/Downloads/2/mobile_app/test/booking_virtualization_test.dart: 100 booking services build near the viewport and preserve navigation
+00:25 +164: /Users/shyam/Downloads/2/mobile_app/test/login_layout_test.dart: Login and registration fit a narrow phone with keyboard open
+00:25 +165: /Users/shyam/Downloads/2/mobile_app/test/full_flow_preview_test.dart: home category opens the matching catalog and shared image route
+00:25 +166: /Users/shyam/Downloads/2/mobile_app/test/login_layout_test.dart: Account forms remain usable at 2x text with a small keyboard viewport
+00:25 +167: /Users/shyam/Downloads/2/mobile_app/test/wallpaper_theme_test.dart: wallpaper palette refreshes on resume without closing or resizing the cart
+00:26 +168: /Users/shyam/Downloads/2/mobile_app/test/wallpaper_theme_test.dart: wallpaper palette refreshes on resume without closing or resizing the cart
+00:26 +169: /Users/shyam/Downloads/2/mobile_app/test/wallpaper_theme_test.dart: wallpaper palette refreshes on resume without closing or resizing the cart
+00:26 +170: /Users/shyam/Downloads/2/mobile_app/test/wallpaper_theme_test.dart: wallpaper palette refreshes on resume without closing or resizing the cart
+00:26 +171: /Users/shyam/Downloads/2/mobile_app/test/wallpaper_theme_test.dart: wallpaper palette refreshes on resume without closing or resizing the cart
+00:26 +172: /Users/shyam/Downloads/2/mobile_app/test/wallpaper_theme_test.dart: wallpaper palette refreshes on resume without closing or resizing the cart
+00:26 +173: /Users/shyam/Downloads/2/mobile_app/test/wallpaper_theme_test.dart: wallpaper palette refreshes on resume without closing or resizing the cart
+00:27 +174: /Users/shyam/Downloads/2/mobile_app/test/wallpaper_theme_test.dart: wallpaper palette refreshes on resume without closing or resizing the cart
+00:28 +175: /Users/shyam/Downloads/2/mobile_app/test/wallpaper_theme_test.dart: unsupported devices retain brand theme and platform failures are safe
+00:28 +176: All tests passed!

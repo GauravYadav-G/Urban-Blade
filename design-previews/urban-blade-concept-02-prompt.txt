@@ -1,0 +1,34 @@
+Use case: ui-mockup.
+Generate a NEW, beautiful high-fidelity UI concept image for URBAN BLADE, a premium mobile grooming, salon booking and product shopping app. This is DESIGN CONCEPT 02, a client approval preview, not implemented software. The previous black-and-amber design was rejected. COMPLETELY change the color mood to luminous PEARL WHITE, soft SEAFOAM, translucent AQUA, DEEP TEAL typography and silver-glass details. NO amber, gold, orange, tan, cream/beige, purple, or black navigation bars.
+
+Style direction: inspired by Apple's iOS 26 Liquid Glass: optically convincing translucent floating capsule controls; very subtle refraction at rounded glass edges; softly diffused background color visible through frosted glass; delicate white specular strokes, generous radii, native-feeling segmented controls, soft depth. Use glass primarily for navigation, toolbars and sticky controls. Content itself stays beautifully readable, airy and calm. SF Pro-like clean modern sans serif, elegant bold headlines, large clear touch targets. A sophisticated wellness and grooming product, not a futuristic neon dashboard. Minimal shadows, precise alignment, restrained use of color, no decorative bubbles or random glass shapes.
+
+Composition: a high-resolution LANDSCAPE presentation with THREE LARGE straight-on iPhone interface screens side-by-side, flat elevation, identical size, all perfectly aligned. Make these three screens large enough to read without zooming. Quiet pale pearl studio background with a very faint seafoam light wash. Minimal thin silver device frames, tiny realistic iOS status bar and dynamic island. Small restrained header at the top of the board: "URBAN BLADE" and "Concept 02 — Pearl & Seafoam". Each screen has a small label above: "HOME", "PRODUCT", "BOOKING". No perspective, no rotating phones, no architectural staging, no giant promotional type outside the screens. Screens should fill almost the whole image.
+
+Palette: background #F4F8F7, white cards #FFFFFF, pale seafoam #DDEFE8, icy aqua #DAEEEF, dark ink-teal #123B39 for text, main action #246B61, muted text #6A807B, selected tint #CCE4DC. Navigation is transparent milky GLASS, never black. Most surface area is pearl-white; rich teal is used only on meaningful text and primary actions. Sharp contrast and legibility.
+
+SCREEN 1 / HOME:
+At top, a small simple UB monogram and "Urban Blade" wordmark, upper-right two evenly aligned circular frosted-glass icons for search and shopping bag.
+An understated eyebrow "YOUR DAILY RESET". A strong friendly headline "Good grooming.\nBetter days." in large dark teal sans serif. Small supporting line "A little care, made personal."
+A sophisticated full-width editorial hero card, 24px corner radius, pale seafoam setting with an authentic beautiful photo of a contemporary salon/barber studio in natural light, white stone, leafy plants, a barber and male client. Lower portion has a gently frosted translucent caption over the photo, readable dark teal headline "Make time for you.", and a deep teal small capsule button "Book a visit" with thin arrow. Small "THE STUDIO" eyebrow.
+Below, three small softly tinted category capsules with elegant line icons: "Hair", "Beard", "Skin".
+Section "Made for your routine" with subtle "View all" link. Two clean product cards with fine product photography: a frosted pale-green shampoo bottle and an elegant green glass beard-oil bottle on white/seafoam studio backgrounds, dark teal labels, names and rupee prices "₹349" and "₹499", little circular teal add buttons.
+At bottom, one realistic iOS 26-inspired transparent frosted GLASS pill tab bar FLOATS above content, with five equal outlined icons and small labels Home, Services, Book, Shop, Account. Home is selected in a pale seafoam oval with teal icon. Soft background visible through the capsule, a fine white refractive rim, no dark bar.
+
+SCREEN 2 / PRODUCT:
+Immersive refined packshot of a beautiful muted emerald/green glass dropper bottle with brushed silver cap and an ivory minimalist label reading "URBAN BLADE / DAILY BEARD OIL / 30 ML". Product sits on pale mint stone in natural daylight with a small out-of-focus botanical detail, extremely premium skincare editorial photography, not black packaging.
+Over the image, perfectly aligned circular frosted-glass back button top-left and heart button top-right. NO zoom or enlarge button.
+Below image, clean pearl-white curved content surface: small "BEARD CARE · 30 ML" eyebrow, large "Daily Beard Oil" title, clear "₹499" price with a subtle stock indicator. Short description "Softness, without the weight." and a short secondary line "A lightweight blend for your everyday ritual."
+Two restrained seafoam benefit capsules "Non-greasy" and "Daily care" with thin icons.
+"Quantity" on the left and an evenly aligned minus / 1 / plus rounded stepper on the right.
+A floating milky frosted purchase capsule at the bottom with small total "₹499" and one deep teal "Add to bag" button with arrow, with a quiet "Buy now" text action. Every price, stepper and icon aligns meticulously. Product photo gets room to breathe.
+
+SCREEN 3 / BOOKING:
+Same clean wordmark header and circular glass utility icons. Small "A MOMENT FOR YOURSELF" eyebrow, bold "Your next\ngood day." title, small "Choose your care. We’ll handle the rest."
+A rounded iOS glass segmented control: "At the studio" selected with seafoam tint; "At home" unselected. Simple outlined icons.
+Two clean rounded white treatment rows: small salon photograph thumbnail, clear "Signature haircut", "45 min · ₹499", teal check circle; second "Beard sculpt", "30 min · ₹299", outlined unselected circle.
+"Pick your day" heading, then a simple elegant one-week strip of dates; one date in deep teal with white numerals, remaining white/seafoam. No fake huge calendar. "Available times" followed by a tidy 2-by-3 grid of rounded time chips, with "11:30 AM" selected in a pale seafoam glass capsule.
+At bottom, summary "1 service · ₹499", clear deep teal rounded "Continue" button, and the matching floating translucent glass tab bar with Book selected.
+Enough spacing to read everything comfortably. Don't cram content beneath the navigation.
+
+Constraints: three distinct fully finished SCREENS, not wireframes. All gutters, icon weights, typography, rounded corners, button geometry and semantic color hierarchy are consistent. Keep photographic imagery realistic and tasteful. Glass should visibly transmit softly blurred content but never undermine readability. Show a genuinely fresh iOS 26-inspired design direction that is different in color AND material from the earlier heavy black/amber storefront. Render all key text legibly and avoid excessive microcopy.

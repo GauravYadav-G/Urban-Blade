@@ -1,0 +1,49 @@
+Use case: ui-mockup.
+Create a visually outstanding NEW mobile shopping app UI concept board for URBAN BLADE, a grooming products + salon brand. This is DESIGN CONCEPT 03 for client approval. The previous quiet spa/seafoam editorial designs were rejected. This iteration must look like a modern, compelling, feature-rich commerce app, taking information architecture inspiration from the current Amazon and Flipkart shopping experience: prominent search, delivery context, browsable categories, useful offer modules, strong product cards, unmistakable prices and purchase actions. Combine that shopping usefulness with very convincing iOS 26 LIQUID GLASS controls. Do NOT copy Amazon or Flipkart logos or pretend to be either company.
+
+Make ONE high-resolution landscape presentation with FOUR large perfectly front-facing phone screens, aligned and equally sized, with enough space to see every screen clearly: HOME, COLLECTION, PRODUCT, BAG. Small quiet header "URBAN BLADE" and "Concept 03 / Liquid Commerce". Small footer "Motion direction: spring tabs · card expansion · frosted sheets · add-to-bag". This is a static UI preview; the footer communicates proposed motion, not a claim that the image is animated. Screens fill almost all of the composition. Thin silver phone frames. Soft neutral pearl-gray board, no 3D camera angle, no tabletop staging, no busy background.
+
+A FRESH COLOR SYSTEM: icy blue-white #F3F7FC, rich ink navy #102340 text, confident cobalt #245DF5 primary CTAs, very pale cool blue #E5EFFF, subtle pistachio/citron #DFEDAC offer accents, white product surfaces. Restrained purposeful color, not neon. No purple gradients. Do not use the prior black-and-gold or green spa palette. Professional crisp SF Pro-like sans-serif text. Rounded 24px modules, organized 12px gutters, clean tiny category labels, clear price hierarchy, premium editorial product photos.
+
+LIQUID MATERIAL, noticeably more than an ordinary flat white UI: translucent glass floating search capsules, softly refractive circular toolbar buttons, luminous glass bottom dock with milky white edge highlights and gently transmitted blurred card colors below, tactile glass segmented filters, softly blurred layered buy/cart action tray. The glass effect must have optically convincing depth and edge lighting, not generic drop shadows or neon outlines. Keep dark text very readable. Product photos and text cards are solid and clear; glass lives in controls and navigation. Use a consistent five-item Home / Services / Book / Shop / Account dock on HOME and COLLECTION. Selected tab has a cobalt-tinted glass oval. No overlapping nav labels.
+
+SCREEN 1 HOME — commerce-first:
+A compact Urban Blade wordmark row with small circular profile and bag controls.
+Below, a location row with pin icon and "Set delivery location", subtle chevron.
+A prominent full-width floating frosted search capsule, a crisp search icon, placeholder "Search hair, beard & skincare", and a small camera icon.
+A row of FIVE category shortcuts with realistic small cutout photographs or stylish precise icons in subtle colored circular glass wells: "All", "Hair", "Beard", "Skin", "Tools".
+A short wide high-quality campaign module: rich navy headline "Upgrade your\neveryday.", smaller "The grooming edit", a cobalt "Explore now" capsule, and beautifully photographed navy/white beard oil and shampoo bottles on icy sculptural blocks. This campaign is compact, not a giant salon photo.
+A section header "Deals for your daily routine" and small "See all" arrow.
+A row of two excellent PRODUCT CARDS: image on pale icy background, small restrained "25% off" pistachio badge, heart at top-right, legible short name "Daily Beard Oil" / "Care Shampoo", size line "30 ml" / "250 ml", bold price "₹449" / "₹349", small struck-through previous price, and a clearly aligned small cobalt rounded-square plus control. Product cards are genuinely commerce-quality and informative, not just a photo with a title floating on top.
+Below, a slim service discovery banner with a tiny barber photo, "A fresh look, on your terms", and "Book a service" with arrow. Bottom frosted dock.
+
+SCREEN 2 COLLECTION — card design hero:
+Title "The grooming store", small subtitle "Find your next daily essential."
+Frosted sticky search field, then elegant glass chips "All products", "Hair", "Beard", "Skin".
+A tidy row showing "24 essentials" at left; separate "Sort" and "Filter" glass capsules with precise icons at right.
+A very well-designed 2-by-2 product grid filling most of the screen. Four attractive product photographs: glass beard oil, white shampoo, navy styling clay, pale blue texture spray; packaging carries the actual URBAN BLADE brand.
+Each card has consistent equal heights, pale product image stage, 12–16px corners, tiny wishlist heart, product name, one category/size line, bold rupee price, quieter comparison price where relevant, small discount badge where relevant, and aligned cobalt add button. Example names/prices: "Daily Beard Oil" ₹449; "Care Shampoo" ₹349; "Matte Styling Clay" ₹599; "Texture Spray" ₹499. No unverified ratings, made-up delivery promises or fake trust badges. The image compositions must show varied actual products, never identical generic bottles.
+A tiny bottom selection/filter glimpse behind the unmistakable floating liquid-glass dock, Shop selected. Keep all functional targets spacious and aligned.
+
+SCREEN 3 PRODUCT — purchase confidence:
+Perfectly aligned circular glass Back, Share and Heart controls over a clean large studio photo of an elegant URBAN BLADE beard oil bottle with dark blue label, pale silver cap, icy white background and subtle cool blue shadows. NO zoom button.
+Small image pagination dots, then rounded white details surface.
+Eyebrow "URBAN BLADE / BEARD CARE".
+Large product title "Daily Beard Oil".
+One concise line "Lightweight nourishment. A softer finish."
+Very clear price row: "₹449", smaller struck-through "₹599", soft pistachio "25% off".
+A short glass benefit capsule row "Non-greasy" and "Daily use".
+A size selector labeled "Size" with small tactile glass choices "30 ml" selected and "50 ml"; a compact quantity selector alongside.
+A neat delivery row "Delivery options at checkout" with pin icon and right chevron. No invented guaranteed delivery date.
+Bottom floating frosted purchase tray: a cobalt "Add to bag" action and an ink-navy "Buy now" action, equally aligned; total price quietly included. Believable finger-sized buttons. Clear visual hierarchy, much more usable than a decorative perfume advertisement.
+
+SCREEN 4 BAG — layered frosted checkout:
+Header "Your bag" with small "2 items" and aligned back button.
+A subtle delivery-location capsule, "Add delivery details", chevron.
+Two rounded white cart cards: small product photograph on left, name and size, price and nicely aligned quantity stepper on right/below. Items Daily Beard Oil ₹449 and Care Shampoo ₹349. A quiet small remove icon in each card.
+A separate glass-white "Have a coupon?" row with ticket icon and chevron.
+A calm order summary with rows "Subtotal ₹798", "Delivery At checkout", and bold "Total ₹798". No invented payment confirmation.
+A small "You may also like" horizontally scrollable pair of mini product cards, partial second visible, tying back to the shopping-card system.
+A floating layered liquid-glass tray at bottom, visible blurry blue/white content beneath and a crisp cobalt wide "Continue to checkout" button with arrow. Small "₹798" total and "2 items" above the button. Beautiful consistent materials and alignment.
+
+Motion aesthetic communicated through the visual design: gently deforming selected glass capsules, an expanding card-to-product shared surface, a shallow frosted sheet with depth, and a compact added-to-bag pill on the BAG screen, small and tasteful. Do not use motion blur that makes any text unreadable. This image must look like a top-tier finished product designer's actual shopping UI, with attractive high-density card sections and real e-commerce usefulness. Not a generic wellness landing page, not a wireframe, not an abstract glass experiment. Key copy and prices should be accurately spelled, all screens consistent and completely visible.

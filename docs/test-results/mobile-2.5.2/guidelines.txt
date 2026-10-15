@@ -1,0 +1,65 @@
+
+> salon-store@0.0.0 test:guidelines
+> npm --prefix server run test:guidelines
+
+
+> urban-blade-server@1.0.0 test:guidelines
+> node --import tsx scripts/test-ai-guidelines-compliance.ts
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║        AI-GUIDE (LIYUPI) COMPLETE SYSTEM COMPLIANCE AUDIT                 ║
+║   Verifying Security, Quality, Performance, UX & Architecture Standards   ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+🛡️ PILLAR 1: SECRETS MANAGEMENT & GIT HYGIENE
+  ✅ [Git Hygiene] .gitignore contains .env and binary exclusion: Environment (.env: true), dist/ (true), binaries/media (true)
+  ✅ [Secrets] .env.example documentation safety: Exists: true, Safe of live credentials: true
+  ✅ [Secrets] Frontend bundle zero-secret guarantee: 0 hardcoded credentials found in src/ code
+
+🔒 PILLAR 2: OWASP ACCESS CONTROL & INJECTION DEFENSE
+ℹ️ Redis not detected on localhost:6379 - running with high-speed In-Memory Cache Fallback.
+{"level":30,"time":1792046761508,"pid":68942,"hostname":"MacBookAir","reqId":"req-1","req":{"method":"GET","url":"/api/admin/metrics","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+  ✅ [Access Control] Unauthenticated API rejection (401): Status code: 401
+  ✅ [Access Control] Customer role blocked from Admin API (403): Status code: 403
+  ✅ [Access Control] Multi-tenant vendor blocked from system management (403): Status code: 403
+  ✅ [Injection Defense] Parameterized query resilience against SQLi payload: Safe execution: SQL injection payload treated as literal search string
+
+⚡ PILLAR 3: PERFORMANCE, MULTI-TIER CACHING & TELEMETRY
+  ✅ [Performance] System event loop & telemetry monitoring: Event loop delay & memory reporting functional
+  ✅ [Performance] L1/L2 Cache invalidation and flush capability: Cache flush returned 200 OK
+
+📦 PILLAR 4: CODE QUALITY & BOUNDARY DEFENSE
+  ✅ [Code Quality] Input validation & boundary defense on invalid payloads: Rejected invalid category with 400 Bad Request
+{"level":30,"time":1792046761522,"pid":68942,"hostname":"MacBookAir","reqId":"req-1","res":{"statusCode":401},"responseTime":7.335500000001048,"msg":"request completed"}
+{"level":30,"time":1792046761522,"pid":68942,"hostname":"MacBookAir","reqId":"req-2","req":{"method":"GET","url":"/api/admin/metrics","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761533,"pid":68942,"hostname":"MacBookAir","reqId":"req-2","res":{"statusCode":403},"responseTime":10.74633300000096,"msg":"request completed"}
+{"level":30,"time":1792046761533,"pid":68942,"hostname":"MacBookAir","reqId":"req-3","req":{"method":"GET","url":"/api/admin/system","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761535,"pid":68942,"hostname":"MacBookAir","reqId":"req-3","res":{"statusCode":403},"responseTime":1.898124999999709,"msg":"request completed"}
+{"level":30,"time":1792046761536,"pid":68942,"hostname":"MacBookAir","reqId":"req-4","req":{"method":"GET","url":"/api/products?search=%27%20OR%20%271%27=%271","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761540,"pid":68942,"hostname":"MacBookAir","reqId":"req-4","res":{"statusCode":200},"responseTime":4.2647500000002765,"msg":"request completed"}
+{"level":30,"time":1792046761541,"pid":68942,"hostname":"MacBookAir","reqId":"req-5","req":{"method":"GET","url":"/api/admin/system","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761551,"pid":68942,"hostname":"MacBookAir","reqId":"req-5","res":{"statusCode":200},"responseTime":10.726875000000291,"msg":"request completed"}
+{"level":30,"time":1792046761552,"pid":68942,"hostname":"MacBookAir","reqId":"req-6","req":{"method":"POST","url":"/api/admin/cache/flush","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761553,"pid":68942,"hostname":"MacBookAir","reqId":"req-6","res":{"statusCode":200},"responseTime":1.0740000000005239,"msg":"request completed"}
+{"level":30,"time":1792046761553,"pid":68942,"hostname":"MacBookAir","reqId":"req-7","req":{"method":"POST","url":"/api/admin/products","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761569,"pid":68942,"hostname":"MacBookAir","reqId":"req-7","res":{"statusCode":400},"responseTime":16.226667000000816,"msg":"request completed"}
+{"level":30,"time":1792046761571,"pid":68942,"hostname":"MacBookAir","reqId":"req-8","req":{"method":"POST","url":"/api/orders/cod-order","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+  ✅ [Code Quality] Edge-case defense against empty cart checkout: Clean 400 response with error: EMPTY_CART
+  ✅ [Data Integrity] Vendor slug standard: zero email corruption in DB: All 1 vendor slugs adhere to clean URL-safe format
+
+📋 PILLAR 5: WORKFLOW, GUIDELINES & AGENT RULES
+  ✅ [Workflow] AI-Guide guidelines installed in .agents/rules/: All 5 guideline rule specifications active in workspace
+  ✅ [Workflow] AI-Guide skill registered in .agents/skills/ai-guide/: SKILL.md created with frontmatter metadata
+  ✅ [Workflow] AGENTS.md documentation created at project root: Root standard document established for pair programming
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║               AI-GUIDE GUIDELINE COMPLIANCE AUDIT                         ║
+╠═══════════════════════════════════════════════════════════════════════════╣
+║ Total Checks Executed:   15                                               ║
+║ Checks Passed:           15 (100%)                                        ║
+║ Checks Failed:           0                                                ║
+║ Compliance Status:       ✅ 100% COMPLIANT (ENTERPRISE GRADE)              ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+{"level":30,"time":1792046761577,"pid":68942,"hostname":"MacBookAir","reqId":"req-8","res":{"statusCode":400},"responseTime":6.258416999999099,"msg":"request completed"}

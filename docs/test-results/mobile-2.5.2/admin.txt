@@ -1,0 +1,202 @@
+
+> salon-store@0.0.0 test:admin
+> npm --prefix server run test:admin:full
+
+
+> urban-blade-server@1.0.0 test:admin:full
+> node --import tsx scripts/test-admin-full-operations.ts
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║       URBAN BLADE ADMIN PANEL — 100% EXHAUSTIVE OPERATIONS AUDIT          ║
+║   Testing Every Endpoint, Lifecycle Transition, RBAC Barrier & Quality    ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+ℹ️ Redis not detected on localhost:6379 - running with high-speed In-Memory Cache Fallback.
+
+🔒 1. AUTHENTICATION & RBAC SECURITY BARRIERS
+  ⏳ [Security] Unauthenticated Request Blocked (401)... {"level":30,"time":1792046761288,"pid":68943,"hostname":"MacBookAir","reqId":"req-1","req":{"method":"GET","url":"/api/admin/metrics","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (22ms) → 401 Unauthorized enforced
+  ⏳ [Security] Customer Token Forbidden on Admin (403)... ✅ PASS (10ms) → 403 Forbidden enforced for customer role
+  ⏳ [Security] Vendor Token Blocked from Admin-Only System Telemetry... ✅ PASS (8ms) → 403 Forbidden: Vendor isolated from system telemetry
+  ⏳ [Security] Vendor Token Blocked from Admin Cache Flush... ✅ PASS (4ms) → 403 Forbidden: Vendor cannot flush cluster cache
+  ⏳ [Security] Vendor Token Blocked from Customer CRM Access... ✅ PASS (2ms) → 403 Forbidden: Customer PII restricted to Master Admin
+  ⏳ [Security] Vendor Login Barrier with Invalid Password... {"level":30,"time":1792046761299,"pid":68943,"hostname":"MacBookAir","reqId":"req-1","res":{"statusCode":401},"responseTime":9.561083999999937,"msg":"request completed"}
+{"level":30,"time":1792046761301,"pid":68943,"hostname":"MacBookAir","reqId":"req-2","req":{"method":"GET","url":"/api/admin/metrics","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761310,"pid":68943,"hostname":"MacBookAir","reqId":"req-2","res":{"statusCode":403},"responseTime":9.174167000000125,"msg":"request completed"}
+{"level":30,"time":1792046761311,"pid":68943,"hostname":"MacBookAir","reqId":"req-3","req":{"method":"GET","url":"/api/admin/system","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761318,"pid":68943,"hostname":"MacBookAir","reqId":"req-3","res":{"statusCode":403},"responseTime":7.322415999999976,"msg":"request completed"}
+{"level":30,"time":1792046761319,"pid":68943,"hostname":"MacBookAir","reqId":"req-4","req":{"method":"POST","url":"/api/admin/cache/flush","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761322,"pid":68943,"hostname":"MacBookAir","reqId":"req-4","res":{"statusCode":403},"responseTime":3.566791999999623,"msg":"request completed"}
+{"level":30,"time":1792046761323,"pid":68943,"hostname":"MacBookAir","reqId":"req-5","req":{"method":"GET","url":"/api/admin/customers","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761324,"pid":68943,"hostname":"MacBookAir","reqId":"req-5","res":{"statusCode":403},"responseTime":1.469333000000006,"msg":"request completed"}
+{"level":30,"time":1792046761325,"pid":68943,"hostname":"MacBookAir","reqId":"req-6","req":{"method":"POST","url":"/api/admin/vendors/login","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761344,"pid":68943,"hostname":"MacBookAir","reqId":"req-7","req":{"method":"POST","url":"/api/auth/login","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (33ms) → Rejected bad credentials with 401
+
+📊 2. EXECUTIVE DASHBOARD & SYSTEM TELEMETRY
+  ⏳ [Dashboard] Fetch KPI Metrics (GET /api/admin/metrics)... ✅ PASS (22ms) → Rev Today: ₹0, Orders Total: 0, Low Stock: 1
+  ⏳ [Dashboard] Fetch Daily Revenue Chart (GET /api/admin/metrics/daily)... ✅ PASS (9ms) → Loaded 7 daily time-series intervals
+  ⏳ [Dashboard] Fetch System Health & Diagnostics (GET /api/admin/system)... ✅ PASS (2ms) → Event Loop Lag: 102ms | DB: healthy (0ms) | Memory: 140MB
+
+📦 3. PRODUCT CATALOG & INVENTORY OPERATIONS
+  ⏳ [Products] Fetch Product Catalog with Dual Casing (GET /api/admin/products)... ✅ PASS (2ms) → Catalog count: 1 | Sample: "Audit Product" (Stock: 10)
+  ⏳ [Products] Create New Product (POST /api/admin/products)... {"level":30,"time":1792046761356,"pid":68943,"hostname":"MacBookAir","reqId":"req-7","res":{"statusCode":401},"responseTime":11.922332999998616,"msg":"request completed"}
+{"level":30,"time":1792046761357,"pid":68943,"hostname":"MacBookAir","reqId":"req-6","res":{"statusCode":401},"responseTime":32.30095800000072,"msg":"request completed"}
+{"level":30,"time":1792046761358,"pid":68943,"hostname":"MacBookAir","reqId":"req-8","req":{"method":"GET","url":"/api/admin/metrics","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761379,"pid":68943,"hostname":"MacBookAir","reqId":"req-8","res":{"statusCode":200},"responseTime":21.714334000000235,"msg":"request completed"}
+{"level":30,"time":1792046761380,"pid":68943,"hostname":"MacBookAir","reqId":"req-9","req":{"method":"GET","url":"/api/admin/metrics/daily","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761388,"pid":68943,"hostname":"MacBookAir","reqId":"req-9","res":{"statusCode":200},"responseTime":8.610666999999012,"msg":"request completed"}
+{"level":30,"time":1792046761389,"pid":68943,"hostname":"MacBookAir","reqId":"req-a","req":{"method":"GET","url":"/api/admin/system","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761391,"pid":68943,"hostname":"MacBookAir","reqId":"req-a","res":{"statusCode":200},"responseTime":1.8115410000009433,"msg":"request completed"}
+{"level":30,"time":1792046761391,"pid":68943,"hostname":"MacBookAir","reqId":"req-b","req":{"method":"GET","url":"/api/admin/products","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761393,"pid":68943,"hostname":"MacBookAir","reqId":"req-b","res":{"statusCode":200},"responseTime":2.139083000000028,"msg":"request completed"}
+{"level":30,"time":1792046761394,"pid":68943,"hostname":"MacBookAir","reqId":"req-c","req":{"method":"POST","url":"/api/admin/products","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (5ms) → Created Product ID: 3ce225fc-4856-4882-9853-752c65db7c64 (Price: ₹2499, Stock: 45)
+  ⏳ [Products] Update Product Stock & Price (PUT /api/admin/products/:id)... {"level":30,"time":1792046761398,"pid":68943,"hostname":"MacBookAir","reqId":"req-c","res":{"statusCode":201},"responseTime":4.685417000000598,"msg":"request completed"}
+{"level":30,"time":1792046761400,"pid":68943,"hostname":"MacBookAir","reqId":"req-d","req":{"method":"PUT","url":"/api/admin/products/3ce225fc-4856-4882-9853-752c65db7c64","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (6ms) → Updated price to ₹2699, stock quantity updated to 90
+  ⏳ [Products] Filter Products by Vendor (GET /api/admin/products?vendor=...)... ✅ PASS (3ms) → Found 1 item(s) belonging to Urban Blade Grooming Lab
+  ⏳ [Products] Delete Product (DELETE /api/admin/products/:id)... ✅ PASS (7ms) → Test product removed cleanly
+
+🛒 4. ORDERS & MULTI-STAGE FULFILLMENT OPERATIONS
+  ⏳ [Orders] Create Admin Direct Order (POST /api/admin/orders)... {"level":30,"time":1792046761405,"pid":68943,"hostname":"MacBookAir","reqId":"req-d","res":{"statusCode":200},"responseTime":5.369458000001032,"msg":"request completed"}
+{"level":30,"time":1792046761406,"pid":68943,"hostname":"MacBookAir","reqId":"req-e","req":{"method":"GET","url":"/api/admin/products?vendor=Urban%20Blade%20Grooming%20Lab","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761407,"pid":68943,"hostname":"MacBookAir","reqId":"req-e","res":{"statusCode":200},"responseTime":1.642959000000701,"msg":"request completed"}
+{"level":30,"time":1792046761409,"pid":68943,"hostname":"MacBookAir","reqId":"req-f","req":{"method":"DELETE","url":"/api/admin/products/3ce225fc-4856-4882-9853-752c65db7c64","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761416,"pid":68943,"hostname":"MacBookAir","reqId":"req-f","res":{"statusCode":200},"responseTime":6.781417000000147,"msg":"request completed"}
+{"level":30,"time":1792046761417,"pid":68943,"hostname":"MacBookAir","reqId":"req-g","req":{"method":"POST","url":"/api/admin/orders","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (9ms) → Created Order ID: 45eb7c08-6357-4c9b-9f23-8ea74784b4a2 (₹3998, Status: accepted)
+  ⏳ [Orders] Query Orders List (GET /api/admin/orders)... ✅ PASS (9ms) → Orders in DB: 1 | Verified test order in queue
+  ⏳ [Orders] Advance Order to "processing" (PUT /api/admin/orders/:id/status)... {"level":30,"time":1792046761425,"pid":68943,"hostname":"MacBookAir","reqId":"req-g","res":{"statusCode":201},"responseTime":8.375416999999288,"msg":"request completed"}
+{"level":30,"time":1792046761426,"pid":68943,"hostname":"MacBookAir","reqId":"req-h","req":{"method":"GET","url":"/api/admin/orders","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761434,"pid":68943,"hostname":"MacBookAir","reqId":"req-h","res":{"statusCode":200},"responseTime":8.14612500000112,"msg":"request completed"}
+{"level":30,"time":1792046761434,"pid":68943,"hostname":"MacBookAir","reqId":"req-i","req":{"method":"PUT","url":"/api/admin/orders/45eb7c08-6357-4c9b-9f23-8ea74784b4a2/status","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (8ms) → Order advanced to stage: processing
+  ⏳ [Orders] Advance Order to "shipped" with Tracking (PUT /api/admin/orders/:id/status)... {"level":30,"time":1792046761442,"pid":68943,"hostname":"MacBookAir","reqId":"req-i","res":{"statusCode":200},"responseTime":7.454665999999634,"msg":"request completed"}
+{"level":30,"time":1792046761442,"pid":68943,"hostname":"MacBookAir","reqId":"req-j","req":{"method":"PUT","url":"/api/admin/orders/45eb7c08-6357-4c9b-9f23-8ea74784b4a2/status","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (14ms) → Dispatched order: Carrier Delhivery, Tracking DLV-9876543210-IN
+  ⏳ [Orders] Advance Order to "delivered" (PUT /api/admin/orders/:id/status)... {"level":30,"time":1792046761456,"pid":68943,"hostname":"MacBookAir","reqId":"req-j","res":{"statusCode":200},"responseTime":14.020708000000013,"msg":"request completed"}
+{"level":30,"time":1792046761456,"pid":68943,"hostname":"MacBookAir","reqId":"req-k","req":{"method":"PUT","url":"/api/admin/orders/45eb7c08-6357-4c9b-9f23-8ea74784b4a2/status","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (19ms) → Fulfillment completed: status set to delivered
+  ⏳ [Orders] Live Carrier Website Fetch & Sync (POST /api/admin/orders/fetch-carrier-website)... {"level":30,"time":1792046761475,"pid":68943,"hostname":"MacBookAir","reqId":"req-k","res":{"statusCode":200},"responseTime":18.792790999999852,"msg":"request completed"}
+{"level":30,"time":1792046761476,"pid":68943,"hostname":"MacBookAir","reqId":"req-l","req":{"method":"POST","url":"/api/admin/orders/fetch-carrier-website","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (25ms) → Carrier sync returned telemetry: Test destination
+  ⏳ [Orders] Bulk Carrier Tracking Sync (POST /api/admin/orders/bulk-fetch-carrier-websites)... {"level":30,"time":1792046761500,"pid":68943,"hostname":"MacBookAir","reqId":"req-l","res":{"statusCode":200},"responseTime":24.066499999998996,"msg":"request completed"}
+{"level":30,"time":1792046761502,"pid":68943,"hostname":"MacBookAir","reqId":"req-m","req":{"method":"POST","url":"/api/admin/orders/bulk-fetch-carrier-websites","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (19ms) → Bulk sync completed: 1 order(s) updated
+  ⏳ [Orders] Payment Gateway Reconciliation (POST /api/admin/orders/:id/reconcile-payment)... ✅ PASS (4ms) → Reconciliation status: captured (Gateway checked. Payment is captured.)
+
+💈 5. SALON BOOKINGS & APPOINTMENT OPERATIONS
+  ⏳ [Bookings] Create Salon Booking (POST /api/admin/bookings)... {"level":30,"time":1792046761520,"pid":68943,"hostname":"MacBookAir","reqId":"req-m","res":{"statusCode":200},"responseTime":18.552083000000493,"msg":"request completed"}
+{"level":30,"time":1792046761520,"pid":68943,"hostname":"MacBookAir","reqId":"req-n","req":{"method":"POST","url":"/api/admin/orders/45eb7c08-6357-4c9b-9f23-8ea74784b4a2/reconcile-payment","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761524,"pid":68943,"hostname":"MacBookAir","reqId":"req-n","res":{"statusCode":200},"responseTime":3.7461249999996653,"msg":"request completed"}
+{"level":30,"time":1792046761525,"pid":68943,"hostname":"MacBookAir","reqId":"req-o","req":{"method":"POST","url":"/api/admin/bookings","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (33ms) → Created Booking ID: 48473b0d-405e-4439-adb9-e6a89411ded8 (₹1899, Stylist: Vikram Seth)
+  ⏳ [Bookings] Fetch Bookings List (GET /api/admin/bookings)... ✅ PASS (4ms) → Total Bookings in DB: 1 | Verified test booking
+  ⏳ [Bookings] Update Booking Status (PUT /api/admin/bookings/:id/status)... {"level":30,"time":1792046761557,"pid":68943,"hostname":"MacBookAir","reqId":"req-o","res":{"statusCode":201},"responseTime":32.210417000000234,"msg":"request completed"}
+{"level":30,"time":1792046761558,"pid":68943,"hostname":"MacBookAir","reqId":"req-p","req":{"method":"GET","url":"/api/admin/bookings","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761560,"pid":68943,"hostname":"MacBookAir","reqId":"req-p","res":{"statusCode":200},"responseTime":2.141249999998763,"msg":"request completed"}
+{"level":30,"time":1792046761561,"pid":68943,"hostname":"MacBookAir","reqId":"req-q","req":{"method":"PUT","url":"/api/admin/bookings/48473b0d-405e-4439-adb9-e6a89411ded8/status","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (30ms) → Booking status updated to: confirmed
+
+👥 6. CUSTOMER CRM & PROFILE OPERATIONS
+  ⏳ [Customers] Fetch Customers with Aggregated Metrics (GET /api/admin/customers)... ✅ PASS (26ms) → Discovered 2 customers | Sample: "Test Customer" (Orders: 0, Spent: ₹0)
+  ⏳ [Customers] Fetch Customer Deep Profile & History (GET /api/admin/customers/:id/details)... ✅ PASS (16ms) → Customer: Test Customer (test.customer@urbanblade.in) | Orders: 0 | Bookings: 0
+  ⏳ [Customers] Update Customer Role (PUT /api/admin/customers/:id/role)... {"level":30,"time":1792046761591,"pid":68943,"hostname":"MacBookAir","reqId":"req-q","res":{"statusCode":200},"responseTime":29.505458000001454,"msg":"request completed"}
+{"level":30,"time":1792046761594,"pid":68943,"hostname":"MacBookAir","reqId":"req-r","req":{"method":"GET","url":"/api/admin/customers","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761619,"pid":68943,"hostname":"MacBookAir","reqId":"req-r","res":{"statusCode":200},"responseTime":25.115334000000075,"msg":"request completed"}
+{"level":30,"time":1792046761624,"pid":68943,"hostname":"MacBookAir","reqId":"req-s","req":{"method":"GET","url":"/api/admin/customers/a0000000-0000-0000-0000-000000000001/details","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761635,"pid":68943,"hostname":"MacBookAir","reqId":"req-s","res":{"statusCode":200},"responseTime":10.76837499999965,"msg":"request completed"}
+{"level":30,"time":1792046761635,"pid":68943,"hostname":"MacBookAir","reqId":"req-t","req":{"method":"PUT","url":"/api/admin/customers/a0000000-0000-0000-0000-000000000001/role","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (2ms) → Role successfully confirmed/set to: customer
+
+🏪 7. MULTI-TENANT VENDOR OPERATIONS
+  ⏳ [Vendors] Fetch Vendors and Verify Clean Slugs (GET /api/admin/vendors)... ✅ PASS (6ms) → Found 1 vendors | Slugs verified 100% clean (no email corruption)
+  ⏳ [Vendors] Create New Verified Vendor (POST /api/admin/vendors)... {"level":30,"time":1792046761637,"pid":68943,"hostname":"MacBookAir","reqId":"req-t","res":{"statusCode":200},"responseTime":1.715041999999812,"msg":"request completed"}
+{"level":30,"time":1792046761637,"pid":68943,"hostname":"MacBookAir","reqId":"req-u","req":{"method":"GET","url":"/api/admin/vendors","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046761643,"pid":68943,"hostname":"MacBookAir","reqId":"req-u","res":{"statusCode":200},"responseTime":5.617292000000816,"msg":"request completed"}
+{"level":30,"time":1792046761645,"pid":68943,"hostname":"MacBookAir","reqId":"req-v","req":{"method":"POST","url":"/api/admin/vendors","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (986ms) → Created Vendor ID: vnd-royal-grooming-academy-1643 (Slug: royal-grooming-academy-1643, Commission: 15%)
+  ⏳ [Vendors] Update Vendor Details & Commission (PUT /api/admin/vendors/:id)... {"level":30,"time":1792046762628,"pid":68943,"hostname":"MacBookAir","reqId":"req-v","res":{"statusCode":201},"responseTime":982.7771249999987,"msg":"request completed"}
+✅ PASS (16ms) → Updated commission rate to 18%, status active
+
+🏷️ 8. COUPONS & PROMOTIONAL OPERATIONS
+  ⏳ [Coupons] Create Admin Coupon (POST /api/admin/coupons)... {"level":30,"time":1792046762629,"pid":68943,"hostname":"MacBookAir","reqId":"req-w","req":{"method":"PUT","url":"/api/admin/vendors/vnd-royal-grooming-academy-1643","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046762645,"pid":68943,"hostname":"MacBookAir","reqId":"req-w","res":{"statusCode":200},"responseTime":15.437959000000774,"msg":"request completed"}
+{"level":30,"time":1792046762646,"pid":68943,"hostname":"MacBookAir","reqId":"req-x","req":{"method":"POST","url":"/api/admin/coupons","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (8ms) → Created Coupon Code: TESTADM2645 (20% off above ₹999, ID: 91905ad3-e7fc-4bf7-8157-281385df5f8a)
+  ⏳ [Coupons] Fetch Coupons with Usage Analytics (GET /api/admin/coupons)... ✅ PASS (8ms) → Total active coupons: 1 with order usage aggregation
+  ⏳ [Coupons] Update Coupon Parameters (PUT /api/admin/coupons/:id)... {"level":30,"time":1792046762653,"pid":68943,"hostname":"MacBookAir","reqId":"req-x","res":{"statusCode":200},"responseTime":7.7459170000001905,"msg":"request completed"}
+{"level":30,"time":1792046762654,"pid":68943,"hostname":"MacBookAir","reqId":"req-y","req":{"method":"GET","url":"/api/admin/coupons","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046762661,"pid":68943,"hostname":"MacBookAir","reqId":"req-y","res":{"statusCode":200},"responseTime":7.53679099999863,"msg":"request completed"}
+{"level":30,"time":1792046762662,"pid":68943,"hostname":"MacBookAir","reqId":"req-z","req":{"method":"PUT","url":"/api/admin/coupons/91905ad3-e7fc-4bf7-8157-281385df5f8a","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (9ms) → Updated coupon: 25% off above ₹1200
+  ⏳ [Coupons] Delete Coupon (DELETE /api/admin/coupons/:id)... ✅ PASS (6ms) → Coupon deleted cleanly
+
+📋 9. OPERATIONAL TASKS WORKFLOW
+  ⏳ [Tasks] Create Operational Task (POST /api/admin/tasks)... {"level":30,"time":1792046762670,"pid":68943,"hostname":"MacBookAir","reqId":"req-z","res":{"statusCode":200},"responseTime":7.968584000000192,"msg":"request completed"}
+{"level":30,"time":1792046762670,"pid":68943,"hostname":"MacBookAir","reqId":"req-10","req":{"method":"DELETE","url":"/api/admin/coupons/91905ad3-e7fc-4bf7-8157-281385df5f8a","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046762676,"pid":68943,"hostname":"MacBookAir","reqId":"req-10","res":{"statusCode":200},"responseTime":5.271875000000364,"msg":"request completed"}
+{"level":30,"time":1792046762676,"pid":68943,"hostname":"MacBookAir","reqId":"req-11","req":{"method":"POST","url":"/api/admin/tasks","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (2ms) → Created Task ID: tsk-42905362-bbe7-46a5-8599-d5b0c0b4a8d6 (Priority: high)
+  ⏳ [Tasks] Fetch Operational Tasks (GET /api/admin/tasks)... ✅ PASS (2ms) → Found 1 task(s) in operational backlog
+  ⏳ [Tasks] Update Task Status (PUT /api/admin/tasks/:id)... {"level":30,"time":1792046762678,"pid":68943,"hostname":"MacBookAir","reqId":"req-11","res":{"statusCode":201},"responseTime":1.8534589999999298,"msg":"request completed"}
+{"level":30,"time":1792046762678,"pid":68943,"hostname":"MacBookAir","reqId":"req-12","req":{"method":"GET","url":"/api/admin/tasks","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046762679,"pid":68943,"hostname":"MacBookAir","reqId":"req-12","res":{"statusCode":200},"responseTime":1.338541000000987,"msg":"request completed"}
+{"level":30,"time":1792046762680,"pid":68943,"hostname":"MacBookAir","reqId":"req-13","req":{"method":"PUT","url":"/api/admin/tasks/tsk-42905362-bbe7-46a5-8599-d5b0c0b4a8d6","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (5ms) → Task status transitioned to: completed
+  ⏳ [Tasks] Delete Task (DELETE /api/admin/tasks/:id)... ✅ PASS (8ms) → Task removed cleanly from backlog
+
+💬 10. CUSTOMER SUPPORT & AI COPILOT OPERATIONS
+  ⏳ [Support] Create Support Inquiry (POST /api/admin/support/inquiries)... {"level":30,"time":1792046762685,"pid":68943,"hostname":"MacBookAir","reqId":"req-13","res":{"statusCode":200},"responseTime":5.120583999998416,"msg":"request completed"}
+{"level":30,"time":1792046762691,"pid":68943,"hostname":"MacBookAir","reqId":"req-14","req":{"method":"DELETE","url":"/api/admin/tasks/tsk-42905362-bbe7-46a5-8599-d5b0c0b4a8d6","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046762699,"pid":68943,"hostname":"MacBookAir","reqId":"req-14","res":{"statusCode":200},"responseTime":7.631708999999319,"msg":"request completed"}
+{"level":30,"time":1792046762699,"pid":68943,"hostname":"MacBookAir","reqId":"req-15","req":{"method":"POST","url":"/api/admin/support/inquiries","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (11ms) → Created Ticket ID: inq-1792046762702-85w0g (User: Vikram Malhotra)
+  ⏳ [Support] Fetch Inquiries (GET /api/admin/support/inquiries)... ✅ PASS (7ms) → Active support inquiries in DB: 1
+  ⏳ [Support] Post Admin Reply to Ticket (POST /api/admin/support/inquiries/:id/message)... {"level":30,"time":1792046762708,"pid":68943,"hostname":"MacBookAir","reqId":"req-15","res":{"statusCode":201},"responseTime":8.733916000001045,"msg":"request completed"}
+{"level":30,"time":1792046762710,"pid":68943,"hostname":"MacBookAir","reqId":"req-16","req":{"method":"GET","url":"/api/admin/support/inquiries","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046762716,"pid":68943,"hostname":"MacBookAir","reqId":"req-16","res":{"statusCode":200},"responseTime":5.852499999999054,"msg":"request completed"}
+{"level":30,"time":1792046762717,"pid":68943,"hostname":"MacBookAir","reqId":"req-17","req":{"method":"POST","url":"/api/admin/support/inquiries/inq-1792046762702-85w0g/message","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (7ms) → Message dispatched to customer thread
+  ⏳ [Support] Update Inquiry Status (PUT /api/admin/support/inquiries/:id/status)... {"level":30,"time":1792046762723,"pid":68943,"hostname":"MacBookAir","reqId":"req-17","res":{"statusCode":200},"responseTime":6.298625000001266,"msg":"request completed"}
+{"level":30,"time":1792046762724,"pid":68943,"hostname":"MacBookAir","reqId":"req-18","req":{"method":"PUT","url":"/api/admin/support/inquiries/inq-1792046762702-85w0g/status","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (4ms) → Ticket marked as closed
+  ⏳ [Support] AI Copilot Contextual Assistant (POST /api/admin/support/ai-chat)... {"level":30,"time":1792046762728,"pid":68943,"hostname":"MacBookAir","reqId":"req-18","res":{"statusCode":200},"responseTime":3.6536250000008295,"msg":"request completed"}
+{"level":30,"time":1792046762728,"pid":68943,"hostname":"MacBookAir","reqId":"req-19","req":{"method":"POST","url":"/api/admin/support/ai-chat","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+✅ PASS (10ms) → AI Response generated: "🧔 **Urban Blade Beard Care:**
+
+• **Beard Oil..."
+  ⏳ [Support] Delete Inquiry (DELETE /api/admin/support/inquiries/:id)... ✅ PASS (5ms) → Inquiry ticket purged cleanly
+
+⚡ 11. SYSTEM MAINTENANCE & CLUSTER CACHE
+  ⏳ [System] Flush Redis L2 & Memory Cache (POST /api/admin/cache/flush)... ✅ PASS (2ms) → Redis L2 cluster & process caches successfully flushed.
+
+🖥️ 12. FRONTEND LOGIC & REGRESSION INTEGRITY CHECKS
+  ⏳ [Frontend] Verify 15-Minute Session Inactivity Timeout Formula... ✅ PASS (0ms) → Inactivity timeout formula verified: 15 minutes (900,000ms)
+  ⏳ [Frontend] Verify Vendor Role Covered by Session Monitoring (Bugs 2-4 Regression)... ✅ PASS (0ms) → Session monitoring confirmed active for both admin and vendor roles
+  ⏳ [Frontend] Verify Vendor Slug Formatting Standard (Bug 1 Regression)... ✅ PASS (0ms) → Slug generator verified: produces compliant URL-safe strings
+
+🧹 CLEANING UP TEST FIXTURES...
+  ✓ Cleaned test order: 45eb7c08-6357-4c9b-9f23-8ea74784b4a2
+  ✓ Cleaned test booking: 48473b0d-405e-4439-adb9-e6a89411ded8
+  ✓ Cleaned test vendor: vnd-royal-grooming-academy-1643
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║               EXECUTIVE ADMIN PANEL QUALITY SCORECARD                     ║
+╠═══════════════════════════════════════════════════════════════════════════╣
+║ Total Operations Tested: 49                                               ║
+║ Operations Passed:       49 (100%)                                        ║
+║ Operations Failed:       0                                                ║
+║ Average Latency:         30 ms/operation                                  ║
+║ Quality Rating:          ⭐⭐⭐⭐⭐ GRADE A+ (PRODUCTION READY)                ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+🎉 100% SUCCESS: All admin panel operations verified and healthy!
+
+{"level":30,"time":1792046762738,"pid":68943,"hostname":"MacBookAir","reqId":"req-19","res":{"statusCode":200},"responseTime":10.032375000000684,"msg":"request completed"}
+{"level":30,"time":1792046762738,"pid":68943,"hostname":"MacBookAir","reqId":"req-1a","req":{"method":"DELETE","url":"/api/admin/support/inquiries/inq-1792046762702-85w0g","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046762743,"pid":68943,"hostname":"MacBookAir","reqId":"req-1a","res":{"statusCode":200},"responseTime":4.64520900000025,"msg":"request completed"}
+{"level":30,"time":1792046762744,"pid":68943,"hostname":"MacBookAir","reqId":"req-1b","req":{"method":"POST","url":"/api/admin/cache/flush","host":"localhost:80","remoteAddress":"127.0.0.1"},"msg":"incoming request"}
+{"level":30,"time":1792046762745,"pid":68943,"hostname":"MacBookAir","reqId":"req-1b","res":{"statusCode":200},"responseTime":1.4359580000000278,"msg":"request completed"}

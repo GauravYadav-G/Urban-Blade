@@ -1,0 +1,6 @@
+Building com.urbanblade.mobile for simulator (ios)...
+To ensure your app continues to launch on upcoming iOS versions, UIScene lifecycle support will soon be required. Please see https://flutter.dev/to/uiscene-migration for the migration guide.
+
+Running Xcode build...                                          
+Xcode build done.                                           25.4s
+✓ Built build/ios/iphonesimulator/Runner.app

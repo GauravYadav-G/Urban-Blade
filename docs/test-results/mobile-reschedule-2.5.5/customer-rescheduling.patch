@@ -1,0 +1,184 @@
+diff --git a/server/src/modules/bookings/bookings.routes.ts b/server/src/modules/bookings/bookings.routes.ts
+index 7b08a91..d8fd01a 100644
+--- a/server/src/modules/bookings/bookings.routes.ts
++++ b/server/src/modules/bookings/bookings.routes.ts
+@@ -1,10 +1,31 @@
+-import { FastifyInstance } from 'fastify';
++import { FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
+ import crypto from 'crypto';
+ import { query, withTransaction } from '../../db/pool.js';
+ import { acquireLock, releaseLock } from '../../redis/lock.service.js';
+ import { requireAuth, optionalAuth } from '../../core/auth.middleware.js';
+ import { z } from 'zod';
+ 
++const customerSlots = ['09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
++  '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM'] as const;
++const scheduleDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
++  const parsed = new Date(`${value}T12:00:00Z`);
++  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
++});
++function futureSlot(date: string, slot: string): boolean {
++  const match = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(slot);
++  if (!match) return false;
++  const hour = Number(match[1]) % 12 + (match[3].toUpperCase() === 'PM' ? 12 : 0);
++  return Date.parse(`${date}T${String(hour).padStart(2, '0')}:${match[2]}:00+05:30`) > Date.now();
++}
++async function customerScheduleOnly(request: FastifyRequest, reply: FastifyReply) {
++  if (request.user.role !== 'customer') {
++    return reply.code(403).send({ error: 'FORBIDDEN', message: 'Use the customer account that owns this appointment.' });
++  }
++}
++const ownedBookingSql = `SELECT id, status, stylist_id,
++  to_char(booking_date, 'YYYY-MM-DD') AS booking_date, time_slot
++  FROM bookings WHERE id = $1 AND LOWER(customer_email) = LOWER($2)`;
++
+ export async function bookingsRoutes(app: FastifyInstance) {
+   // ─── LIST STYLISTS ────────────────────────────────────────────────────────
+   // Assignment is internal; do not expose the staff directory to customers.
+@@ -39,6 +60,74 @@ export async function bookingsRoutes(app: FastifyInstance) {
+     }
+   );
+ 
++  app.get<{ Params: { id: string }; Querystring: { date: string } }>(
++    '/bookings/:id/available-slots', { preHandler: [requireAuth, customerScheduleOnly] },
++    async (request, reply) => {
++      const parsed = z.object({ date: scheduleDate }).strict().safeParse(request.query);
++      if (!parsed.success || !z.string().uuid().safeParse(request.params.id).success) {
++        return reply.code(400).send({ error: 'INVALID_SCHEDULE', message: 'Choose a valid appointment and date.' });
++      }
++      try {
++        const booking = (await query(ownedBookingSql, [request.params.id, request.user.email])).rows[0];
++        if (!booking) return reply.code(404).send({ message: 'Appointment not found in your account.' });
++        if (booking.status !== 'confirmed' || !futureSlot(booking.booking_date, booking.time_slot)) {
++          return reply.code(409).send({ message: 'Only upcoming confirmed appointments can be rescheduled.' });
++        }
++        const taken = booking.stylist_id ? (await query(
++          `SELECT time_slot FROM bookings WHERE stylist_id=$1 AND booking_date=$2 AND id<>$3 AND status!='cancelled'`,
++          [booking.stylist_id, parsed.data.date, request.params.id])).rows : [];
++        const blocked = new Set(taken.map(row => row.time_slot));
++        return { date: parsed.data.date, availableSlots: customerSlots.filter(slot =>
++          futureSlot(parsed.data.date, slot) && !blocked.has(slot)) };
++      } catch (error) {
++        request.log.warn({ err: error }, 'Customer reschedule availability failed');
++        return reply.code(503).send({ message: 'Availability could not be checked. Please retry.' });
++      }
++    });
++
++  app.put<{ Params: { id: string } }>('/bookings/:id/schedule',
++    { preHandler: [requireAuth, customerScheduleOnly] }, async (request, reply) => {
++      const parsed = z.object({ bookingDate: scheduleDate, timeSlot: z.enum(customerSlots),
++        expectedDate: scheduleDate, expectedTimeSlot: z.string().min(4).max(20) }).strict().safeParse(request.body);
++      if (!parsed.success || !z.string().uuid().safeParse(request.params.id).success ||
++          !futureSlot(parsed.data.bookingDate, parsed.data.timeSlot)) {
++        return reply.code(400).send({ error: 'INVALID_SCHEDULE', message: 'Choose an available future date and time.' });
++      }
++      try {
++        const result = await withTransaction(async client => {
++          const booking = (await client.query(`${ownedBookingSql} FOR UPDATE`, [request.params.id, request.user.email])).rows[0];
++          if (!booking) return { kind: 'missing' } as const;
++          if (booking.status !== 'confirmed' || !futureSlot(booking.booking_date, booking.time_slot)) return { kind: 'closed' } as const;
++          if (booking.booking_date !== parsed.data.expectedDate || booking.time_slot !== parsed.data.expectedTimeSlot) return { kind: 'stale' } as const;
++          if (booking.stylist_id) {
++            const conflict = await client.query(`SELECT id FROM bookings WHERE stylist_id=$1 AND booking_date=$2
++              AND time_slot=$3 AND id<>$4 AND status!='cancelled'`,
++              [booking.stylist_id, parsed.data.bookingDate, parsed.data.timeSlot, request.params.id]);
++            if (conflict.rows.length) return { kind: 'conflict' } as const;
++          }
++          // Ownership, price, visit address and salon staff assignment are preserved.
++          // The existing unique active-stylist index also arbitrates concurrent moves.
++          const saved = await client.query(`UPDATE bookings SET booking_date=$2, time_slot=$3, version=version+1
++            WHERE id=$1 RETURNING id, customer_name, customer_email, customer_phone,
++              to_char(booking_date,'YYYY-MM-DD') AS booking_date, time_slot, status,
++              total_price, notes, visit_type, service_address, created_at`,
++            [request.params.id, parsed.data.bookingDate, parsed.data.timeSlot]);
++          return { kind: 'saved', booking: saved.rows[0] } as const;
++        });
++        if (result.kind === 'missing') return reply.code(404).send({ message: 'Appointment not found in your account.' });
++        if (result.kind !== 'saved') return reply.code(409).send({ message: result.kind === 'closed'
++          ? 'Only upcoming confirmed appointments can be rescheduled.' : result.kind === 'stale'
++            ? 'This appointment changed on another device. Refresh before rescheduling.'
++            : 'This time is no longer available. Choose another slot.' });
++        return result.booking;
++      } catch (error) {
++        request.log.warn({ err: error }, 'Customer reschedule failed');
++        const conflict = typeof error === 'object' && error !== null && 'code' in error && error.code === '23505';
++        return reply.code(conflict ? 409 : 503).send({ message: conflict
++          ? 'This time was just booked. Choose another slot.' : 'The appointment could not be changed. Please retry.' });
++      }
++    });
++
+   // ─── BOOK APPOINTMENT WITH DISTRIBUTED REDIS LOCK ──────────────────────────
+   app.post<{
+     Body: {
+diff --git a/server/tests/customer-reschedule.test.mjs b/server/tests/customer-reschedule.test.mjs
+new file mode 100644
+index 0000000..1166179
+--- /dev/null
++++ b/server/tests/customer-reschedule.test.mjs
+@@ -0,0 +1,66 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { readFile } from 'node:fs/promises';
++import { PGlite } from '@electric-sql/pglite';
++
++test('customer rescheduling enforces ownership, future availability and immutable booking details', async t => {
++  const db = new PGlite();
++  const { pool } = await import('../dist/db/pool.js');
++  const { redis } = await import('../dist/redis/client.js');
++  redis.disconnect();
++  await db.exec((await readFile(new URL('../src/db/schema.sql', import.meta.url), 'utf8')).replace(/^CREATE EXTENSION[^;]+;/gm, ''));
++  await db.exec(`CREATE UNIQUE INDEX test_active_stylist ON bookings(stylist_id,booking_date,time_slot) WHERE status!='cancelled'`);
++  const query = async (sql, params = []) => {
++    const result = await db.query(sql, params);
++    return { rows: result.rows, rowCount: result.affectedRows || result.rows.length };
++  };
++  pool.query = query;
++  pool.connect = async () => ({ query, release() {} });
++  const { buildApp } = await import('../dist/app.js');
++  const app = await buildApp();
++  t.after(async () => { await app.close(); await pool.end(); await db.close(); });
++  const alice = '11111111-1111-4111-8111-111111111111';
++  const bob = '22222222-2222-4222-8222-222222222222';
++  const stylist = '33333333-3333-4333-8333-333333333333';
++  const booking = '44444444-4444-4444-8444-444444444444';
++  const other = '55555555-5555-4555-8555-555555555555';
++  await query(`INSERT INTO users(id,email,name,password_hash) VALUES($1,'alice@test.invalid','Alice','unused'),($2,'bob@test.invalid','Bob','unused')`, [alice, bob]);
++  await query(`INSERT INTO stylists(id,name,role,avatar_url) VALUES($1,'Studio assignment','Senior stylist','')`, [stylist]);
++  await query(`INSERT INTO bookings(id,customer_name,customer_email,customer_phone,stylist_id,booking_date,time_slot,visit_type,service_address,status,total_price,notes)
++    VALUES($1,'Alice','alice@test.invalid','9811223344',$2,'2099-10-20','10:00 AM','home','12 Private Street','confirmed',549.50,'Haircut'),
++          ($3,'Bob','bob@test.invalid','9811223344',$2,'2099-10-21','11:00 AM','salon',NULL,'confirmed',499,'Haircut')`, [booking, stylist, other]);
++  const headers = (id = alice, role = 'customer') => ({ authorization: `Bearer ${app.jwt.sign({ id, role,
++    email: id === alice ? 'alice@test.invalid' : 'bob@test.invalid', name: 'Customer' })}` });
++  const body = { bookingDate: '2099-10-21', timeSlot: '02:00 PM', expectedDate: '2099-10-20', expectedTimeSlot: '10:00 AM' };
++  const put = (payload = body, id = alice, role = 'customer', target = booking) => app.inject({ method: 'PUT', url: `/api/bookings/${target}/schedule`, payload, headers: headers(id, role) });
++  assert.equal((await app.inject({ method: 'PUT', url: `/api/bookings/${booking}/schedule`, payload: body })).statusCode, 401);
++  assert.equal((await put(body, bob)).statusCode, 404);
++  assert.equal((await put(body, alice, 'vendor')).statusCode, 403);
++  assert.equal((await app.inject({ method: 'GET', url: `/api/bookings/${booking}/available-slots?date=2099-10-21`, headers: headers(bob) })).statusCode, 404);
++  for (const invalid of [{ ...body, bookingDate: '2099-02-30' }, { ...body, bookingDate: '2000-01-01' }, { ...body, timeSlot: '11:00 PM' }, { ...body, totalPrice: 1 }, { ...body, stylistId: stylist }]) {
++    assert.equal((await put(invalid)).statusCode, 400);
++  }
++  const availability = await app.inject({ method: 'GET', url: `/api/bookings/${booking}/available-slots?date=2099-10-21`, headers: headers() });
++  assert.equal(availability.statusCode, 200, availability.body);
++  assert.equal(availability.json().availableSlots.includes('11:00 AM'), false);
++  assert.equal(availability.json().availableSlots.includes('02:00 PM'), true);
++  assert.equal('stylist_id' in availability.json(), false);
++  assert.equal((await put({ ...body, timeSlot: '11:00 AM' })).statusCode, 409);
++  assert.equal((await put({ ...body, expectedDate: '2099-10-19' })).statusCode, 409);
++  const success = await put();
++  assert.equal(success.statusCode, 200, success.body);
++  assert.equal(success.json().booking_date, '2099-10-21');
++  assert.equal(success.json().time_slot, '02:00 PM');
++  const saved = (await query('SELECT * FROM bookings WHERE id=$1', [booking])).rows[0];
++  assert.equal(saved.stylist_id, stylist);
++  assert.equal(Number(saved.total_price), 549.50);
++  assert.equal(saved.service_address, '12 Private Street');
++  assert.equal(saved.visit_type, 'home');
++  assert.equal(saved.version, 1);
++  const history = await app.inject({ method: 'GET', url: '/api/bookings', headers: headers() });
++  assert.equal(history.json().length, 1);
++  assert.equal(history.json()[0].time_slot, '02:00 PM');
++  assert.equal((await put()).statusCode, 409); // stale replay cannot move a newer schedule
++  await query("UPDATE bookings SET status='completed' WHERE id=$1", [booking]);
++  assert.equal((await put({ ...body, expectedDate: '2099-10-21', expectedTimeSlot: '02:00 PM' })).statusCode, 409);
++});

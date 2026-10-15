@@ -1,0 +1,42 @@
+Urban Blade mobile 2.4.0 (19) — local verification, 14 October 2026
+
+flutter test --no-pub --reporter expanded: PASS, 120 tests
+flutter analyze --no-pub: PASS, no issues
+npm run test:guidelines: PASS, 15 checks; isolated disposable database
+npm run test:admin: PASS, 49 operations; isolated disposable database
+NG_BUILD_MAX_WORKERS=2 npm run build: PASS, production website build
+bash mobile_app/build_apk.sh: PASS, executed from repository root
+flutter build ios --simulator --no-pub: PASS, final source
+plutil -lint mobile_app/ios/Runner/Info.plist: PASS
+aapt dump badging: com.urbanblade.mobile, versionName 2.4.0, versionCode 19
+Android SDK: min 24, target 36
+apksigner verify --verbose: PASS, APK Signature Scheme v2
+
+APK artifact: UrbanBlade-2.4.0.apk
+SHA-256: f1596b28069661a0e87578c2114e803b6a6d84a61fa5344af8d6784a37c6c5db
+iOS simulator artifact: mobile_app/build/ios/iphonesimulator/Runner.app
+
+Visual baselines were regenerated for the authorized design changes and then
+checked again without the update flag. Home, shop, booking and dark-mode
+previews were visually inspected. New regressions cover layout, keyboards,
+safe areas, request disposal and changes between accounts.
+
+The first website build process crashed; limiting its worker count to two
+resolved it. A generated iOS App.framework signing error was resolved by
+removing only the generated framework and rebuilding.
+
+The initial iOS runtime smoke check did not complete: CoreSimulator's app
+installation service was unresponsive. The test simulator was shut down.
+The final iOS source compiled successfully; native Files picker interaction,
+real payments and UPI handoff still require interactive device validation.
+
+Release APK retains the existing debug signing configuration. Production store
+distribution requires the owner's Android/iOS signing setup. No production
+service was deployed and no live booking/order/payment was created.
+
+Read-only deployed API compatibility checks:
+GET /api/products?cat=services&limit=2: HTTP 200, 2 service rows
+GET /api/bookings/stylists: HTTP 200, 0 public staff rows
+GET /api/bookings/available-slots?date=2026-10-15: HTTP 200, 10 slots
+GET /api/health: HTTP 200 on recheck after initial 12-second timeout
+No authenticated mutations were made.

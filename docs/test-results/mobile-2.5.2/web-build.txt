@@ -1,0 +1,42 @@
+
+> salon-store@0.0.0 build
+> ng build
+
+❯ Building...
+✔ Building...
+Initial chunk files   | Names           |  Raw size | Estimated transfer size
+chunk-WGUO4KLH.js     | -               | 211.59 kB |                61.68 kB
+chunk-RN22M27A.js     | -               |  88.71 kB |                22.38 kB
+styles-SCZHGDWC.css   | styles          |  44.40 kB |                 7.17 kB
+polyfills-5CFQRCPP.js | polyfills       |  34.59 kB |                11.33 kB
+chunk-Q4M2H7HM.js     | -               |   6.12 kB |                 1.74 kB
+main-3DNBNH3N.js      | main            |   6.04 kB |                 1.84 kB
+chunk-MD7TEPSL.js     | -               |   3.56 kB |                 1.13 kB
+chunk-EU5EBC6C.js     | -               |   3.05 kB |                 1.18 kB
+chunk-JZA7GDYY.js     | -               | 672 bytes |               672 bytes
+chunk-TY4FIYFK.js     | -               | 632 bytes |               632 bytes
+
+                      | Initial total   | 399.36 kB |               109.76 kB
+
+Lazy chunk files      | Names           |  Raw size | Estimated transfer size
+chunk-DHH2PXTU.js     | admin-orders    | 183.30 kB |                30.07 kB
+chunk-Z2EZKI2G.js     | main-layout     | 113.89 kB |                22.37 kB
+chunk-TOXU2MCM.js     | account-page    |  90.22 kB |                19.57 kB
+chunk-TFVIJ5W6.js     | support-page    |  90.03 kB |                14.94 kB
+chunk-BJCVSE2F.js     | admin-bookings  |  72.67 kB |                14.33 kB
+chunk-BJ5JPHG5.js     | admin-products  |  69.03 kB |                13.91 kB
+chunk-2UM7WRAI.js     | admin-customers |  65.95 kB |                 9.83 kB
+chunk-CTHXWRCP.js     | -               |  63.31 kB |                10.64 kB
+chunk-NNROANAY.js     | -               |  51.79 kB |                10.10 kB
+chunk-GULK5Y36.js     | checkout-page   |  45.23 kB |                10.54 kB
+chunk-EFKV2G2Q.js     | admin-website   |  43.97 kB |                 9.52 kB
+chunk-VK3RLKWI.js     | -               |  42.75 kB |                 9.29 kB
+chunk-32YYMDZJ.js     | admin-finance   |  39.41 kB |                 9.30 kB
+chunk-RU7XWEJ2.js     | admin-coupons   |  37.99 kB |                 8.63 kB
+chunk-7BTOR22C.js     | admin-refunds   |  37.14 kB |                 7.71 kB
+...and 39 more lazy chunks files. Use "--verbose" to show all the files.
+
+Application bundle generation complete. [6.548 seconds] - 2026-10-15T06:46:58.186Z
+
+Output location: /Users/shyam/Downloads/2/dist/salon-store
+
